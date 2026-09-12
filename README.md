@@ -180,10 +180,5 @@ Copyright (C) 2026 xtt
 
 本项目以 **GNU General Public License v3.0**（GPL-3.0）发布，完整条款见 [LICENSE](LICENSE)。
 
-简单说：
-
-- ✅ 可以自由使用、学习、修改、分发（包括商用）
-- ⚠️ 分发时（无论原版还是修改版，二进制或源码）**必须同样以 GPL-3.0 开放源代码**，并保留版权声明
-- ⚠️ 必须说明改动，且不提供任何担保
 
 > 本项目依赖均为 Apache-2.0 / MIT 等宽松许可（AndroidX、Jetpack Compose、Kotlin、kotlinx-coroutines、Shizuku），与 GPL-3.0 兼容。
