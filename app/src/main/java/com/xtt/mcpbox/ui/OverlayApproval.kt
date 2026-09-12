@@ -105,8 +105,8 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(4)
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(6)
         }
         return try {
             wm.addView(container, params)
@@ -183,26 +183,22 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
         }
     }
 
-    /** 限高的滚动容器：内容少时自适应高度，内容多时最多 maxHeightPx 并可滚动。 */
-    private class MaxHeightScrollView(
-        context: Context,
-        private val maxHeightPx: Int
-    ) : ScrollView(context) {
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val capped = MeasureSpec.makeMeasureSpec(maxHeightPx, MeasureSpec.AT_MOST)
-            super.onMeasure(widthMeasureSpec, capped)
-        }
-    }
-
     // ------------------------------------------------------------------ 卡片
 
     private fun buildCard(request: ApprovalRequest): Pair<View, Runnable> {
         val accent = permColor(request.perm.id)
 
+        val screenH = context.resources.displayMetrics.heightPixels
+        // 卡片高度一开始就固定为屏幕的 85%，不依赖任何测量时机 —— 按钮必然在屏内
+        val cardH = (screenH * 0.85f).toInt()
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(18))
             background = rounded(blend(p.card, p.background, 0.30f), 28f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                cardH
+            )
         }
 
         // 顶部：权限胶囊 + 倒计时
@@ -234,32 +230,20 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             )
         }
         // 命令类审批：把要执行的命令单独显示出来（等宽字体 + 浅色块）
+        // 中间内容容器（weight=1，卡片固定高度下占据剩余空间）
+        val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+
         request.command?.let { cmd ->
             val shown = if (cmd.length > 2000) cmd.take(2000) + " …" else cmd
-            val commandView = TextView(context).apply {
-                text = shown
-                textSize = 12.5f
-                setTextColor(p.text)
-                typeface = Typeface.MONOSPACE
-                background = rounded(p.cardLow, 12f)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-            }
-            // 只给「文字区」限高，按钮不在这个容器里 —— 所以永远不会被挤走。
-            // 内容少时自适应高度，内容多时最多占屏幕 30%，在容器里上下滚动。
-            val maxTextPx = (context.resources.displayMetrics.heightPixels * 0.30f).toInt()
-            val textScroller = MaxHeightScrollView(context, maxTextPx).apply {
-                isFillViewport = false
-                isVerticalScrollBarEnabled = true
-                addView(
-                    commandView,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
-            }
-            card.addView(
-                textScroller,
+            content.addView(
+                TextView(context).apply {
+                    text = shown
+                    textSize = 12.5f
+                    setTextColor(p.text)
+                    typeface = Typeface.MONOSPACE
+                    background = rounded(p.cardLow, 12f)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -271,7 +255,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             val lines = detail.lines().filter { it.isNotBlank() }.take(2)
             lines.forEach { line ->
                 val shown = if (line.length > 68) line.take(68) + "…" else line
-                card.addView(textView(shown, 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
+                content.addView(textView(shown, 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
             }
         }
 
@@ -281,7 +265,21 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             request.client?.let { c -> append(" · ").append(c) }
             append(" · ").append(request.timeoutMs / 1000).append(L(" 秒未处理自动拒绝"))
         }
-        card.addView(textView(meta, 11f, p.textDim).apply { setPadding(0, dp(10), 0, 0) })
+        content.addView(textView(meta, 11f, p.textDim).apply { setPadding(0, dp(10), 0, 0) })
+
+        // 文字区：占满中间剩余高度，内容多了就在里面滚动
+        val textScroll = ScrollView(context).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            addView(content)
+        }
+        card.addView(
+            textScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0
+            ).apply { weight = 1f }
+        )
 
         // 按钮
         val row1 = LinearLayout(context).apply {
