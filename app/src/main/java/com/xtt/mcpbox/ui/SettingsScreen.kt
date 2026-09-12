@@ -146,30 +146,6 @@ fun SettingsScreen(
                     }
                 ) else null,
                 dropdownSpec(
-                    title = L("语言"),
-                    subtitle = L("中文 / English，也可以导入别人做的语言包"),
-                    icon = Icons.Filled.Info,
-                    options = listOf("跟随系统", "中文", "English"),
-                    selectedIndex = when (AppCore.prefs.appLang) {
-                        "zh" -> 1
-                        "en" -> 2
-                        else -> 0
-                    }
-                ) { index ->
-                    AppCore.prefs.appLang = listOf("system", "zh", "en")[index]
-                    com.xtt.mcpbox.i18n.Lang.init(
-                        ctx, AppCore.prefs.appLang, com.xtt.mcpbox.i18n.Lang.systemIsEnglish
-                    )
-                    onLangChanged()
-                },
-                RowSpec(
-                    title = L("语言包"),
-                    subtitle = L("导出模板去翻译，或者导入别人填好的"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Info,
-                    onClick = { langInfo = ""; showLang = true }
-                ),
-                dropdownSpec(
                     title = L("调色板样式"),
                     subtitle = L("同一个种子色，算法不同味道不同"),
                     icon = Icons.Filled.Star,
@@ -210,6 +186,35 @@ fun SettingsScreen(
                             }
                         }
                     }
+                ),
+                dropdownSpec(
+                    title = L("语言"),
+                    subtitle = L("中文 / English，也可以导入别人做的语言包"),
+                    icon = Icons.Filled.Info,
+                    options = if (AppCore.prefs.catUnlocked)
+                        listOf("跟随系统", "中文", "English", "猫娘语")
+                    else listOf("跟随系统", "中文", "English"),
+                    selectedIndex = when (AppCore.prefs.appLang) {
+                        "zh" -> 1
+                        "en" -> 2
+                        "cat" -> 3
+                        else -> 0
+                    }
+                ) { index ->
+                    AppCore.prefs.appLang = if (AppCore.prefs.catUnlocked)
+                        listOf("system", "zh", "en", "cat")[index]
+                    else listOf("system", "zh", "en")[index]
+                    com.xtt.mcpbox.i18n.Lang.init(
+                        ctx, AppCore.prefs.appLang, com.xtt.mcpbox.i18n.Lang.systemIsEnglish
+                    )
+                    onLangChanged()
+                },
+                RowSpec(
+                    title = L("语言包"),
+                    subtitle = L("导出模板去翻译，或者导入别人填好的"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info,
+                    onClick = { langInfo = ""; showLang = true }
                 )
             )
         )

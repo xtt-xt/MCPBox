@@ -79,6 +79,7 @@ object AppCore {
             customTools = CustomToolStore(config, prefs)
 
             // 语言：跟随系统时，系统语言不是中文就按英文走
+            com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = prefs.catUnlocked
             val sysLang = java.util.Locale.getDefault().language
             com.xtt.mcpbox.i18n.Lang.init(
                 ctx = application,

@@ -21,6 +21,9 @@ object Lang {
     const val ZH = "zh"
     const val EN = "en"
 
+    /** 彩蛋语言：猫娘语。 */
+    const val CAT = "cat"
+
     /** 当前生效语言：zh / en / 其它（导入的语言包 id）。 */
     @Volatile var current: String = ZH
         private set
@@ -51,6 +54,7 @@ object Lang {
     /** 翻译。查不到就返回原文。 */
     fun t(zh: String): String {
         if (current == ZH) return zh
+        if (current == CAT) return LangCat.say(zh)
         packs[current]?.get(zh)?.let { return it }
         if (current == EN) builtin[zh]?.let { return it }
         return zh
@@ -60,6 +64,15 @@ object Lang {
     fun hasPack(langId: String): Boolean = langId == EN || packs.containsKey(langId)
 
     fun packLanguages(): List<String> = packs.keys.sorted()
+
+    /** 猫娘语是内置的彩蛋语言，解锁后可用。 */
+    fun catAvailable(ctx: android.content.Context): Boolean =
+        AndroidCatFlag.unlocked
+
+    /** 由 AppCore 在启动时写入（避免 i18n 层依赖 Prefs）。 */
+    object AndroidCatFlag {
+        @Volatile var unlocked: Boolean = false
+    }
 
     fun entriesOf(langId: String): Map<String, String> = when (langId) {
         EN -> builtin

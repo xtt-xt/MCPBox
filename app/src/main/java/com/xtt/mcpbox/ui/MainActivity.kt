@@ -69,7 +69,6 @@ class MainActivity : ComponentActivity() {
             val style = remember(themeRev) { AppCore.prefs.paletteStyle }
             val darkMode = remember(themeRev) { AppCore.prefs.darkMode }
             val dynColor = remember(themeRev) { AppCore.prefs.dynamicColor }
-            androidx.compose.runtime.key(langRev) {
             MCPBoxTheme(
                 seedArgb = seed,
                 paletteStyleId = style,
@@ -95,9 +94,9 @@ class MainActivity : ComponentActivity() {
                     requestPermission = ::handlePermNeed,
                     onRequestShizuku = ::requestShizuku,
                     onThemeChanged = { themeRev++ },
-                    onLangChanged = { langRev++ }
+                    onLangChanged = { langRev++ },
+                    langRev = langRev
                 )
-            }
             }
         }
     }
@@ -159,7 +158,9 @@ fun AppRoot(
     requestPermission: (PermNeed) -> Unit,
     onRequestShizuku: () -> Unit,
     onThemeChanged: () -> Unit,
-    onLangChanged: () -> Unit
+    onLangChanged: () -> Unit,
+    /** 语言版本号：变化时只重建界面内容，导航状态（tab / 子页面）留在外面。 */
+    langRev: Int = 0
 ) {
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -244,6 +245,7 @@ fun AppRoot(
     }
 
     // 子页面（自定义工具）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧
+    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
     AnimatedContent(
         targetState = subScreen,
         transitionSpec = {
@@ -356,6 +358,7 @@ fun AppRoot(
             }
             }
         }
+    }
     }
     }
     }

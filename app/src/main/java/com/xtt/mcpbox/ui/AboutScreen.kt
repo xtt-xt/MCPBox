@@ -9,6 +9,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +54,7 @@ import com.xtt.mcpbox.UpdateChecker
 import com.xtt.mcpbox.core.ServerMeta
 import com.xtt.mcpbox.core.ShellBackends
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -73,6 +79,9 @@ fun AboutScreen(
     BackHandler(enabled = true) { onBack() }
 
     val scope = rememberCoroutineScope()
+    var catTaps by remember { mutableStateOf(0) }
+    var catTarget by remember { mutableStateOf(1f) }
+    val catScale by animateFloatAsState(catTarget, tween(130), label = "catScale")
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<UpdateChecker.Result?>(null) }
     val version = ServerMeta.version
@@ -111,7 +120,33 @@ fun AboutScreen(
                 Modifier
                     .size(84.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    // 彩蛋：连点 7 次解锁猫娘语（每次点击都有缩放 + 喵声反馈）
+                    .graphicsLayer {
+                        scaleX = catScale
+                        scaleY = catScale
+                    }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        catTaps++
+                        catTarget = 0.86f
+                        scope.launch {
+                            delay(95)
+                            catTarget = 1f
+                        }
+                        if (catTaps >= 7) {
+                            catTaps = 0
+                            AppCore.prefs.catUnlocked = true
+                            com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = true
+                            toast(ctx, "喵～ 猫娘语已解锁")
+                            onChanged()
+                        } else {
+                            // 第 1 次「喵」，第 2 次「喵喵」…这样点着就有反馈
+                            toast(ctx, "喵".repeat(catTaps))
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 androidx.compose.foundation.Image(
@@ -148,12 +183,17 @@ fun AboutScreen(
         // ------------------------------------------------ 开发者 / 更新
         GroupLabel(L("开发者"))
         CardGroup(
-            listOf(
+            listOfNotNull(
                 RowSpec(
                     title = "xtt",
                     subtitle = L("个人项目 · 使用 GPL-3.0 许可"),
                     icon = Icons.Filled.Star
-                )
+                ),
+                if (AppCore.prefs.catUnlocked) RowSpec(
+                    title = "喵",
+                    subtitle = "猫娘语已解锁：设置 → 外观 → 语言",
+                    icon = Icons.Filled.Star
+                ) else null
             )
         )
 
