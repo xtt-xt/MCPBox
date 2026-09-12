@@ -237,29 +237,15 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
         // 命令类审批：把要执行的命令单独显示出来（等宽字体 + 浅色块）
         request.command?.let { cmd ->
             val shown = if (cmd.length > 2000) cmd.take(2000) + " …" else cmd
-            val commandView = TextView(context).apply {
-                text = shown
-                textSize = 12.5f
-                setTextColor(p.text)
-                typeface = Typeface.MONOSPACE
-                background = rounded(p.cardLow, 12f)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-            }
-            // 自适应 + 上限：内容少就自然矮，内容多最多占屏幕 40% 并在容器里滚动
-            val maxTextPx = (screenH * 0.40f).toInt()
-            val textScroller = MaxHeightScrollView(context, maxTextPx).apply {
-                isFillViewport = false
-                isVerticalScrollBarEnabled = true
-                addView(
-                    commandView,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
-            }
             card.addView(
-                textScroller,
+                TextView(context).apply {
+                    text = shown
+                    textSize = 12.5f
+                    setTextColor(p.text)
+                    typeface = Typeface.MONOSPACE
+                    background = rounded(p.cardLow, 12f)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -325,7 +311,14 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
                 main.postDelayed(this, 1000)
             }
         }
-        return card to ticker
+        // 整张卡片限高：内容少自然矮，内容多最多占屏幕 78% 并整体滚动（滚到底就能看到按钮）
+        val maxCardPx = (screenH * 0.78f).toInt()
+        val cardScroller = MaxHeightScrollView(context, maxCardPx).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            addView(card)
+        }
+        return cardScroller to ticker
     }
 
     private fun resolve(request: ApprovalRequest, decision: ApprovalDecision) {
