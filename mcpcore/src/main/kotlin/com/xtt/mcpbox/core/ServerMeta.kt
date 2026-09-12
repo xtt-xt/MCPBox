@@ -14,8 +14,19 @@ object ServerMeta {
 
     @Volatile var appVersion: String? = null
 
+    /** 内部版本（versionCode），每次发版 +1；由 Android 层写入。 */
+    @Volatile var appVersionCode: Int = 0
+
     /** 对外展示的版本（优先真实 APK 版本）。 */
     val version: String get() = appVersion ?: VERSION
+
+    /**
+     * 完整版本号，形如 `v1.9.2-21`：
+     * 前面的 `1.9.2` 是发布版本（按需求递增），
+     * 后面的 `21` 是核心版本（versionCode，每次发版必 +1）。
+     */
+    val fullVersion: String
+        get() = if (appVersionCode > 0) "v$version-$appVersionCode" else "v$version"
 
     var startTime: Long = System.currentTimeMillis()
 

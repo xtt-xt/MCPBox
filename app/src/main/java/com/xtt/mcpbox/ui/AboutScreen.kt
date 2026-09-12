@@ -85,6 +85,7 @@ fun AboutScreen(
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<UpdateChecker.Result?>(null) }
     val version = ServerMeta.version
+    val full = ServerMeta.fullVersion
 
     fun runCheck() {
         if (checking) return
@@ -106,7 +107,7 @@ fun AboutScreen(
     ) {
         PageHeader(
             title = L("关于"),
-            subtitle = "v$version · ${AppCore.deviceLabel()}",
+            subtitle = "${full} · ${AppCore.deviceLabel()}",
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
@@ -167,7 +168,7 @@ fun AboutScreen(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                "v$version（${ServerMeta.PROTOCOL}）",
+                "${full}（${ServerMeta.PROTOCOL}）",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 fontFamily = FontFamily.Monospace
@@ -203,10 +204,10 @@ fun AboutScreen(
                 RowSpec(
                     title = if (checking) L("正在检查…") else L("检查更新"),
                     subtitle = when (val r = result) {
-                        is UpdateChecker.Result.Newer -> L("发现新版本 %s（当前 v%s）").format(r.info.tag, version)
+                        is UpdateChecker.Result.Newer -> L("发现新版本 %s（当前 %s）").format(r.info.tag, full)
                         UpdateChecker.Result.UpToDate -> L("已经是最新版啦")
                         is UpdateChecker.Result.Failed -> r.reason
-                        null -> L("当前版本 v%s").format(version)
+                        null -> L("当前版本 %s").format(full)
                     },
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Refresh,
@@ -297,7 +298,7 @@ fun AboutScreen(
         val status = AppCore.server.status()
         CardColumn {
             CardBox {
-                KeyValue(L("版本"), "v$version")
+                KeyValue(L("版本"), full)
                 KeyValue(L("设备"), status.device)
                 KeyValue(L("工具数量"), L("%s 个（自定义 %s）").format(status.toolCount, status.customToolCount))
                 KeyValue(L("MCP 协议"), ServerMeta.PROTOCOL)

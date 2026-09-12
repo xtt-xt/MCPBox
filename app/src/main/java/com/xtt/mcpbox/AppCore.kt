@@ -62,9 +62,14 @@ object AppCore {
             if (initialized) return
             app = application
             // 让核心层上报真实版本号
-            ServerMeta.appVersion = runCatching {
-                application.packageManager.getPackageInfo(application.packageName, 0).versionName
+            val pkgInfo = runCatching {
+                application.packageManager.getPackageInfo(application.packageName, 0)
             }.getOrNull()
+            ServerMeta.appVersion = pkgInfo?.versionName
+            ServerMeta.appVersionCode = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pkgInfo!!.longVersionCode.toInt()
+                else @Suppress("DEPRECATION") pkgInfo!!.versionCode
+            }.getOrDefault(0)
             DefaultRoots.provider = {
                 runCatching { Environment.getExternalStorageDirectory().absolutePath }
                     .getOrElse { application.filesDir.absolutePath }

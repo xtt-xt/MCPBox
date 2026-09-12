@@ -93,8 +93,9 @@ object UpdateChecker {
 
     /** 版本号比较：1.10.0 > 1.9.0 ✓（按数字段比，不会踩字符串比较的坑）。 */
     fun compare(a: String, b: String): Int {
-        val x = a.split('.', '-', '+').mapNotNull { it.toIntOrNull() }
-        val y = b.split('.', '-', '+').mapNotNull { it.toIntOrNull() }
+        // 只比 "1.9.2" 这截，忽略 "-21" 这类内部版本号
+        val x = a.substringBefore('-').removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
+        val y = b.substringBefore('-').removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
         for (i in 0 until maxOf(x.size, y.size)) {
             val vx = x.getOrElse(i) { 0 }
             val vy = y.getOrElse(i) { 0 }

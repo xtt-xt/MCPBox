@@ -109,7 +109,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(bottom = 20.dp)
     ) {
-        PageHeader(title = L("设置"), subtitle = "v${ServerMeta.version} · ${AppCore.deviceLabel()}")
+        PageHeader(title = L("设置"), subtitle = "${ServerMeta.fullVersion} · ${AppCore.deviceLabel()}")
 
         // ---------------------------------------------------------- 外观
         GroupLabel(L("外观"))
@@ -523,7 +523,7 @@ fun SettingsScreen(
             listOf(
                 RowSpec(
                     title = L("关于"),
-                    subtitle = L("v%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.version),
+                    subtitle = L("%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.fullVersion),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Info,
                     onClick = onOpenAbout

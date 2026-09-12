@@ -215,7 +215,7 @@ fun AppRoot(
             text = {
                 androidx.compose.foundation.layout.Column {
                     androidx.compose.material3.Text(
-                        L("当前版本 v%s").format(com.xtt.mcpbox.core.ServerMeta.version),
+                        L("当前版本 %s").format(com.xtt.mcpbox.core.ServerMeta.fullVersion),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.5.sp
                     )
