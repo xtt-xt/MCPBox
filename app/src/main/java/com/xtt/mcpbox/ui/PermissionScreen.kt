@@ -83,15 +83,15 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
             rows = PermKey.entries.map { key ->
                 val current = switches[key.id] ?: key.default
                 RowSpec(
-                    title = key.title,
-                    subtitle = key.desc,
+                    title = L(key.title),
+                    subtitle = L(key.desc),
                     subtitleMaxLines = 1,
                     icon = permIcon(key),
                     onClick = { pickPerm = key },
                     trailing = {
                         PillDropdown(
-                            value = current.label,
-                            options = PermAction.entries.map { it.label }
+                            value = L(current.label),
+                            options = PermAction.entries.map { L(it.label) }
                         ) { index ->
                             AppCore.permissions.setSwitch(key, PermAction.entries[index])
                             onChanged()
@@ -136,7 +136,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------------- 路径规则
-        GroupLabel("路径规则（${rules.size}）")
+        GroupLabel(L("路径规则（%s）").format(rules.size))
         CardGroup(
             rows = buildList {
                 if (rules.isEmpty()) {
@@ -152,12 +152,12 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     rules.forEach { rule ->
                         add(
                             RowSpec(
-                                title = if (rule.perm == "*") "全部权限" else (PermKey.of(rule.perm)?.title ?: rule.perm),
+                                title = if (rule.perm == "*") "全部权限" else L(PermKey.of(rule.perm)?.title ?: rule.perm),
                                 subtitle = rule.target.ifBlank { L("（未填写路径）") },
                                 icon = Icons.Filled.Place,
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        TagPill(rule.actionEnum.label, actionColor(rule.actionEnum))
+                                        TagPill(L(rule.actionEnum.label), actionColor(rule.actionEnum))
                                         Spacer(Modifier.width(8.dp))
                                         RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
                                             AppCore.permissions.removeRule(rule.id)
@@ -181,7 +181,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------------- 命令规则
-        GroupLabel("命令规则（${cmdRules.size}）")
+        GroupLabel(L("命令规则（%s）").format(cmdRules.size))
         CardGroup(
             rows = buildList {
                 if (cmdRules.isEmpty()) {
@@ -207,7 +207,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                                 icon = Icons.Filled.Build,
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        TagPill(rule.actionEnum.label, actionColor(rule.actionEnum))
+                                        TagPill(L(rule.actionEnum.label), actionColor(rule.actionEnum))
                                         Spacer(Modifier.width(8.dp))
                                         RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
                                             AppCore.permissions.removeRule(rule.id)
@@ -338,7 +338,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
             listOf(
                 RowSpec(
                     title = L("网页上传 / 下载"),
-                    subtitle = "浏览器打开 http://127.0.0.1:${AppCore.config.port}/upload 就能往手机传文件；" +
+                    subtitle = L("浏览器打开 http://127.0.0.1:%s/upload 就能往手机传文件；").format(AppCore.config.port) +
                         L("外部程序也能用 POST /upload、GET /download（要带 token）"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Share
@@ -353,8 +353,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
     pickPerm?.let { key ->
         val current = AppCore.permissions.switchOf(key)
         ChoiceDialog(
-            title = "「${key.title}」怎么处理",
-            options = PermAction.entries.map { it.label },
+            title = L("「%s」怎么处理").format(L(key.title)),
+            options = PermAction.entries.map { L(it.label) },
             selected = PermAction.entries.indexOf(current),
             onDismiss = { pickPerm = null },
             onSelect = { index ->
@@ -426,7 +426,7 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermKey.entries.forEach { key ->
                         ChoiceChip(
-                            text = key.title,
+                            text = L(key.title),
                             active = permId == key.id,
                             color = MaterialTheme.colorScheme.primary
                         ) { permId = key.id }
@@ -446,7 +446,7 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermAction.entries.forEach { a ->
-                        ChoiceChip(a.label, action == a, actionColor(a)) { action = a }
+                        ChoiceChip(L(a.label), action == a, actionColor(a)) { action = a }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -526,7 +526,7 @@ private fun AddCommandRuleDialog(
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermAction.entries.forEach { a ->
-                        ChoiceChip(a.label, action == a, actionColor(a)) { action = a }
+                        ChoiceChip(L(a.label), action == a, actionColor(a)) { action = a }
                     }
                 }
                 Spacer(Modifier.height(12.dp))

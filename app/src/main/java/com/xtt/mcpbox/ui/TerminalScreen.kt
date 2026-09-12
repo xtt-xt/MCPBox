@@ -85,10 +85,10 @@ fun TerminalScreen(
                 add(
                     dropdownSpec(
                         title = if (running) L("会话运行中") else L("会话未启动"),
-                        subtitle = "Shizuku " + ShizukuHelper.statusText(ctx),
+                        subtitle = "Shizuku " + L(ShizukuHelper.statusText(ctx)),
                         icon = Icons.Filled.Build,
                         value = backendLabel.ifBlank { L("自动") },
-                        options = ShellBackends.all().map { it.label }
+                        options = ShellBackends.all().map { L(it.label) }
                     ) { index ->
                         val launcher = ShellBackends.all().getOrNull(index) ?: return@dropdownSpec
                         toast(ctx, term.start(launcher.id))

@@ -93,7 +93,7 @@ fun SettingsScreen(
                         langInfo = "已导入语言包 $id（$count 条译文）"
                         onLangChanged()
                     },
-                    onFailure = { langInfo = "导入失败：${it.message}" }
+                    onFailure = { langInfo = L("导入失败：%s").format(it.message) }
                 )
             }
         }
@@ -149,7 +149,7 @@ fun SettingsScreen(
                     title = L("调色板样式"),
                     subtitle = L("同一个种子色，算法不同味道不同"),
                     icon = Icons.Filled.Star,
-                    options = PaletteStyle.entries.map { it.label },
+                    options = PaletteStyle.entries.map { L(it.label) },
                     selectedIndex = PaletteStyle.entries.indexOf(PaletteStyle.of(AppCore.prefs.paletteStyle))
                 ) { index ->
                     AppCore.prefs.paletteStyle = PaletteStyle.entries[index].id
@@ -159,7 +159,7 @@ fun SettingsScreen(
                     title = L("颜色模式"),
                     subtitle = L("深色 / 浅色 / 跟随系统"),
                     icon = Icons.Filled.Star,
-                    options = DarkMode.entries.map { it.label },
+                    options = DarkMode.entries.map { L(it.label) },
                     selectedIndex = DarkMode.entries.indexOf(DarkMode.of(AppCore.prefs.darkMode))
                 ) { index ->
                     AppCore.prefs.darkMode = DarkMode.entries[index].id
@@ -225,7 +225,8 @@ fun SettingsScreen(
             listOf(
                 RowSpec(
                     title = L("监听端口"),
-                    subtitle = if (status.running) "正在监听 ${status.port}" else "当前设置 ${AppCore.config.port}",
+                    subtitle = if (status.running) L("正在监听 %s").format(status.port)
+                    else L("当前设置 %s").format(AppCore.config.port),
                     icon = Icons.Filled.Share,
                     trailing = {
                         PillButton(L("修改"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
@@ -299,7 +300,7 @@ fun SettingsScreen(
                     subtitle = if (AppCore.config.consolePassword.isBlank()) {
                         L("还没设置，默认拿访问令牌当密码")
                     } else {
-                        "已设置（${AppCore.config.consolePassword.length} 位）"
+                        L("已设置（%s 位）").format(AppCore.config.consolePassword.length)
                     },
                     icon = Icons.Filled.Create,
                     onClick = {
@@ -369,7 +370,7 @@ fun SettingsScreen(
             CardBox {
                 Text(L("审批超时"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
                 Text(
-                    "${timeoutState} 秒 · 超时自动拒绝",
+                    L("%s 秒 · 超时自动拒绝").format(timeoutState),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.5.sp,
                     modifier = Modifier.padding(top = 3.dp)
@@ -407,7 +408,7 @@ fun SettingsScreen(
                 },
                 RowSpec(
                     title = L("命令规则"),
-                    subtitle = "${AppCore.permissions.commandRules().size} 条 · 在「权限」页里管理",
+                    subtitle = L("%s 条 · 在「权限」页里管理").format(AppCore.permissions.commandRules().size),
                     icon = Icons.Filled.Lock
                 )
             )
@@ -417,7 +418,7 @@ fun SettingsScreen(
             CardBox {
                 Text(L("命令默认超时"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
                 Text(
-                    "${shellTimeoutState} 秒 · AI 调用 run_shell 时的上限",
+                    L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.5.sp,
                     modifier = Modifier.padding(top = 3.dp)
@@ -442,7 +443,7 @@ fun SettingsScreen(
             listOf(
                 RowSpec(
                     title = L("工具管理"),
-                    subtitle = "共 ${status.toolCount} 个 · 可单独启用/禁用、设权限；右上角 + 新建自定义工具",
+                    subtitle = L("共 %s 个 · 可单独启用/禁用、设权限；右上角 + 新建自定义工具").format(status.toolCount),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Build,
                     onClick = onOpenTools
@@ -522,7 +523,7 @@ fun SettingsScreen(
             listOf(
                 RowSpec(
                     title = L("关于"),
-                    subtitle = "v${ServerMeta.version} · 开发者 xtt · 检查更新与开源鸣谢",
+                    subtitle = L("v%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.version),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Info,
                     onClick = onOpenAbout
@@ -569,7 +570,7 @@ fun SettingsScreen(
                         AppCore.saveConfig()
                         showPort = false
                         if (status.running) onRestartService()
-                        toast(ctx, "端口已改为 $p")
+                        toast(ctx, L("端口已改为 %s").format(p))
                         onChanged()
                     }
                 }) { Text(L("应用"), color = MaterialTheme.colorScheme.primary) }
@@ -594,8 +595,8 @@ fun SettingsScreen(
                 if (!dir.exists()) dir.mkdirs()
                 file.writeText(text)
             }.fold(
-                onSuccess = { langInfo = "已导出到 ${file.absolutePath}" },
-                onFailure = { langInfo = "导出失败：${it.message}" }
+                onSuccess = { langInfo = L("已导出到 %s").format(file.absolutePath) },
+                onFailure = { langInfo = L("导出失败：%s").format(it.message) }
             )
         }
         AlertDialog(

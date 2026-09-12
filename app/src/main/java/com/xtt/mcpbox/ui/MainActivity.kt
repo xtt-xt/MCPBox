@@ -211,11 +211,11 @@ fun AppRoot(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { androidx.compose.material3.Text("发现新版本 ${info.tag}", fontSize = 20.sp) },
+            title = { androidx.compose.material3.Text(L("发现新版本 %s").format(info.tag), fontSize = 20.sp) },
             text = {
                 androidx.compose.foundation.layout.Column {
                     androidx.compose.material3.Text(
-                        "当前版本 v${com.xtt.mcpbox.core.ServerMeta.version}",
+                        L("当前版本 v%s").format(com.xtt.mcpbox.core.ServerMeta.version),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.5.sp
                     )

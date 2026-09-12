@@ -56,7 +56,7 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
     ) {
         PageHeader(
             title = L("日志"),
-            subtitle = "最近 ${logs.size} 条调用与审批记录"
+            subtitle = L("最近 %s 条调用与审批记录").format(logs.size)
         )
 
         Row(
@@ -93,7 +93,7 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary
                     ) {
                         val text = shown.joinToString("\n") {
-                            "${fmt.format(Date(it.time))} [${it.kind.label}] ${it.tool ?: ""} " +
+                            "${fmt.format(Date(it.time))} [${L(it.kind.label)}] ${it.tool ?: ""} " +
                                 "${it.path ?: ""} ${it.message}"
                         }
                         copyText(ctx, text, L("日志已复制"))
@@ -137,7 +137,7 @@ private fun LogRow(entry: LogEntry, fmt: SimpleDateFormat) {
                     fontFamily = FontFamily.Monospace
                 )
                 Spacer(Modifier.width(8.dp))
-                TagPill(entry.kind.label, color)
+                TagPill(L(entry.kind.label), color)
                 entry.tool?.let {
                     Spacer(Modifier.width(8.dp))
                     Text(

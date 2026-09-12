@@ -139,7 +139,7 @@ private fun ToolListPage(
     ) {
         PageHeader(
             title = L("工具管理"),
-            subtitle = "共 ${all.size} 个 · 禁用 $disabledCount · 单独设权限 $overrideCount",
+            subtitle = L("共 %s 个 · 禁用 %s · 单独设权限 %s").format(all.size, disabledCount, overrideCount),
             actions = {
                 RoundIconButton(Icons.Filled.Add, L("新建自定义工具"), onClick = onCreate)
                 Spacer(Modifier.width(8.dp))
@@ -167,11 +167,11 @@ private fun ToolListPage(
         }
 
         if (custom.isNotEmpty()) {
-            GroupLabel("自定义工具（${custom.size}）")
+            GroupLabel(L("自定义工具（%s）").format(custom.size))
             CardGroup(custom.map { spec -> toolRow(spec, builtinNames, onOpen) })
         }
 
-        GroupLabel("内置工具（${builtin.size}）")
+        GroupLabel(L("内置工具（%s）").format(builtin.size))
         CardGroup(builtin.map { spec -> toolRow(spec, builtinNames, onOpen) })
 
         Spacer(Modifier.height(14.dp))
@@ -192,10 +192,10 @@ private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) 
     val disabled = ToolPolicy.isDisabled(AppCore.config, spec.name)
     val override = ToolPolicy.overrideOf(AppCore.config, spec.name)
     val subtitle = buildString {
-        append(spec.title)
+        append(L(spec.title))
         val tags = mutableListOf<String>()
         if (disabled) tags.add(L("已禁用"))
-        if (override != null) tags.add(ToolPolicy.label(override))
+        if (override != null) tags.add(L(ToolPolicy.label(override)))
         if (spec.name !in builtinNames) tags.add(L("自定义"))
         if (tags.isNotEmpty()) append(" · ").append(tags.joinToString(" / "))
     }
@@ -213,7 +213,7 @@ private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) 
         onClick = { onOpen(spec.name) },
         trailing = {
             if (disabled) OutlineTag(L("已禁用"), MaterialTheme.colorScheme.outline)
-            else if (override != null) OutlineTag(ToolPolicy.label(override), MaterialTheme.colorScheme.primary)
+            else if (override != null) OutlineTag(L(ToolPolicy.label(override)), MaterialTheme.colorScheme.primary)
         }
     )
 }
@@ -285,7 +285,7 @@ private fun ToolDetailPage(
                     subtitle = when (override) {
                         ToolPolicy.ALLOW -> L("这个工具的所有操作直接放行，不弹审批")
                         ToolPolicy.DENY -> L("无论全局怎么设，这个工具一律拒绝")
-                        else -> "跟随全局权限矩阵（${spec.perm.title}）"
+                        else -> L("跟随全局权限矩阵（%s）").format(L(spec.perm.title))
                     },
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Info,
@@ -320,7 +320,7 @@ private fun ToolDetailPage(
             listOf(
                 RowSpec(
                     title = L("权限分类"),
-                    subtitle = spec.perm.title,
+                    subtitle = L(spec.perm.title),
                     icon = Icons.Filled.Info
                 ),
                 RowSpec(
@@ -362,7 +362,7 @@ private fun ToolDetailPage(
         Spacer(Modifier.height(14.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
             Text(
-                "参数：${paramNames(spec)}",
+                L("参数：%s").format(paramNames(spec)),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
@@ -380,7 +380,7 @@ private fun ToolDetailPage(
             title = { Text(L("删除工具"), fontSize = 20.sp) },
             text = {
                 Text(
-                    "确定删除「${spec.title}」吗？删除后 AI 就调不到它了。",
+                    L("确定删除「%s」吗？删除后 AI 就调不到它了。").format(L(spec.title)),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
@@ -389,7 +389,7 @@ private fun ToolDetailPage(
                 TextButton(onClick = {
                     AppCore.customTools.remove(spec.name)
                     confirmDelete = false
-                    toast(ctx, "已删除 ${spec.name}")
+                    toast(ctx, L("已删除 %s").format(spec.name))
                     onChanged()
                     onBack()
                 }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }

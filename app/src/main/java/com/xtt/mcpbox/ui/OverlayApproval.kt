@@ -59,7 +59,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             if (!canDrawOverlays()) {
                 AppCore.log.add(
                     LogKind.APPROVAL, ok = true,
-                    message = "没有悬浮窗权限，已改用通知栏审批：${request.summary}"
+                    message = L("没有悬浮窗权限，已改用通知栏审批：%s").format(request.summary)
                 )
                 NotificationHelper.postApproval(context, request)
                 return@post
@@ -112,7 +112,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             root = container
             container
         } catch (e: Exception) {
-            AppCore.log.add(LogKind.ERROR, ok = false, message = "悬浮窗创建失败：${e.message}")
+            AppCore.log.add(LogKind.ERROR, ok = false, message = L("悬浮窗创建失败：%s").format(e.message))
             null
         }
     }
@@ -198,7 +198,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
         header.addView(View(context).apply {
             background = rounded(accent, 50f)
         }, LinearLayout.LayoutParams(dp(8), dp(8)).apply { rightMargin = dp(9); gravity = Gravity.CENTER_VERTICAL })
-        header.addView(pill(request.perm.title, p.primary))
+        header.addView(pill(L(request.perm.title), p.primary))
         header.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
         val countdown = TextView(context).apply {
             textSize = 12f
@@ -294,7 +294,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
                     countdown.text = L("已超时")
                     return
                 }
-                countdown.text = "剩余 ${left} 秒"
+                countdown.text = L("剩余 %s 秒").format(left)
                 main.postDelayed(this, 1000)
             }
         }

@@ -203,10 +203,10 @@ fun AboutScreen(
                 RowSpec(
                     title = if (checking) L("正在检查…") else L("检查更新"),
                     subtitle = when (val r = result) {
-                        is UpdateChecker.Result.Newer -> "发现新版本 ${r.info.tag}（当前 v$version）"
+                        is UpdateChecker.Result.Newer -> L("发现新版本 %s（当前 v%s）").format(r.info.tag, version)
                         UpdateChecker.Result.UpToDate -> L("已经是最新版啦")
                         is UpdateChecker.Result.Failed -> r.reason
-                        null -> "当前版本 v$version"
+                        null -> L("当前版本 v%s").format(version)
                     },
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Refresh,
@@ -232,7 +232,7 @@ fun AboutScreen(
                 },
                 (result as? UpdateChecker.Result.Newer)?.let { newer ->
                     RowSpec(
-                        title = "去下载 ${newer.info.tag}",
+                        title = L("去下载 %s").format(newer.info.tag),
                         subtitle = newer.info.url,
                         subtitleMaxLines = 1,
                         icon = Icons.Filled.Share,
@@ -299,13 +299,13 @@ fun AboutScreen(
             CardBox {
                 KeyValue(L("版本"), "v$version")
                 KeyValue(L("设备"), status.device)
-                KeyValue(L("工具数量"), "${status.toolCount} 个（自定义 ${status.customToolCount}）")
+                KeyValue(L("工具数量"), L("%s 个（自定义 %s）").format(status.toolCount, status.customToolCount))
                 KeyValue(L("MCP 协议"), ServerMeta.PROTOCOL)
                 KeyValue(
                     L("Shell 后端"),
                     ShellBackends.available().joinToString("、") { it.label }.ifBlank { L("仅文件操作") }
                 )
-                KeyValue(L("服务状态"), if (status.running) "运行中（端口 ${status.port}）" else "已停止")
+                KeyValue(L("服务状态"), if (status.running) L("运行中（端口 %s）").format(status.port) else L("已停止"))
                 KeyValue(L("允许目录"), status.roots.joinToString("、"))
             }
         }

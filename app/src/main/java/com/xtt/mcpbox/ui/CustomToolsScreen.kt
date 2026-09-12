@@ -70,7 +70,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             }
             true
         }.getOrDefault(false)
-        toast(ctx, if (ok) "已导出 $count 个工具" else "导出失败")
+        toast(ctx, if (ok) L("已导出 %s 个工具").format(count) else "导出失败")
     }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -86,7 +86,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
         }
         runCatching { AppCore.customTools.importJson(text) }
             .onSuccess { toast(ctx, it.message) }
-            .onFailure { e -> toast(ctx, "导入失败：${(e as? ToolFailure)?.message ?: e.message}") }
+            .onFailure { e -> toast(ctx, L("导入失败：%s").format((e as? ToolFailure)?.message ?: e.message)) }
         onChanged()
     }
 
@@ -136,7 +136,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             }
         }
 
-        GroupLabel("已有工具（${tools.size}）")
+        GroupLabel(L("已有工具（%s）").format(tools.size))
         CardGroup(
             rows = buildList {
                 if (tools.isEmpty()) {
@@ -200,8 +200,8 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             onDismiss = { creating = false },
             onSave = { t ->
                 runCatching { AppCore.customTools.add(t) }
-                    .onSuccess { toast(ctx, "已创建 ${it.name}") }
-                    .onFailure { e -> toast(ctx, "保存失败：${(e as? ToolFailure)?.message ?: e.message}") }
+                    .onSuccess { toast(ctx, L("已创建 %s").format(it.name)) }
+                    .onFailure { e -> toast(ctx, L("保存失败：%s").format((e as? ToolFailure)?.message ?: e.message)) }
                 creating = false
                 onChanged()
             }
@@ -215,8 +215,8 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             onDismiss = { editing = null },
             onSave = { t ->
                 runCatching { AppCore.customTools.update(t) }
-                    .onSuccess { toast(ctx, "已保存 ${it.name}") }
-                    .onFailure { e -> toast(ctx, "保存失败：${(e as? ToolFailure)?.message ?: e.message}") }
+                    .onSuccess { toast(ctx, L("已保存 %s").format(it.name)) }
+                    .onFailure { e -> toast(ctx, L("保存失败：%s").format((e as? ToolFailure)?.message ?: e.message)) }
                 editing = null
                 onChanged()
             }
@@ -251,7 +251,7 @@ private fun EditToolDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(if (isNew) L("新建自定义工具") else "编辑 ${tool.name}", fontSize = 19.sp) },
+        title = { Text(if (isNew) L("新建自定义工具") else L("编辑 %s").format(tool.name), fontSize = 19.sp) },
         text = {
             Column(
                 Modifier
@@ -290,7 +290,7 @@ private fun EditToolDialog(
 
                 Spacer(Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("参数（${params.size}）", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                    Text(L("参数（%s）").format(params.size), color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                     Spacer(Modifier.weight(1f))
                     PillButton(L("加一个"), outlined = true, compact = true, color = MaterialTheme.colorScheme.primary) {
                         params = params + CustomToolParam(name = "")

@@ -69,7 +69,7 @@ fun HomeScreen(
         PageHeader(
             title = L("MCP 文件盒"),
             subtitle = if (status.running) {
-                "运行中 · 端口 ${status.port} · ${status.toolCount} 个工具"
+                L("运行中 · 端口 %s · %s 个工具").format(status.port, status.toolCount)
             } else {
                 L("服务未运行 · 打开下面的开关让 AI 连进来")
             },
@@ -84,7 +84,7 @@ fun HomeScreen(
                 add(
                     RowSpec(
                         title = if (status.running) L("服务运行中") else L("服务已停止"),
-                        subtitle = if (status.running) "已运行 ${status.uptimeText} · ${status.sessions} 个会话"
+                        subtitle = if (status.running) L("已运行 %s · %s 个会话").format(status.uptimeText, status.sessions)
                         else L("打开后同一 Wi-Fi 都能连"),
                         icon = Icons.Filled.PlayArrow,
                         onClick = { onToggleService(!status.running) },
@@ -121,7 +121,7 @@ fun HomeScreen(
             CardGroup(
                 NetUtil.endpoints(status.port, token, preferLan = true).map { ep ->
                     RowSpec(
-                        title = ep.label,
+                        title = L(ep.label),
                         subtitle = "${ep.host}:${status.port}" +
                             if (status.tokenEnabled) L(" · 含令牌") else "",
                         icon = Icons.Filled.Share,
@@ -151,7 +151,7 @@ fun HomeScreen(
         }
 
         if (pending.isNotEmpty()) {
-            GroupLabel("待审批（${pending.size}）")
+            GroupLabel(L("待审批（%s）").format(pending.size))
             CardColumn {
                 pending.forEach { req -> PendingCard(req) }
             }
@@ -216,7 +216,7 @@ private fun Chevron() {
 private fun PendingCard(req: ApprovalRequest) {
     CardBox(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TagPill(req.perm.title, permColor(req.perm.id))
+            TagPill(L(req.perm.title), permColor(req.perm.id))
             Spacer(Modifier.width(8.dp))
             Text(
                 req.tool,
@@ -225,7 +225,7 @@ private fun PendingCard(req: ApprovalRequest) {
                 fontFamily = FontFamily.Monospace
             )
             Spacer(Modifier.weight(1f))
-            Text("剩余 ${((req.createdAt + req.timeoutMs - System.currentTimeMillis()) / 1000).coerceAtLeast(0)} 秒",
+            Text(L("剩余 %s 秒").format((req.createdAt + req.timeoutMs - System.currentTimeMillis()) / 1000),
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         }
         Text(
@@ -274,7 +274,7 @@ private fun healthSpec(
     onPermNeed: (PermNeed) -> Unit
 ): RowSpec = RowSpec(
     title = title,
-    subtitle = if (ok) desc else "$desc（未授权）",
+    subtitle = if (ok) desc else L("%s（未授权）").format(desc),
     icon = icon,
     onClick = if (ok) null else ({ onPermNeed(need) }),
     trailing = {
