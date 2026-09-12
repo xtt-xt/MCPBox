@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MCP 文件盒</string>
+    <string name="notif_channel_service">服务器状态</string>
+    <string name="notif_channel_service_desc">显示 MCP 文件服务器的运行状态</string>
+    <string name="notif_channel_approval">操作审批</string>
+    <string name="notif_channel_approval_desc">AI 请求敏感操作时的提醒</string>
+    <string name="notif_channel_message">AI 消息</string>
+    <string name="notif_channel_message_desc">AI 通过 notify_user 发来的通知</string>
+</resources>

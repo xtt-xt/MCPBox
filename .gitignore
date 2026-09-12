@@ -1,0 +1,21 @@
+# 构建产物
+build/
+*/build/
+.gradle/
+captures/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.apk.idsig
+
+# 本地配置 / 密钥（不外传）
+local.properties
+keystore/
+*.keystore
+*.jks
+
+# IDE
+.idea/
+*.iml
+.DS_Store

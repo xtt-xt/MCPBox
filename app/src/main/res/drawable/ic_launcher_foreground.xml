@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 绿色服务器方块 -->
+    <path
+        android:fillColor="#2EA043"
+        android:pathData="M30,26 L78,26 L78,82 L30,82 Z" />
+    <!-- 内部白色代码线条 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,38 L69,38 L69,44 L39,44 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,50 L61,50 L61,56 L39,56 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,62 L69,62 L69,68 L39,68 Z" />
+</vector>
