@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -80,7 +81,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
         }.getOrNull()
         if (text.isNullOrBlank()) {
-            toast(ctx, "读不到文件内容")
+            toast(ctx, L("读不到文件内容"))
             return@rememberLauncherForActivityResult
         }
         runCatching { AppCore.customTools.importJson(text) }
@@ -96,22 +97,22 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             .padding(bottom = 20.dp)
     ) {
         PageHeader(
-            title = "自定义工具",
-            subtitle = "给 AI 造工具：命令模板里用 {{参数名}} 插入参数，创建后自动出现在 tools/list",
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack) }
+            title = L("自定义工具"),
+            subtitle = L("给 AI 造工具：命令模板里用 {{参数名}} 插入参数，创建后自动出现在 tools/list"),
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "新建工具",
-                    subtitle = "填名称、说明和命令模板即可",
+                    title = L("新建工具"),
+                    subtitle = L("填名称、说明和命令模板即可"),
                     icon = Icons.Filled.Add,
                     onClick = { creating = true }
                 ),
                 RowSpec(
-                    title = "让 AI 自己造工具",
-                    subtitle = "直接说「帮我建一个能查磁盘占用的工具」，它会调用 create_custom_tool（要你批准）",
+                    title = L("让 AI 自己造工具"),
+                    subtitle = L("直接说「帮我建一个能查磁盘占用的工具」，它会调用 create_custom_tool（要你批准）"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Info
                 )
@@ -121,13 +122,13 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
         CardColumn {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PillButton(
-                    "导出到文件", Modifier.weight(1f), outlined = true,
+                    L("导出到文件"), Modifier.weight(1f), outlined = true,
                     color = MaterialTheme.colorScheme.primary, compact = true
                 ) {
                     exportLauncher.launch("mcp-tools.json")
                 }
                 PillButton(
-                    "从文件导入", Modifier.weight(1f), outlined = true,
+                    L("从文件导入"), Modifier.weight(1f), outlined = true,
                     color = MaterialTheme.colorScheme.primary, compact = true
                 ) {
                     importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
@@ -141,8 +142,8 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
                 if (tools.isEmpty()) {
                     add(
                         RowSpec(
-                            title = "还没有自定义工具",
-                            subtitle = "例如：du -sh {{path}} → 一个「查目录占用」的工具",
+                            title = L("还没有自定义工具"),
+                            subtitle = L("例如：du -sh {{path}} → 一个「查目录占用」的工具"),
                             subtitleMaxLines = 2,
                             icon = Icons.Filled.Build
                         )
@@ -155,12 +156,12 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
                             subtitle = buildString {
                                 append(tool.name)
                                 if (tool.engineLabel().isNotBlank()) append(" · ").append(tool.engineLabel())
-                                append(" · 运行 ").append(tool.runCount).append(" 次")
+                                append(L(" · 运行 ")).append(tool.runCount).append(L(" 次"))
                             },
                             icon = Icons.Filled.Create,
                             onClick = { editing = tool },
                             trailing = {
-                                RoundIconButton(Icons.Filled.Delete, "删除", tint = Sem.bad, size = 40) {
+                                RoundIconButton(Icons.Filled.Delete, L("删除"), tint = Sem.bad, size = 40) {
                                     AppCore.customTools.remove(tool.id)
                                     onChanged()
                                 }
@@ -171,20 +172,20 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             }
         )
 
-        GroupLabel("说明")
+        GroupLabel(L("说明"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "参数怎么写",
-                    subtitle = "命令里写 {{path}}，AI 调用时会做 shell 转义；写 {{path:raw}} 则原样插入。" +
-                        "必填参数没给会直接报错，不会执行危险命令。",
+                    title = L("参数怎么写"),
+                    subtitle = L("命令里写 {{path}}，AI 调用时会做 shell 转义；写 {{path:raw}} 则原样插入。") +
+                        L("必填参数没给会直接报错，不会执行危险命令。"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Send
                 ),
                 RowSpec(
-                    title = "审批规则",
-                    subtitle = "自定义工具用「执行命令」权限；如果命令以某个词开头（如 du），" +
-                        "你在弹窗里点过「记住此命令」，之后同类命令就不再询问。",
+                    title = L("审批规则"),
+                    subtitle = L("自定义工具用「执行命令」权限；如果命令以某个词开头（如 du），") +
+                        L("你在弹窗里点过「记住此命令」，之后同类命令就不再询问。"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Share
                 )
@@ -226,7 +227,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
 private fun CustomTool.engineLabel(): String = when (backend) {
     "shizuku" -> "Shizuku"
     "root" -> "Root"
-    "app" -> "应用沙箱"
+    "app" -> L("应用沙箱")
     else -> ""
 }
 
@@ -250,7 +251,7 @@ private fun EditToolDialog(
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(if (isNew) "新建自定义工具" else "编辑 ${tool.name}", fontSize = 19.sp) },
+        title = { Text(if (isNew) L("新建自定义工具") else "编辑 ${tool.name}", fontSize = 19.sp) },
         text = {
             Column(
                 Modifier
@@ -259,28 +260,28 @@ private fun EditToolDialog(
             ) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it.trim() },
-                    label = { Text("工具名（英文，如 disk_usage）") },
+                    label = { Text(L("工具名（英文，如 disk_usage）")) },
                     singleLine = true, shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = title, onValueChange = { title = it },
-                    label = { Text("中文标题") },
+                    label = { Text(L("中文标题")) },
                     singleLine = true, shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = description, onValueChange = { description = it },
-                    label = { Text("给 AI 看的说明") },
+                    label = { Text(L("给 AI 看的说明")) },
                     minLines = 2, shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
                     value = command, onValueChange = { command = it },
-                    label = { Text("命令模板，如 du -sh {{path}}") },
+                    label = { Text(L("命令模板，如 du -sh {{path}}")) },
                     minLines = 2,
                     textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
                     shape = RoundedCornerShape(16.dp),
@@ -291,7 +292,7 @@ private fun EditToolDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("参数（${params.size}）", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                     Spacer(Modifier.weight(1f))
-                    PillButton("加一个", outlined = true, compact = true, color = MaterialTheme.colorScheme.primary) {
+                    PillButton(L("加一个"), outlined = true, compact = true, color = MaterialTheme.colorScheme.primary) {
                         params = params + CustomToolParam(name = "")
                     }
                 }
@@ -307,7 +308,7 @@ private fun EditToolDialog(
                             onValueChange = { v ->
                                 params = params.toMutableList().also { it[index] = p.copy(name = v.trim()) }
                             },
-                            placeholder = { Text("名字", fontSize = 12.sp) },
+                            placeholder = { Text(L("名字"), fontSize = 12.sp) },
                             singleLine = true,
                             textStyle = TextStyle(fontSize = 13.sp),
                             shape = RoundedCornerShape(14.dp),
@@ -316,11 +317,11 @@ private fun EditToolDialog(
                         Spacer(Modifier.width(6.dp))
                         PillDropdown(
                             value = when (p.type) {
-                                "integer" -> "整数"
-                                "boolean" -> "开关"
-                                else -> "文本"
+                                "integer" -> L("整数")
+                                "boolean" -> L("开关")
+                                else -> L("文本")
                             },
-                            options = listOf("文本", "整数", "开关")
+                            options = listOf(L("文本"), L("整数"), L("开关"))
                         ) { idx ->
                             params = params.toMutableList().also {
                                 it[index] = p.copy(type = listOf("string", "integer", "boolean")[idx])
@@ -328,36 +329,36 @@ private fun EditToolDialog(
                         }
                         Spacer(Modifier.width(6.dp))
                         PillButton(
-                            if (p.required) "必填" else "可选",
+                            if (p.required) L("必填") else L("可选"),
                             outlined = !p.required,
                             compact = true,
                             color = if (p.required) Sem.warn else MaterialTheme.colorScheme.onSurfaceVariant
                         ) {
                             params = params.toMutableList().also { it[index] = p.copy(required = !p.required) }
                         }
-                        RoundIconButton(Icons.Filled.Delete, "删除", tint = Sem.bad, size = 36) {
+                        RoundIconButton(Icons.Filled.Delete, L("删除"), tint = Sem.bad, size = 36) {
                             params = params.toMutableList().also { it.removeAt(index) }
                         }
                     }
                 }
 
                 Spacer(Modifier.height(14.dp))
-                Text("执行后端", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                Text(L("执行后端"), color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     PillDropdown(
                         value = when (backend) {
                             "shizuku" -> "Shizuku"
                             "root" -> "Root"
-                            "app" -> "应用沙箱"
-                            else -> "自动"
+                            "app" -> L("应用沙箱")
+                            else -> L("自动")
                         },
-                        options = listOf("自动", "Shizuku", "Root", "应用沙箱")
+                        options = listOf(L("自动"), "Shizuku", "Root", L("应用沙箱"))
                     ) { idx ->
                         backend = listOf("auto", "shizuku", "root", "app")[idx]
                     }
                     PillButton(
-                        if (enabled) "已启用" else "已停用",
+                        if (enabled) L("已启用") else L("已停用"),
                         outlined = !enabled, compact = true,
                         color = if (enabled) Sem.ok else MaterialTheme.colorScheme.onSurfaceVariant
                     ) { enabled = !enabled }
@@ -373,11 +374,11 @@ private fun EditToolDialog(
                         backend = backend, enabled = enabled
                     )
                 )
-            }) { Text(if (isNew) "创建" else "保存", color = MaterialTheme.colorScheme.primary) }
+            }) { Text(if (isNew) L("创建") else L("保存"), color = MaterialTheme.colorScheme.primary) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     )

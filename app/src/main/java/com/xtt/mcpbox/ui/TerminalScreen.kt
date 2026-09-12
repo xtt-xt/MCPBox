@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -72,9 +73,9 @@ fun TerminalScreen(
 
     Column(Modifier.fillMaxSize()) {
         PageHeader(
-            title = "终端",
-            subtitle = "AI 用 run_shell 执行命令时也会弹窗审批，可以「始终允许」某条命令",
-            actions = { RoundIconButton(Icons.Filled.Clear, "清屏") { term.clear() } }
+            title = L("终端"),
+            subtitle = L("AI 用 run_shell 执行命令时也会弹窗审批，可以「始终允许」某条命令"),
+            actions = { RoundIconButton(Icons.Filled.Clear, L("清屏")) { term.clear() } }
         )
 
         // 后端 + 状态
@@ -83,10 +84,10 @@ fun TerminalScreen(
             rows = buildList {
                 add(
                     dropdownSpec(
-                        title = if (running) "会话运行中" else "会话未启动",
+                        title = if (running) L("会话运行中") else L("会话未启动"),
                         subtitle = "Shizuku " + ShizukuHelper.statusText(ctx),
                         icon = Icons.Filled.Build,
-                        value = backendLabel.ifBlank { "自动" },
+                        value = backendLabel.ifBlank { L("自动") },
                         options = ShellBackends.all().map { it.label }
                     ) { index ->
                         val launcher = ShellBackends.all().getOrNull(index) ?: return@dropdownSpec
@@ -97,9 +98,9 @@ fun TerminalScreen(
                 if (!shizukuGranted) {
                     add(
                         RowSpec(
-                            title = "申请 Shizuku 授权",
-                            subtitle = if (!ShizukuHelper.isInstalled(ctx)) "还没装 Shizuku，先安装并启动它"
-                            else "拿到 ADB shell 身份后 pm / am / dumpsys 才能用",
+                            title = L("申请 Shizuku 授权"),
+                            subtitle = if (!ShizukuHelper.isInstalled(ctx)) L("还没装 Shizuku，先安装并启动它")
+                            else L("拿到 ADB shell 身份后 pm / am / dumpsys 才能用"),
                             icon = Icons.Filled.Warning,
                             onClick = onRequestShizuku
                         )
@@ -126,7 +127,7 @@ fun TerminalScreen(
                     .padding(14.dp)
             ) {
                 Text(
-                    text.ifBlank { "（还没有输出。输入命令后回车执行）" },
+                    text.ifBlank { L("（还没有输出。输入命令后回车执行）") },
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
@@ -142,7 +143,7 @@ fun TerminalScreen(
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
-                placeholder = { Text("输入命令，回车执行", fontSize = 13.sp) },
+                placeholder = { Text(L("输入命令，回车执行"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
@@ -155,11 +156,11 @@ fun TerminalScreen(
                 }),
                 trailingIcon = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RoundIconButton(Icons.Filled.KeyboardArrowUp, "上一条", size = 36) {
+                        RoundIconButton(Icons.Filled.KeyboardArrowUp, L("上一条"), size = 36) {
                             term.previousCommand()?.let { input = it }
                         }
                         Spacer(Modifier.width(4.dp))
-                        RoundIconButton(Icons.Filled.Send, "执行", tint = MaterialTheme.colorScheme.primary, size = 36) {
+                        RoundIconButton(Icons.Filled.Send, L("执行"), tint = MaterialTheme.colorScheme.primary, size = 36) {
                             if (input.isNotBlank()) {
                                 term.send(input)
                                 input = ""

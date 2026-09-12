@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -62,10 +63,13 @@ class MainActivity : ComponentActivity() {
         AppCore.init(application)
         setContent {
             var themeRev by remember { mutableStateOf(0) }
+            // 切语言时整棵树重建，让所有 L(...) 重新取值
+            var langRev by remember { mutableStateOf(0) }
             val seed = remember(themeRev) { AppCore.prefs.seedColor }
             val style = remember(themeRev) { AppCore.prefs.paletteStyle }
             val darkMode = remember(themeRev) { AppCore.prefs.darkMode }
             val dynColor = remember(themeRev) { AppCore.prefs.dynamicColor }
+            androidx.compose.runtime.key(langRev) {
             MCPBoxTheme(
                 seedArgb = seed,
                 paletteStyleId = style,
@@ -90,8 +94,10 @@ class MainActivity : ComponentActivity() {
                 AppRoot(
                     requestPermission = ::handlePermNeed,
                     onRequestShizuku = ::requestShizuku,
-                    onThemeChanged = { themeRev++ }
+                    onThemeChanged = { themeRev++ },
+                    onLangChanged = { langRev++ }
                 )
+            }
             }
         }
     }
@@ -152,7 +158,8 @@ class MainActivity : ComponentActivity() {
 fun AppRoot(
     requestPermission: (PermNeed) -> Unit,
     onRequestShizuku: () -> Unit,
-    onThemeChanged: () -> Unit
+    onThemeChanged: () -> Unit,
+    onLangChanged: () -> Unit
 ) {
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -226,11 +233,11 @@ fun AppRoot(
                 androidx.compose.material3.TextButton(onClick = {
                     openUrl(ctx, info.url)
                     updateInfo = null
-                }) { androidx.compose.material3.Text("去下载", color = MaterialTheme.colorScheme.primary) }
+                }) { androidx.compose.material3.Text(L("去下载"), color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { updateInfo = null }) {
-                    androidx.compose.material3.Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.material3.Text(L("稍后"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         )
@@ -278,11 +285,11 @@ fun AppRoot(
     } else {
 
     val navItems = listOf(
-        NavItem("首页", Icons.Filled.Home),
-        NavItem("终端", Icons.Filled.Build),
-        NavItem("权限", Icons.Filled.Lock),
-        NavItem("日志", Icons.Filled.List),
-        NavItem("设置", Icons.Filled.Settings)
+        NavItem(L("首页"), Icons.Filled.Home),
+        NavItem(L("终端"), Icons.Filled.Build),
+        NavItem(L("权限"), Icons.Filled.Lock),
+        NavItem(L("日志"), Icons.Filled.List),
+        NavItem(L("设置"), Icons.Filled.Settings)
     )
 
     Scaffold(
@@ -339,6 +346,7 @@ fun AppRoot(
                     status = status,
                     revision = revision,
                     onThemeChanged = onThemeChanged,
+                    onLangChanged = onLangChanged,
                     onOpenTools = { subScreen = "tools" },
                     onOpenAbout = { subScreen = "about" },
                     onChanged = { revision++ },

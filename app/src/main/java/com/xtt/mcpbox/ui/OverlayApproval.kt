@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -251,7 +252,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             append(request.tool)
             request.backend?.let { b -> append(" · ").append(b) }
             request.client?.let { c -> append(" · ").append(c) }
-            append(" · ").append(request.timeoutMs / 1000).append(" 秒未处理自动拒绝")
+            append(" · ").append(request.timeoutMs / 1000).append(L(" 秒未处理自动拒绝"))
         }
         card.addView(textView(meta, 11f, p.textDim).apply { setPadding(0, dp(10), 0, 0) })
 
@@ -261,9 +262,9 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             setPadding(0, dp(16), 0, 0)
         }
         val isCommand = request.command != null
-        row1.addView(button("允许一次", p.primary, p.onPrimary) { resolve(request, ApprovalDecision.ALLOW_ONCE) }, weight())
+        row1.addView(button(L("允许一次"), p.primary, p.onPrimary) { resolve(request, ApprovalDecision.ALLOW_ONCE) }, weight())
         row1.addView(
-            button(if (isCommand) "记住此命令" else "始终允许", blend(p.primary, p.card, 0.16f), p.primary, stroke = null) {
+            button(if (isCommand) L("记住此命令") else L("始终允许"), blend(p.primary, p.card, 0.16f), p.primary, stroke = null) {
                 resolve(request, ApprovalDecision.ALLOW_ALWAYS)
             }, weight(true)
         )
@@ -274,12 +275,12 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             setPadding(0, dp(8), 0, 0)
         }
         row2.addView(
-            button("拒绝", p.cardHigh, p.text, stroke = null) {
+            button(L("拒绝"), p.cardHigh, p.text, stroke = null) {
                 resolve(request, ApprovalDecision.DENY_ONCE)
             }, weight()
         )
         row2.addView(
-            button(if (isCommand) "永久拒绝" else "始终拒绝", Color.TRANSPARENT, p.textDim, stroke = p.outline) {
+            button(if (isCommand) L("永久拒绝") else L("始终拒绝"), Color.TRANSPARENT, p.textDim, stroke = p.outline) {
                 resolve(request, ApprovalDecision.DENY_ALWAYS)
             }, weight(true)
         )
@@ -290,7 +291,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             override fun run() {
                 val left = (endAt - System.currentTimeMillis()) / 1000
                 if (left <= 0) {
-                    countdown.text = "已超时"
+                    countdown.text = L("已超时")
                     return
                 }
                 countdown.text = "剩余 ${left} 秒"

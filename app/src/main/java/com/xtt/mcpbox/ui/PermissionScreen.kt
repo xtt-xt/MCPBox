@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -73,8 +74,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         val cmdRules = remember(revision) { AppCore.permissions.commandRules() }
 
         PageHeader(
-            title = "权限",
-            subtitle = "选「询问」时，AI 每次调用都会弹出悬浮窗让你决定"
+            title = L("权限"),
+            subtitle = L("选「询问」时，AI 每次调用都会弹出悬浮窗让你决定")
         )
 
         // ---------------------------------------------------------- 权限总开关
@@ -101,12 +102,12 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------------- 快捷操作
-        GroupLabel("快捷操作")
+        GroupLabel(L("快捷操作"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "全部允许",
-                    subtitle = "AI 想做什么都不再询问",
+                    title = L("全部允许"),
+                    subtitle = L("AI 想做什么都不再询问"),
                     icon = Icons.Filled.Check,
                     onClick = {
                         AppCore.permissions.setSwitchForAll(PermAction.ALLOW)
@@ -114,8 +115,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     }
                 ),
                 RowSpec(
-                    title = "全部询问",
-                    subtitle = "每个写/删动作都弹窗确认（推荐）",
+                    title = L("全部询问"),
+                    subtitle = L("每个写/删动作都弹窗确认（推荐）"),
                     icon = Icons.Filled.Info,
                     onClick = {
                         AppCore.permissions.setSwitchForAll(PermAction.ASK)
@@ -123,8 +124,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     }
                 ),
                 RowSpec(
-                    title = "全部拒绝",
-                    subtitle = "彻底锁死，AI 只能看服务器状态",
+                    title = L("全部拒绝"),
+                    subtitle = L("彻底锁死，AI 只能看服务器状态"),
                     icon = Icons.Filled.Close,
                     onClick = {
                         AppCore.permissions.setSwitchForAll(PermAction.DENY)
@@ -141,8 +142,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 if (rules.isEmpty()) {
                     add(
                         RowSpec(
-                            title = "给目录单独定规则",
-                            subtitle = "例：Download 目录免审批；放密码/密钥的目录直接拒绝。最长匹配优先。",
+                            title = L("给目录单独定规则"),
+                            subtitle = L("例：Download 目录免审批；放密码/密钥的目录直接拒绝。最长匹配优先。"),
                             subtitleMaxLines = 3,
                             icon = Icons.Filled.Info
                         )
@@ -152,13 +153,13 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                         add(
                             RowSpec(
                                 title = if (rule.perm == "*") "全部权限" else (PermKey.of(rule.perm)?.title ?: rule.perm),
-                                subtitle = rule.target.ifBlank { "（未填写路径）" },
+                                subtitle = rule.target.ifBlank { L("（未填写路径）") },
                                 icon = Icons.Filled.Place,
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         TagPill(rule.actionEnum.label, actionColor(rule.actionEnum))
                                         Spacer(Modifier.width(8.dp))
-                                        RoundIconButton(Icons.Filled.Delete, "删除规则", tint = Sem.bad, size = 40) {
+                                        RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
                                             AppCore.permissions.removeRule(rule.id)
                                             onChanged()
                                         }
@@ -170,8 +171,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 }
                 add(
                     RowSpec(
-                        title = "添加路径规则",
-                        subtitle = "给某个目录单独定允许 / 询问 / 拒绝",
+                        title = L("添加路径规则"),
+                        subtitle = L("给某个目录单独定允许 / 询问 / 拒绝"),
                         icon = Icons.Filled.Add,
                         onClick = { showAdd = true }
                     )
@@ -186,9 +187,9 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 if (cmdRules.isEmpty()) {
                     add(
                         RowSpec(
-                            title = "所有命令都要你点头",
-                            subtitle = "AI 执行命令时会弹窗；点「记住此命令」就会自动生成一条" +
-                                "按命令名前缀匹配的规则，之后同类命令不再询问。",
+                            title = L("所有命令都要你点头"),
+                            subtitle = L("AI 执行命令时会弹窗；点「记住此命令」就会自动生成一条") +
+                                L("按命令名前缀匹配的规则，之后同类命令不再询问。"),
                             subtitleMaxLines = 3,
                             icon = Icons.Filled.Info
                         )
@@ -199,16 +200,16 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                             RowSpec(
                                 title = rule.target,
                                 subtitle = when (rule.match) {
-                                    Rule.MATCH_EXACT -> "完全匹配"
-                                    Rule.MATCH_REGEX -> "正则匹配"
-                                    else -> "前缀匹配"
+                                    Rule.MATCH_EXACT -> L("完全匹配")
+                                    Rule.MATCH_REGEX -> L("正则匹配")
+                                    else -> L("前缀匹配")
                                 },
                                 icon = Icons.Filled.Build,
                                 trailing = {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         TagPill(rule.actionEnum.label, actionColor(rule.actionEnum))
                                         Spacer(Modifier.width(8.dp))
-                                        RoundIconButton(Icons.Filled.Delete, "删除规则", tint = Sem.bad, size = 40) {
+                                        RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
                                             AppCore.permissions.removeRule(rule.id)
                                             onChanged()
                                         }
@@ -220,8 +221,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 }
                 add(
                     RowSpec(
-                        title = "添加命令规则",
-                        subtitle = "手动给某条命令定允许 / 询问 / 拒绝",
+                        title = L("添加命令规则"),
+                        subtitle = L("手动给某条命令定允许 / 询问 / 拒绝"),
                         icon = Icons.Filled.Add,
                         onClick = { showAddCommand = true }
                     )
@@ -230,12 +231,12 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------------- 安全选项
-        GroupLabel("安全选项")
+        GroupLabel(L("安全选项"))
         CardGroup(
             listOf(
                 switchSpec(
-                    title = "只读模式",
-                    subtitle = "打开后所有写入/删除都会被直接拒绝",
+                    title = L("只读模式"),
+                    subtitle = L("打开后所有写入/删除都会被直接拒绝"),
                     icon = Icons.Filled.Lock,
                     checked = AppCore.config.readOnly
                 ) {
@@ -244,8 +245,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     onChanged()
                 },
                 switchSpec(
-                    title = "删除进回收站",
-                    subtitle = "AI 删除的文件先放到 .MCPBox/trash，随时能还原",
+                    title = L("删除进回收站"),
+                    subtitle = L("AI 删除的文件先放到 .MCPBox/trash，随时能还原"),
                     icon = Icons.Filled.Refresh,
                     checked = AppCore.config.trashEnabled
                 ) {
@@ -254,8 +255,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     onChanged()
                 },
                 switchSpec(
-                    title = "不限制目录",
-                    subtitle = "允许访问整机（危险；系统目录仍受保护）",
+                    title = L("不限制目录"),
+                    subtitle = L("允许访问整机（危险；系统目录仍受保护）"),
                     icon = Icons.Filled.Warning,
                     checked = AppCore.config.fullAccess
                 ) {
@@ -267,19 +268,19 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------- 应用私有目录
-        GroupLabel("应用私有目录")
+        GroupLabel(L("应用私有目录"))
         val privateMode = AppCore.config.privateAccess
         CardGroup(
             listOf(
                 dropdownSpec(
-                    title = "私有目录访问",
+                    title = L("私有目录访问"),
                     subtitle = when (privateMode) {
-                        "read" -> "只能读 /data/data 里的内容"
-                        "full" -> "读、写、删都可以（危险）"
-                        else -> "已禁止，AI 看不到应用私有数据"
+                        "read" -> L("只能读 /data/data 里的内容")
+                        "full" -> L("读、写、删都可以（危险）")
+                        else -> L("已禁止，AI 看不到应用私有数据")
                     },
                     icon = Icons.Filled.Lock,
-                    options = listOf("禁止", "只读", "可读写"),
+                    options = listOf(L("禁止"), L("只读"), L("可读写")),
                     selectedIndex = listOf("off", "read", "full").indexOf(privateMode).coerceAtLeast(0)
                 ) { index ->
                     AppCore.config.privateAccess = listOf("off", "read", "full")[index]
@@ -287,10 +288,10 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     onChanged()
                 },
                 RowSpec(
-                    title = "怎么生效",
-                    subtitle = "应用自己读不了别家私有目录，所以开启后会通过 " +
+                    title = L("怎么生效"),
+                    subtitle = L("应用自己读不了别家私有目录，所以开启后会通过 ") +
                         AppCore.server.bridge.privilegedLabel +
-                        " 转发；想只放开某一个应用，可以在下面加路径规则（例：/data/data/包名）。",
+                        L(" 转发；想只放开某一个应用，可以在下面加路径规则（例：/data/data/包名）。"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Info
                 )
@@ -298,19 +299,19 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         // ---------------------------------------------------------- 目录
-        GroupLabel("允许访问的目录")
+        GroupLabel(L("允许访问的目录"))
         CardGroup(
             rows = buildList {
                 AppCore.config.roots.forEachIndexed { index, root ->
                     add(
                         RowSpec(
                             title = root,
-                            subtitle = if (index == 0) "默认目录（相对路径基于它）" else null,
+                            subtitle = if (index == 0) L("默认目录（相对路径基于它）") else null,
                             icon = Icons.Filled.List,
                             trailing = {
-                                RoundIconButton(Icons.Filled.Delete, "移除", tint = Sem.bad, size = 40) {
+                                RoundIconButton(Icons.Filled.Delete, L("移除"), tint = Sem.bad, size = 40) {
                                     if (AppCore.config.roots.size <= 1) {
-                                        toast(ctx, "至少要保留一个目录")
+                                        toast(ctx, L("至少要保留一个目录"))
                                     } else {
                                         AppCore.config.roots = AppCore.config.roots.filterNot { it == root }
                                         AppCore.saveConfig()
@@ -323,8 +324,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 }
                 add(
                     RowSpec(
-                        title = "添加目录",
-                        subtitle = "点「添加路径规则」旁边的 +，也可以在路径规则里直接写",
+                        title = L("添加目录"),
+                        subtitle = L("点「添加路径规则」旁边的 +，也可以在路径规则里直接写"),
                         icon = Icons.Filled.Add,
                         onClick = { showAdd = true }
                     )
@@ -332,13 +333,13 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
             }
         )
 
-        GroupLabel("文件进出通道")
+        GroupLabel(L("文件进出通道"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "网页上传 / 下载",
+                    title = L("网页上传 / 下载"),
                     subtitle = "浏览器打开 http://127.0.0.1:${AppCore.config.port}/upload 就能往手机传文件；" +
-                        "外部程序也能用 POST /upload、GET /download（要带 token）",
+                        L("外部程序也能用 POST /upload、GET /download（要带 token）"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Share
                 )
@@ -417,10 +418,10 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("添加路径规则", fontSize = 20.sp) },
+        title = { Text(L("添加路径规则"), fontSize = 20.sp) },
         text = {
             Column {
-                Text("权限类型", fontSize = 13.sp)
+                Text(L("权限类型"), fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermKey.entries.forEach { key ->
@@ -435,13 +436,13 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
                 OutlinedTextField(
                     value = path,
                     onValueChange = { path = it },
-                    label = { Text("目录或文件（前缀匹配）") },
+                    label = { Text(L("目录或文件（前缀匹配）")) },
                     singleLine = true,
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(16.dp))
-                Text("动作", fontSize = 13.sp)
+                Text(L("动作"), fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermAction.entries.forEach { a ->
@@ -449,7 +450,7 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("常用目录", fontSize = 13.sp)
+                Text(L("常用目录"), fontSize = 13.sp)
                 Spacer(Modifier.height(6.dp))
                 DefaultRootsHolder.suggestions().take(5).forEach { s ->
                     Text(
@@ -468,12 +469,12 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
         },
         confirmButton = {
             TextButton(onClick = { onAdd(permId, path.trim(), action) }) {
-                Text("添加", color = MaterialTheme.colorScheme.primary)
+                Text(L("添加"), color = MaterialTheme.colorScheme.primary)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     )
@@ -494,34 +495,34 @@ private fun AddCommandRuleDialog(
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("添加命令规则", fontSize = 20.sp) },
+        title = { Text(L("添加命令规则"), fontSize = 20.sp) },
         text = {
             Column {
                 OutlinedTextField(
                     value = command,
                     onValueChange = { command = it },
-                    label = { Text("命令，如 pm 或 ^dd if=") },
+                    label = { Text(L("命令，如 pm 或 ^dd if=")) },
                     singleLine = true,
                     textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(14.dp))
-                Text("匹配方式", fontSize = 13.sp)
+                Text(L("匹配方式"), fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ChoiceChip("前缀", match == Rule.MATCH_PREFIX, MaterialTheme.colorScheme.primary) {
+                    ChoiceChip(L("前缀"), match == Rule.MATCH_PREFIX, MaterialTheme.colorScheme.primary) {
                         match = Rule.MATCH_PREFIX
                     }
-                    ChoiceChip("完全匹配", match == Rule.MATCH_EXACT, MaterialTheme.colorScheme.primary) {
+                    ChoiceChip(L("完全匹配"), match == Rule.MATCH_EXACT, MaterialTheme.colorScheme.primary) {
                         match = Rule.MATCH_EXACT
                     }
-                    ChoiceChip("正则", match == Rule.MATCH_REGEX, MaterialTheme.colorScheme.primary) {
+                    ChoiceChip(L("正则"), match == Rule.MATCH_REGEX, MaterialTheme.colorScheme.primary) {
                         match = Rule.MATCH_REGEX
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                Text("动作", fontSize = 13.sp)
+                Text(L("动作"), fontSize = 13.sp)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PermAction.entries.forEach { a ->
@@ -529,17 +530,17 @@ private fun AddCommandRuleDialog(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Text("例：填「pm」+ 前缀 + 允许 → AI 以后执行 pm 开头的命令就不再问你。", fontSize = 12.sp)
+                Text(L("例：填「pm」+ 前缀 + 允许 → AI 以后执行 pm 开头的命令就不再问你。"), fontSize = 12.sp)
             }
         },
         confirmButton = {
             TextButton(onClick = { if (command.isNotBlank()) onAdd(command.trim(), match, action) }) {
-                Text("添加", color = MaterialTheme.colorScheme.primary)
+                Text(L("添加"), color = MaterialTheme.colorScheme.primary)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     )

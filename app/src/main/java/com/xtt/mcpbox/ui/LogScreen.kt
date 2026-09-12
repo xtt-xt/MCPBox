@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,7 +55,7 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
             .padding(bottom = 20.dp)
     ) {
         PageHeader(
-            title = "日志",
+            title = L("日志"),
             subtitle = "最近 ${logs.size} 条调用与审批记录"
         )
 
@@ -65,11 +66,11 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ChoiceChip("全部", filter == null, MaterialTheme.colorScheme.primary) { filter = null }
-            ChoiceChip("调用", filter == LogKind.REQUEST, Sem.info) { filter = LogKind.REQUEST }
-            ChoiceChip("审批", filter == LogKind.APPROVAL, Sem.warn) { filter = LogKind.APPROVAL }
-            ChoiceChip("连接", filter == LogKind.CONNECT, Sem.ok) { filter = LogKind.CONNECT }
-            ChoiceChip("错误", filter == LogKind.ERROR, Sem.bad) { filter = LogKind.ERROR }
+            ChoiceChip(L("全部"), filter == null, MaterialTheme.colorScheme.primary) { filter = null }
+            ChoiceChip(L("调用"), filter == LogKind.REQUEST, Sem.info) { filter = LogKind.REQUEST }
+            ChoiceChip(L("审批"), filter == LogKind.APPROVAL, Sem.warn) { filter = LogKind.APPROVAL }
+            ChoiceChip(L("连接"), filter == LogKind.CONNECT, Sem.ok) { filter = LogKind.CONNECT }
+            ChoiceChip(L("错误"), filter == LogKind.ERROR, Sem.bad) { filter = LogKind.ERROR }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -88,16 +89,16 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
             if (shown.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton(
-                        "复制全部", Modifier.weight(1f), outlined = true,
+                        L("复制全部"), Modifier.weight(1f), outlined = true,
                         color = MaterialTheme.colorScheme.primary
                     ) {
                         val text = shown.joinToString("\n") {
                             "${fmt.format(Date(it.time))} [${it.kind.label}] ${it.tool ?: ""} " +
                                 "${it.path ?: ""} ${it.message}"
                         }
-                        copyText(ctx, text, "日志已复制")
+                        copyText(ctx, text, L("日志已复制"))
                     }
-                    PillButton("清空日志", Modifier.weight(1f), outlined = true, color = Sem.bad) {
+                    PillButton(L("清空日志"), Modifier.weight(1f), outlined = true, color = Sem.bad) {
                         AppCore.log.clear()
                         onChanged()
                     }

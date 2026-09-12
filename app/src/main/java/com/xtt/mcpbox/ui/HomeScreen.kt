@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,25 +67,25 @@ fun HomeScreen(
             .padding(bottom = 20.dp)
     ) {
         PageHeader(
-            title = "MCP 文件盒",
+            title = L("MCP 文件盒"),
             subtitle = if (status.running) {
                 "运行中 · 端口 ${status.port} · ${status.toolCount} 个工具"
             } else {
-                "服务未运行 · 打开下面的开关让 AI 连进来"
+                L("服务未运行 · 打开下面的开关让 AI 连进来")
             },
             actions = {
-                RoundIconButton(Icons.Filled.Refresh, "重启服务") { onRestartService() }
+                RoundIconButton(Icons.Filled.Refresh, L("重启服务")) { onRestartService() }
             }
         )
 
-        GroupLabel("服务")
+        GroupLabel(L("服务"))
         CardGroup(
             rows = buildList {
                 add(
                     RowSpec(
-                        title = if (status.running) "服务运行中" else "服务已停止",
+                        title = if (status.running) L("服务运行中") else L("服务已停止"),
                         subtitle = if (status.running) "已运行 ${status.uptimeText} · ${status.sessions} 个会话"
-                        else "打开后同一 Wi-Fi 都能连",
+                        else L("打开后同一 Wi-Fi 都能连"),
                         icon = Icons.Filled.PlayArrow,
                         onClick = { onToggleService(!status.running) },
                         trailing = {
@@ -103,7 +104,7 @@ fun HomeScreen(
                 status.lastError?.let {
                     add(
                         RowSpec(
-                            title = "启动失败",
+                            title = L("启动失败"),
                             subtitle = it,
                             subtitleMaxLines = 2,
                             icon = Icons.Filled.Warning,
@@ -115,25 +116,25 @@ fun HomeScreen(
         )
 
         if (status.running) {
-            GroupLabel("连接地址")
+            GroupLabel(L("连接地址"))
             val token = if (status.tokenEnabled) status.token else null
             CardGroup(
                 NetUtil.endpoints(status.port, token, preferLan = true).map { ep ->
                     RowSpec(
                         title = ep.label,
                         subtitle = "${ep.host}:${status.port}" +
-                            if (status.tokenEnabled) " · 含令牌" else "",
+                            if (status.tokenEnabled) L(" · 含令牌") else "",
                         icon = Icons.Filled.Share,
-                        onClick = { copyText(ctx, ep.url, "连接地址已复制") },
+                        onClick = { copyText(ctx, ep.url, L("连接地址已复制")) },
                         trailing = {
-                            PillButton("复制", outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
-                                copyText(ctx, ep.url, "连接地址已复制")
+                            PillButton(L("复制"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
+                                copyText(ctx, ep.url, L("连接地址已复制"))
                             }
                         }
                     )
                 } + RowSpec(
-                    title = "网页控制台",
-                    subtitle = "在浏览器里试工具、处理审批",
+                    title = L("网页控制台"),
+                    subtitle = L("在浏览器里试工具、处理审批"),
                     icon = Icons.Filled.Star,
                     onClick = {
                         openUrl(
@@ -156,46 +157,46 @@ fun HomeScreen(
             }
         }
 
-        GroupLabel("环境检查")
+        GroupLabel(L("环境检查"))
         CardGroup(
             listOf(
                 healthSpec(
-                    "文件访问权限", host.hasAllFilesAccess(), "AI 才能读写手机文件",
+                    L("文件访问权限"), host.hasAllFilesAccess(), L("AI 才能读写手机文件"),
                     Icons.Filled.List, PermNeed.STORAGE, onPermNeed
                 ),
                 healthSpec(
-                    "悬浮窗权限", host.canDrawOverlays(), "审批弹窗显示在所有应用之上",
+                    L("悬浮窗权限"), host.canDrawOverlays(), L("审批弹窗显示在所有应用之上"),
                     Icons.Filled.Lock, PermNeed.OVERLAY, onPermNeed
                 ),
                 healthSpec(
-                    "通知权限", host.hasNotificationPermission(), "显示运行状态与审批提醒",
+                    L("通知权限"), host.hasNotificationPermission(), L("显示运行状态与审批提醒"),
                     Icons.Filled.Notifications, PermNeed.NOTIFICATION, onPermNeed
                 ),
                 healthSpec(
-                    "忽略电池优化", host.isIgnoringBatteryOptimizations(), "防止后台被系统清掉",
+                    L("忽略电池优化"), host.isIgnoringBatteryOptimizations(), L("防止后台被系统清掉"),
                     Icons.Filled.Warning, PermNeed.BATTERY, onPermNeed
                 )
             )
         )
 
-        GroupLabel("运行统计")
+        GroupLabel(L("运行统计"))
         CardColumn {
             CardBox {
                 Row(Modifier.fillMaxWidth()) {
-                    StatCell("请求", status.total.toString(), Modifier.weight(1f))
-                    StatCell("允许", status.ok.toString(), Modifier.weight(1f))
-                    StatCell("失败", status.failed.toString(), Modifier.weight(1f))
+                    StatCell(L("请求"), status.total.toString(), Modifier.weight(1f))
+                    StatCell(L("允许"), status.ok.toString(), Modifier.weight(1f))
+                    StatCell(L("失败"), status.failed.toString(), Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth()) {
-                    StatCell("审批", status.approvals.toString(), Modifier.weight(1f))
-                    StatCell("拒绝", status.denied.toString(), Modifier.weight(1f))
-                    StatCell("在线会话", status.sessions.toString(), Modifier.weight(1f))
+                    StatCell(L("审批"), status.approvals.toString(), Modifier.weight(1f))
+                    StatCell(L("拒绝"), status.denied.toString(), Modifier.weight(1f))
+                    StatCell(L("在线会话"), status.sessions.toString(), Modifier.weight(1f))
                 }
             }
         }
 
-        GroupLabel("接入 AI 客户端")
+        GroupLabel(L("接入 AI 客户端"))
         CardColumn {
             GuideCard(ctx, status)
         }
@@ -244,18 +245,18 @@ private fun PendingCard(req: ApprovalRequest) {
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             PillButton(
-                "允许一次", Modifier.weight(1f), color = Sem.ok,
+                L("允许一次"), Modifier.weight(1f), color = Sem.ok,
                 contentColor = androidx.compose.ui.graphics.Color(0xFF06210D), compact = true
             ) {
                 AppCore.approval.resolve(req.id, ApprovalDecision.ALLOW_ONCE)
             }
             PillButton(
-                "始终允许", Modifier.weight(1f), outlined = true, color = Sem.ok, compact = true
+                L("始终允许"), Modifier.weight(1f), outlined = true, color = Sem.ok, compact = true
             ) {
                 AppCore.approval.resolve(req.id, ApprovalDecision.ALLOW_ALWAYS)
             }
             PillButton(
-                "拒绝", Modifier.weight(1f), outlined = true, color = Sem.bad, compact = true
+                L("拒绝"), Modifier.weight(1f), outlined = true, color = Sem.bad, compact = true
             ) {
                 AppCore.approval.resolve(req.id, ApprovalDecision.DENY_ONCE)
             }
@@ -278,9 +279,9 @@ private fun healthSpec(
     onClick = if (ok) null else ({ onPermNeed(need) }),
     trailing = {
         if (ok) {
-            OutlineTag("已就绪", MaterialTheme.colorScheme.tertiary)
+            OutlineTag(L("已就绪"), MaterialTheme.colorScheme.tertiary)
         } else {
-            PillButton("授权", outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) { onPermNeed(need) }
+            PillButton(L("授权"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) { onPermNeed(need) }
         }
     }
 )
@@ -302,19 +303,19 @@ private fun GuideCard(ctx: Context, status: McpServer.ServerStatus) {
 """.trimIndent()
     CardBox {
         Text(
-            "把这个填进支持 MCP 的客户端",
+            L("把这个填进支持 MCP 的客户端"),
             color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "Cherry Studio / 支持 Streamable HTTP 的客户端；Claude Desktop 用 npx -y mcp-remote <地址>",
+            L("Cherry Studio / 支持 Streamable HTTP 的客户端；Claude Desktop 用 npx -y mcp-remote <地址>"),
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
         )
         Spacer(Modifier.height(12.dp))
         CodeBlock(snippet)
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PillButton("复制配置", Modifier.weight(1f)) { copyText(ctx, snippet, "MCP 配置已复制") }
+            PillButton(L("复制配置"), Modifier.weight(1f)) { copyText(ctx, snippet, L("MCP 配置已复制")) }
         }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -325,7 +326,7 @@ private fun GuideCard(ctx: Context, status: McpServer.ServerStatus) {
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                "读取默认允许；写入/删除会弹窗问你，可以选「始终允许」不再打扰。",
+                L("读取默认允许；写入/删除会弹窗问你，可以选「始终允许」不再打扰。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
             )
         }

@@ -78,6 +78,14 @@ object AppCore {
             host = AndroidHost(application, config)
             customTools = CustomToolStore(config, prefs)
 
+            // 语言：跟随系统时，系统语言不是中文就按英文走
+            val sysLang = java.util.Locale.getDefault().language
+            com.xtt.mcpbox.i18n.Lang.init(
+                ctx = application,
+                langId = prefs.appLang,
+                englishOnly = sysLang != "zh"
+            )
+
             // Shell 环境 + 三个执行后端
             ShellEnv.home = runCatching { Environment.getExternalStorageDirectory().absolutePath }
                 .getOrElse { application.filesDir.absolutePath }

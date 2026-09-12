@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -137,12 +138,12 @@ private fun ToolListPage(
             .padding(bottom = 24.dp)
     ) {
         PageHeader(
-            title = "工具管理",
+            title = L("工具管理"),
             subtitle = "共 ${all.size} 个 · 禁用 $disabledCount · 单独设权限 $overrideCount",
             actions = {
-                RoundIconButton(Icons.Filled.Add, "新建自定义工具", onClick = onCreate)
+                RoundIconButton(Icons.Filled.Add, L("新建自定义工具"), onClick = onCreate)
                 Spacer(Modifier.width(8.dp))
-                RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack)
+                RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
             }
         )
 
@@ -151,7 +152,7 @@ private fun ToolListPage(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("搜索工具名 / 说明", fontSize = 13.sp) },
+                placeholder = { Text(L("搜索工具名 / 说明"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 leadingIcon = {
@@ -176,8 +177,8 @@ private fun ToolListPage(
         Spacer(Modifier.height(14.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
             Text(
-                "右上角的 + 可以新建自定义工具；禁用的工具不会出现在 AI 的 tools/list 里，" +
-                    "也调不动；「单独设权限」只针对某个工具，不影响别的工具。",
+                L("右上角的 + 可以新建自定义工具；禁用的工具不会出现在 AI 的 tools/list 里，") +
+                    L("也调不动；「单独设权限」只针对某个工具，不影响别的工具。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 17.sp
@@ -193,9 +194,9 @@ private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) 
     val subtitle = buildString {
         append(spec.title)
         val tags = mutableListOf<String>()
-        if (disabled) tags.add("已禁用")
+        if (disabled) tags.add(L("已禁用"))
         if (override != null) tags.add(ToolPolicy.label(override))
-        if (spec.name !in builtinNames) tags.add("自定义")
+        if (spec.name !in builtinNames) tags.add(L("自定义"))
         if (tags.isNotEmpty()) append(" · ").append(tags.joinToString(" / "))
     }
     return RowSpec(
@@ -211,7 +212,7 @@ private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) 
         },
         onClick = { onOpen(spec.name) },
         trailing = {
-            if (disabled) OutlineTag("已禁用", MaterialTheme.colorScheme.outline)
+            if (disabled) OutlineTag(L("已禁用"), MaterialTheme.colorScheme.outline)
             else if (override != null) OutlineTag(ToolPolicy.label(override), MaterialTheme.colorScheme.primary)
         }
     )
@@ -232,9 +233,9 @@ private fun ToolDetailPage(
         // 工具可能在别处被删了
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
             PageHeader(
-                title = "工具不存在",
-                subtitle = "它可能已经被删掉了",
-                actions = { RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack) }
+                title = L("工具不存在"),
+                subtitle = L("它可能已经被删掉了"),
+                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
             )
         }
         return
@@ -255,16 +256,16 @@ private fun ToolDetailPage(
         PageHeader(
             title = spec.name,
             subtitle = spec.title,
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack) }
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
-        GroupLabel("状态")
+        GroupLabel(L("状态"))
         CardGroup(
             listOf(
                 switchSpec(
-                    title = "启用这个工具",
-                    subtitle = if (disabled) "当前已禁用：AI 看不到它也调不动"
-                    else "AI 可以在 tools/list 里看到并调用它",
+                    title = L("启用这个工具"),
+                    subtitle = if (disabled) L("当前已禁用：AI 看不到它也调不动")
+                    else L("AI 可以在 tools/list 里看到并调用它"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Build,
                     checked = !disabled
@@ -276,14 +277,14 @@ private fun ToolDetailPage(
             )
         )
 
-        GroupLabel("单独权限")
+        GroupLabel(L("单独权限"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "权限",
+                    title = L("权限"),
                     subtitle = when (override) {
-                        ToolPolicy.ALLOW -> "这个工具的所有操作直接放行，不弹审批"
-                        ToolPolicy.DENY -> "无论全局怎么设，这个工具一律拒绝"
+                        ToolPolicy.ALLOW -> L("这个工具的所有操作直接放行，不弹审批")
+                        ToolPolicy.DENY -> L("无论全局怎么设，这个工具一律拒绝")
                         else -> "跟随全局权限矩阵（${spec.perm.title}）"
                     },
                     subtitleMaxLines = 2,
@@ -291,9 +292,9 @@ private fun ToolDetailPage(
                     trailing = {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             listOf(
-                                ToolPolicy.ALLOW to "允许",
-                                ToolPolicy.ASK to "询问",
-                                ToolPolicy.DENY to "禁止"
+                                ToolPolicy.ALLOW to L("允许"),
+                                ToolPolicy.ASK to L("询问"),
+                                ToolPolicy.DENY to L("禁止")
                             ).forEach { (value, text) ->
                                 val active = (override ?: ToolPolicy.ASK) == value
                                 PillButton(
@@ -314,21 +315,21 @@ private fun ToolDetailPage(
             )
         )
 
-        GroupLabel("详情")
+        GroupLabel(L("详情"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "权限分类",
+                    title = L("权限分类"),
                     subtitle = spec.perm.title,
                     icon = Icons.Filled.Info
                 ),
                 RowSpec(
-                    title = "来源",
-                    subtitle = if (builtin) "内置工具" else "自定义工具",
+                    title = L("来源"),
+                    subtitle = if (builtin) L("内置工具") else L("自定义工具"),
                     icon = Icons.Filled.Info
                 ),
                 if (custom != null) RowSpec(
-                    title = "命令模板",
+                    title = L("命令模板"),
                     subtitle = custom.command,
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Build
@@ -350,7 +351,7 @@ private fun ToolDetailPage(
             Spacer(Modifier.height(18.dp))
             Column(Modifier.padding(horizontal = 14.dp)) {
                 PillButton(
-                    "删除这个工具",
+                    L("删除这个工具"),
                     Modifier.fillMaxWidth(),
                     outlined = true,
                     color = MaterialTheme.colorScheme.error
@@ -376,7 +377,7 @@ private fun ToolDetailPage(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { Text("删除工具", fontSize = 20.sp) },
+            title = { Text(L("删除工具"), fontSize = 20.sp) },
             text = {
                 Text(
                     "确定删除「${spec.title}」吗？删除后 AI 就调不到它了。",
@@ -391,11 +392,11 @@ private fun ToolDetailPage(
                     toast(ctx, "已删除 ${spec.name}")
                     onChanged()
                     onBack()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) {
-                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         )
@@ -404,4 +405,4 @@ private fun ToolDetailPage(
 
 /** 参数名列表，展示用。 */
 private fun paramNames(spec: ToolSpec): String =
-    spec.paramNames.joinToString(", ").ifBlank { "无" }
+    spec.paramNames.joinToString(", ").ifBlank { L("无") }

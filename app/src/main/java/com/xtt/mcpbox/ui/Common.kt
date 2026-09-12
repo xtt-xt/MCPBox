@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -64,7 +65,7 @@ import androidx.compose.ui.window.Dialog
 
 /* ------------------------------------------------------------------ 小工具 */
 
-fun copyText(context: Context, text: String, label: String = "已复制") {
+fun copyText(context: Context, text: String, label: String = L("已复制")) {
     runCatching {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText("mcpbox", text))

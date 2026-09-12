@@ -28,6 +28,7 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_DARK_MODE = "dark_mode"
         const val KEY_UPDATE_DAILY = "update_check_daily"
         const val KEY_UPDATE_LAST = "update_check_last"
+        const val KEY_APP_LANG = "app_lang"
         const val KEY_FIRST_RUN = "first_run_done"
     }
 
@@ -87,6 +88,11 @@ class Prefs(context: Context) : SettingsSource {
     var updateCheckDaily: Boolean
         get() = getBoolean(KEY_UPDATE_DAILY, true)
         set(value) = putBoolean(KEY_UPDATE_DAILY, value)
+
+    /** 界面语言：system / zh / en / 以及导入语言包的 id。 */
+    var appLang: String
+        get() = getString(KEY_APP_LANG, "system") ?: "system"
+        set(value) = putString(KEY_APP_LANG, value)
 
     /** 上次检查更新的日期（yyyy-MM-dd），用来做「每天一次」。 */
     var lastUpdateCheck: String

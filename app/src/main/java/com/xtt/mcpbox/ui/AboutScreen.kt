@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox.ui
 
+import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -95,9 +96,9 @@ fun AboutScreen(
             .padding(bottom = 24.dp)
     ) {
         PageHeader(
-            title = "关于",
+            title = L("关于"),
             subtitle = "v$version · ${AppCore.deviceLabel()}",
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack) }
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
         // ------------------------------------------------ 应用信息
@@ -125,7 +126,7 @@ fun AboutScreen(
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                "MCP 文件盒",
+                L("MCP 文件盒"),
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 22.sp
             )
@@ -138,32 +139,32 @@ fun AboutScreen(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                "把手机变成一台 MCP 文件服务器",
+                L("把手机变成一台 MCP 文件服务器"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.5.sp
             )
         }
 
         // ------------------------------------------------ 开发者 / 更新
-        GroupLabel("开发者")
+        GroupLabel(L("开发者"))
         CardGroup(
             listOf(
                 RowSpec(
                     title = "xtt",
-                    subtitle = "个人项目 · 使用 GPL-3.0 许可",
+                    subtitle = L("个人项目 · 使用 GPL-3.0 许可"),
                     icon = Icons.Filled.Star
                 )
             )
         )
 
-        GroupLabel("更新")
+        GroupLabel(L("更新"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = if (checking) "正在检查…" else "检查更新",
+                    title = if (checking) L("正在检查…") else L("检查更新"),
                     subtitle = when (val r = result) {
                         is UpdateChecker.Result.Newer -> "发现新版本 ${r.info.tag}（当前 v$version）"
-                        UpdateChecker.Result.UpToDate -> "已经是最新版啦"
+                        UpdateChecker.Result.UpToDate -> L("已经是最新版啦")
                         is UpdateChecker.Result.Failed -> r.reason
                         null -> "当前版本 v$version"
                     },
@@ -172,7 +173,7 @@ fun AboutScreen(
                     onClick = { runCheck() },
                     trailing = {
                         PillButton(
-                            if (checking) "检查中" else "检查",
+                            if (checking) L("检查中") else L("检查"),
                             outlined = true,
                             compact = true,
                             color = MaterialTheme.colorScheme.primary
@@ -180,8 +181,8 @@ fun AboutScreen(
                     }
                 ),
                 switchSpec(
-                    title = "每天自动检查一次",
-                    subtitle = "打开 App 时（当天还没查过）自动看一眼有没有新版本",
+                    title = L("每天自动检查一次"),
+                    subtitle = L("打开 App 时（当天还没查过）自动看一眼有没有新版本"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     checked = AppCore.prefs.updateCheckDaily
@@ -200,7 +201,7 @@ fun AboutScreen(
                 },
                 (result as? UpdateChecker.Result.Failed)?.let {
                     RowSpec(
-                        title = "手动打开 Releases 页面",
+                        title = L("手动打开 Releases 页面"),
                         subtitle = UpdateChecker.RELEASES_URL,
                         subtitleMaxLines = 1,
                         icon = Icons.Filled.Share,
@@ -211,18 +212,18 @@ fun AboutScreen(
         )
 
         // ------------------------------------------------ 开源
-        GroupLabel("开源")
+        GroupLabel(L("开源"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = "GitHub 仓库",
+                    title = L("GitHub 仓库"),
                     subtitle = UpdateChecker.REPO_URL,
                     subtitleMaxLines = 1,
                     icon = Icons.Filled.Share,
                     onClick = { openUrl(ctx, UpdateChecker.REPO_URL) }
                 ),
                 RowSpec(
-                    title = "许可证",
+                    title = L("许可证"),
                     subtitle = "GNU General Public License v3.0",
                     icon = Icons.Filled.Info,
                     onClick = { openUrl(ctx, "https://www.gnu.org/licenses/gpl-3.0.html") }
@@ -230,7 +231,7 @@ fun AboutScreen(
             )
         )
 
-        GroupLabel("开源鸣谢")
+        GroupLabel(L("开源鸣谢"))
         CardGroup(
             CREDITS.map { credit ->
                 RowSpec(
@@ -245,27 +246,27 @@ fun AboutScreen(
         Spacer(Modifier.height(8.dp))
         Column(Modifier.padding(horizontal = 22.dp)) {
             Text(
-                "感谢这些开源项目，MCP 文件盒才能做得这么轻。",
+                L("感谢这些开源项目，MCP 文件盒才能做得这么轻。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
             )
         }
 
         // ------------------------------------------------ 运行环境
-        GroupLabel("运行环境")
+        GroupLabel(L("运行环境"))
         val status = AppCore.server.status()
         CardColumn {
             CardBox {
-                KeyValue("版本", "v$version")
-                KeyValue("设备", status.device)
-                KeyValue("工具数量", "${status.toolCount} 个（自定义 ${status.customToolCount}）")
-                KeyValue("MCP 协议", ServerMeta.PROTOCOL)
+                KeyValue(L("版本"), "v$version")
+                KeyValue(L("设备"), status.device)
+                KeyValue(L("工具数量"), "${status.toolCount} 个（自定义 ${status.customToolCount}）")
+                KeyValue(L("MCP 协议"), ServerMeta.PROTOCOL)
                 KeyValue(
-                    "Shell 后端",
-                    ShellBackends.available().joinToString("、") { it.label }.ifBlank { "仅文件操作" }
+                    L("Shell 后端"),
+                    ShellBackends.available().joinToString("、") { it.label }.ifBlank { L("仅文件操作") }
                 )
-                KeyValue("服务状态", if (status.running) "运行中（端口 ${status.port}）" else "已停止")
-                KeyValue("允许目录", status.roots.joinToString("、"))
+                KeyValue(L("服务状态"), if (status.running) "运行中（端口 ${status.port}）" else "已停止")
+                KeyValue(L("允许目录"), status.roots.joinToString("、"))
             }
         }
         Spacer(Modifier.height(20.dp))
