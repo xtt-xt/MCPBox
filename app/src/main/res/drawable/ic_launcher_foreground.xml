@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  MCP 文件盒图标（前景）：白色底上的「盒子 + 终端提示符」，线条极简。
-  设计要点：线宽 7 / 圆角 15，保证 48px 小尺寸下依然清晰；
-  盒子用深蓝黑 #1B2436，提示符 >_ 用蓝色 #2F6BD8 作为点睛。
+  MCP 文件盒图标（前景）：白色底上的「盒子 + 终端提示符」。
+
+  尺寸说明：adaptive icon 的 108x108 里，启动器只显示中心 72x72
+  （外边距留给遮罩动画），所以图形必须按 72 来设计。
+  这里盒子取 50x42，约占可见区 69%，四周留出均匀白边，
+  避免在真机上出现"顶到边"的拥挤感。
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
@@ -10,27 +13,27 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 盒子轮廓 x 21~87, y 26~82 -->
+    <!-- 盒子轮廓 x 29~79, y 33~75 -->
     <path
         android:fillColor="#00000000"
-        android:pathData="M36,26 h36 a15,15 0 0 1 15,15 v26 a15,15 0 0 1 -15,15 h-36 a15,15 0 0 1 -15,-15 v-26 a15,15 0 0 1 15,-15 z"
+        android:pathData="M40,33 h28 a11,11 0 0 1 11,11 v20 a11,11 0 0 1 -11,11 h-28 a11,11 0 0 1 -11,-11 v-20 a11,11 0 0 1 11,-11 z"
         android:strokeColor="#1B2436"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 
     <!-- 终端提示符 > -->
     <path
         android:fillColor="#00000000"
-        android:pathData="M37,43 L50,56 L37,69"
+        android:pathData="M41,46 L50,55 L41,64"
         android:strokeColor="#2F6BD8"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 
     <!-- 光标 _ -->
     <path
         android:fillColor="#00000000"
-        android:pathData="M56,69 L72,69"
+        android:pathData="M54,64 L67,64"
         android:strokeColor="#2F6BD8"
         android:strokeLineCap="round"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 </vector>

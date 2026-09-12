@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主题图标（Android 13+）：单色层，系统会自动着色 -->
+<!-- 主题图标（Android 13+）：单色层，系统会自动着色。尺寸与前景保持一致。 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -8,22 +8,22 @@
 
     <path
         android:fillColor="#00000000"
-        android:pathData="M36,26 h36 a15,15 0 0 1 15,15 v26 a15,15 0 0 1 -15,15 h-36 a15,15 0 0 1 -15,-15 v-26 a15,15 0 0 1 15,-15 z"
+        android:pathData="M40,33 h28 a11,11 0 0 1 11,11 v20 a11,11 0 0 1 -11,11 h-28 a11,11 0 0 1 -11,-11 v-20 a11,11 0 0 1 11,-11 z"
         android:strokeColor="#000000"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 
     <path
         android:fillColor="#00000000"
-        android:pathData="M37,43 L50,56 L37,69"
+        android:pathData="M41,46 L50,55 L41,64"
         android:strokeColor="#000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 
     <path
         android:fillColor="#00000000"
-        android:pathData="M56,69 L72,69"
+        android:pathData="M54,64 L67,64"
         android:strokeColor="#000000"
         android:strokeLineCap="round"
-        android:strokeWidth="7" />
+        android:strokeWidth="5.5" />
 </vector>
