@@ -1,36 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  MCP 文件盒图标（前景）：白色底上的「盒子 + 终端提示符」，线条极简。
-  设计要点：线宽 7 / 圆角 15，保证 48px 小尺寸下依然清晰；
-  盒子用深蓝黑 #1B2436，提示符 >_ 用蓝色 #2F6BD8 作为点睛。
--->
+<!-- 主题图标（Android 13+）：单色层，系统会自动着色 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- 盒子轮廓 x 21~87, y 26~82 -->
     <path
         android:fillColor="#00000000"
         android:pathData="M36,26 h36 a15,15 0 0 1 15,15 v26 a15,15 0 0 1 -15,15 h-36 a15,15 0 0 1 -15,-15 v-26 a15,15 0 0 1 15,-15 z"
-        android:strokeColor="#1B2436"
+        android:strokeColor="#000000"
         android:strokeWidth="7" />
 
-    <!-- 终端提示符 > -->
     <path
         android:fillColor="#00000000"
         android:pathData="M37,43 L50,56 L37,69"
-        android:strokeColor="#2F6BD8"
+        android:strokeColor="#000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:strokeWidth="7" />
 
-    <!-- 光标 _ -->
     <path
         android:fillColor="#00000000"
         android:pathData="M56,69 L72,69"
-        android:strokeColor="#2F6BD8"
+        android:strokeColor="#000000"
         android:strokeLineCap="round"
         android:strokeWidth="7" />
 </vector>

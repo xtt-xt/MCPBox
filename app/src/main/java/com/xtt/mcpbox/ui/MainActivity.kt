@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -156,6 +157,11 @@ fun AppRoot(
     var logs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
     var pending by remember { mutableStateOf<List<ApprovalRequest>>(emptyList()) }
 
+    // 让每个页面（含子页面）的滚动位置、输入内容在切换后保留 ——
+    // 否则从「自定义工具」返回设置页时会跳回顶部
+    val tabStateHolder = rememberSaveableStateHolder()
+    val screenStateHolder = rememberSaveableStateHolder()
+
     LaunchedEffect(Unit) {
         while (true) {
             status = AppCore.server.status()
@@ -187,6 +193,7 @@ fun AppRoot(
         },
         label = "subScreen"
     ) { screen ->
+    screenStateHolder.SaveableStateProvider(screen) {
     if (screen == "custom_tools") {
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
             Box(
@@ -237,6 +244,7 @@ fun AppRoot(
                 },
                 label = "tabContent"
             ) { current ->
+            tabStateHolder.SaveableStateProvider(current) {
             when (current) {
                 0 -> HomeScreen(
                     ctx = ctx,
@@ -272,7 +280,9 @@ fun AppRoot(
                 )
             }
             }
+            }
         }
+    }
     }
     }
     }
