@@ -19,16 +19,22 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore/release.keystore")
-            storePassword = "mcpbox2026"
-            keyAlias = "mcpbox"
-            keyPassword = "mcpbox2026"
+            // 优先用环境变量（CI / 别人的机器），没有就回退到仓库外的本地密钥
+            val ksPath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/keystore/release.keystore"
+            val ksFile = file(ksPath)
+            if (ksFile.exists() && ksFile.length() > 100) {
+                storeFile = ksFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "mcpbox2026"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "mcpbox"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: "mcpbox2026"
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            // 没有密钥时就出未签名的包，不至于让构建直接失败
+            signingConfig = signingConfigs.getByName("release").takeIf { it.storeFile != null }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

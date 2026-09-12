@@ -1,0 +1,98 @@
+name: 构建与签名
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 打 tag 时创建 Release 需要
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 测试 + 构建 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 准备 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 准备 Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: 准备 Gradle（带缓存）
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 还原签名密钥
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            mkdir -p keystore
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > keystore/release.keystore
+            echo "已还原签名密钥：$(stat -c%s keystore/release.keystore) 字节"
+          else
+            echo "::warning::没有配置 KEYSTORE_BASE64，本次会产出未签名的 release APK"
+          fi
+
+      - name: 端到端测试（138 项断言）
+        run: ./gradlew :harness:e2e --no-daemon --stacktrace
+
+      - name: 构建 release 与 debug
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/keystore/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease :app:assembleDebug --no-daemon --stacktrace
+
+      - name: 检查签名
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          echo "产物：$APK"
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            BT=$(ls -d $ANDROID_HOME/build-tools/* | tail -1)
+            "$BT/apksigner" verify --print-certs "$APK" | head -5
+          fi
+
+      - name: 整理产物
+        run: |
+          mkdir -p out
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          echo "版本：v$VERSION ($CODE)"
+          cp app/build/outputs/apk/release/*.apk "out/MCPBox-v${VERSION}-release.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/MCPBox-v${VERSION}-debug.apk"
+          ls -la out/
+          md5sum out/*.apk
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MCPBox-v${{ github.run_number }}
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 发布 Release（仅打 v* 标签时）
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
+          generate_release_notes: true
+          draft: false
