@@ -79,9 +79,12 @@ jobs:
           mkdir -p out
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
-          echo "版本：v$VERSION ($CODE)"
-          cp app/build/outputs/apk/release/*.apk "out/MCPBox-v${VERSION}-${CODE}-release.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "out/MCPBox-v${VERSION}-${CODE}-debug.apk"
+          NAME="MCPBox-v${VERSION}-${CODE}"
+          echo "版本：$NAME"
+          cp app/build/outputs/apk/release/*.apk "out/${NAME}-release.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/${NAME}-debug.apk"
+          # 源码 zip：GPL-3.0 要求分发二进制时提供对应源码
+          git archive --format=zip -o "out/${NAME}-source.zip" --prefix="${NAME}/" HEAD
           ls -la out/
           md5sum out/*.apk
 
@@ -89,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MCPBox-v${{ github.run_number }}
-          path: out/*.apk
+          path: out/*
           if-no-files-found: error
           retention-days: 30
 
@@ -97,6 +100,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*.apk
+          files: out/*
+          generate_release_notes: true
           generate_release_notes: true
           draft: false
