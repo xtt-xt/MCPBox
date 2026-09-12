@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Delete
@@ -64,10 +65,11 @@ fun ToolsScreen(
     onChanged: () -> Unit,
     onBack: () -> Unit
 ) {
-    var selected by rememberSaveable { mutableStateOf("") }
+    // list / editor / detail:<工具名>
+    var page by rememberSaveable { mutableStateOf("list") }
 
     AnimatedContent(
-        targetState = selected,
+        targetState = page,
         transitionSpec = {
             val entering = targetState.isNotEmpty()
             val slide = if (entering) 1 else -1
@@ -78,11 +80,24 @@ fun ToolsScreen(
             )
         },
         label = "toolPage"
-    ) { name ->
-        if (name.isEmpty()) {
-            ToolListPage(ctx, revision, onChanged, onBack) { selected = it }
-        } else {
-            ToolDetailPage(ctx, name, revision, onChanged) { selected = "" }
+    ) { current ->
+        when {
+            current == "editor" -> CustomToolsScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onBack = { page = "list" }
+            )
+            current.startsWith("detail:") -> ToolDetailPage(
+                ctx = ctx,
+                name = current.removePrefix("detail:"),
+                revision = revision,
+                onChanged = onChanged,
+                onBack = { page = "list" }
+            )
+            else -> ToolListPage(ctx, revision, onChanged, onBack, onCreate = { page = "editor" }) {
+                page = "detail:$it"
+            }
         }
     }
 }
@@ -93,6 +108,7 @@ private fun ToolListPage(
     revision: Int,
     onChanged: () -> Unit,
     onBack: () -> Unit,
+    onCreate: () -> Unit,
     onOpen: (String) -> Unit
 ) {
     androidx.activity.compose.BackHandler(enabled = true) { onBack() }
@@ -123,7 +139,11 @@ private fun ToolListPage(
         PageHeader(
             title = "工具管理",
             subtitle = "共 ${all.size} 个 · 禁用 $disabledCount · 单独设权限 $overrideCount",
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack) }
+            actions = {
+                RoundIconButton(Icons.Filled.Add, "新建自定义工具", onClick = onCreate)
+                Spacer(Modifier.width(8.dp))
+                RoundIconButton(Icons.Filled.ArrowBack, "返回", onClick = onBack)
+            }
         )
 
         Spacer(Modifier.height(10.dp))
@@ -156,8 +176,8 @@ private fun ToolListPage(
         Spacer(Modifier.height(14.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
             Text(
-                "禁用的工具不会出现在 AI 的 tools/list 里，也调不动；" +
-                    "「单独设权限」可以只针对某个工具放行或禁止，不影响别的工具。",
+                "右上角的 + 可以新建自定义工具；禁用的工具不会出现在 AI 的 tools/list 里，" +
+                    "也调不动；「单独设权限」只针对某个工具，不影响别的工具。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 17.sp

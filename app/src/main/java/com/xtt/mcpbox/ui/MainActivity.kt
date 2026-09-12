@@ -259,19 +259,14 @@ fun AppRoot(
                     .padding(padding)
             ) {
                 when (screen) {
-                    "tools" -> ToolsScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
                     "about" -> AboutScreen(
                         ctx = ctx,
                         revision = revision,
                         onChanged = { revision++ },
                         onBack = { subScreen = "" }
                     )
-                    else -> CustomToolsScreen(
+                    // tools 以及任何意外值都兜到工具管理，避免白屏
+                    else -> ToolsScreen(
                         ctx = ctx,
                         revision = revision,
                         onChanged = { revision++ },
@@ -344,7 +339,6 @@ fun AppRoot(
                     status = status,
                     revision = revision,
                     onThemeChanged = onThemeChanged,
-                    onOpenCustomTools = { subScreen = "custom_tools" },
                     onOpenTools = { subScreen = "tools" },
                     onOpenAbout = { subScreen = "about" },
                     onChanged = { revision++ },

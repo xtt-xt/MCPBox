@@ -61,7 +61,6 @@ fun SettingsScreen(
     status: McpServer.ServerStatus,
     revision: Int,
     onThemeChanged: () -> Unit,
-    onOpenCustomTools: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenAbout: () -> Unit,
     onChanged: () -> Unit,
@@ -338,12 +337,6 @@ fun SettingsScreen(
         GroupLabel("终端与命令")
         CardGroup(
             listOf(
-                RowSpec(
-                    title = "自定义工具",
-                    subtitle = "${AppCore.customTools.tools.size} 个 · 导入导出、也可以让 AI 自己创建",
-                    icon = Icons.Filled.Build,
-                    onClick = onOpenCustomTools
-                ),
                 dropdownSpec(
                     title = "命令后端优先级",
                     subtitle = "auto 时依次尝试；Shizuku 要先去「终端」页授权",
@@ -387,6 +380,21 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // ---------------------------------------------------------- AI 工具
+        GroupLabel("AI 工具")
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = "工具管理",
+                    subtitle = "共 ${status.toolCount} 个 · 可单独启用/禁用、设权限；右上角 + 新建自定义工具",
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Build,
+                    onClick = onOpenTools
+                )
+            )
+        )
+        Spacer(Modifier.height(7.dp))
 
         // ---------------------------------------------------------- 后台运行
         GroupLabel("后台运行")
@@ -434,26 +442,6 @@ fun SettingsScreen(
             )
         )
 
-        // ---------------------------------------------------------- 关于
-        GroupLabel("工具与关于")
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = "工具管理",
-                    subtitle = "共 ${status.toolCount} 个 · 可单独启用/禁用、设权限",
-                    icon = Icons.Filled.Build,
-                    onClick = onOpenTools
-                ),
-                RowSpec(
-                    title = "关于",
-                    subtitle = "v${ServerMeta.version} · 开发者 xtt · 检查更新与开源鸣谢",
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Info,
-                    onClick = onOpenAbout
-                )
-            )
-        )
-        Spacer(Modifier.height(7.dp))
         CardGroup(
             listOf(
                 RowSpec(
@@ -470,6 +458,22 @@ fun SettingsScreen(
                 showReset = true
             }
         }
+
+        Spacer(Modifier.height(20.dp))
+
+        // ---------------------------------------------------------- 关于
+        GroupLabel("关于")
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = "关于",
+                    subtitle = "v${ServerMeta.version} · 开发者 xtt · 检查更新与开源鸣谢",
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info,
+                    onClick = onOpenAbout
+                )
+            )
+        )
 
         Spacer(Modifier.height(24.dp))
     }
