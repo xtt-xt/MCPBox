@@ -80,8 +80,8 @@ jobs:
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           CODE=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
           echo "版本：v$VERSION ($CODE)"
-          cp app/build/outputs/apk/release/*.apk "out/MCPBox-v${VERSION}-release.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "out/MCPBox-v${VERSION}-debug.apk"
+          cp app/build/outputs/apk/release/*.apk "out/MCPBox-v${VERSION}-${CODE}-release.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/MCPBox-v${VERSION}-${CODE}-debug.apk"
           ls -la out/
           md5sum out/*.apk
 
