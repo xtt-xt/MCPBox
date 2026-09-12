@@ -661,6 +661,35 @@ fun main() {
 
         config.disabledTools = backupDisabled
         config.toolOverrides = backupOverrides
+
+        println("\n[28] ShellMirror：AI 命令镜像到终端")
+        val mirrored = StringBuilder()
+        ShellMirror.attach { text -> mirrored.append(text) }
+        check("attach 后标记为已接上", ShellMirror.isAttached)
+        ShellMirror.emit("abc")
+        check("emit 能送到 sink", mirrored.toString() == "abc")
+        ShellMirror.emit("")
+        check("空文本不触发 sink", mirrored.toString() == "abc")
+        ShellMirror.attach { throw IllegalStateException("boom") }
+        ShellMirror.emit("x")
+        check("sink 抛异常也不影响调用方", true)
+        ShellMirror.detach()
+        check("detach 后不再是已接上", !ShellMirror.isAttached)
+        ShellMirror.emit("y")
+        check("detach 后不再收到", !mirrored.toString().contains("y"))
+
+        // 端到端：AI 调 run_shell 时，命令与输出都要镜像出去
+        mirrored.setLength(0)
+        ShellMirror.attach { text -> mirrored.append(text) }
+        val shellRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"run_shell","arguments":{"command":"echo hello_from_ai"}}}""",
+            sessionHeaders
+        )
+        check("run_shell 真的执行了", shellRes.body.contains("hello_from_ai"), shellRes.body.take(120))
+        check("命令被镜像（带 [AI] 前缀）", mirrored.contains("[AI]"), mirrored.toString().take(120))
+        check("输出被镜像", mirrored.contains("hello_from_ai"), mirrored.toString().take(200))
+        ShellMirror.detach()
     } finally {
         server.stop()
     }

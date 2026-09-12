@@ -223,51 +223,33 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             )
         }
         // 命令类审批：把要执行的命令单独显示出来（等宽字体 + 浅色块）
+        // 中间内容统一放进一个可滚动的 body：
+        // 卡片超高时只有它滚动，下面的按钮始终留在屏幕上
+        val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+
         request.command?.let { cmd ->
             val shown = if (cmd.length > 400) cmd.take(400) + " …" else cmd
-            val commandView = TextView(context).apply {
-                text = shown
-                textSize = 12.5f
-                setTextColor(p.text)
-                typeface = Typeface.MONOSPACE
-                background = rounded(p.cardLow, 12f)
-                setPadding(dp(12), dp(10), dp(12), dp(10))
-            }
-            // 命令可能很长：放进限高的滚动容器里，别把下面的按钮挤出屏幕
-            val scroller = ScrollView(context).apply {
-                isFillViewport = false
-                addView(
-                    commandView,
-                    LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
-                )
-            }
-            card.addView(
-                scroller,
+            body.addView(
+                TextView(context).apply {
+                    text = shown
+                    textSize = 12.5f
+                    setTextColor(p.text)
+                    typeface = Typeface.MONOSPACE
+                    background = rounded(p.cardLow, 12f)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = dp(10) }
             )
-            val maxH = (context.resources.displayMetrics.heightPixels * 0.30f).toInt()
-            scroller.post {
-                if (scroller.height > maxH) {
-                    (scroller.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-                        lp.height = maxH
-                        scroller.layoutParams = lp
-                        scroller.requestLayout()
-                    }
-                }
-            }
         }
 
         request.detail?.takeIf { it.isNotBlank() }?.let { detail ->
             val lines = detail.lines().filter { it.isNotBlank() }.take(2)
             lines.forEach { line ->
                 val shown = if (line.length > 68) line.take(68) + "…" else line
-                card.addView(textView(shown, 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
+                body.addView(textView(shown, 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
             }
         }
 
@@ -277,7 +259,20 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             request.client?.let { c -> append(" · ").append(c) }
             append(" · ").append(request.timeoutMs / 1000).append(L(" 秒未处理自动拒绝"))
         }
-        card.addView(textView(meta, 11f, p.textDim).apply { setPadding(0, dp(10), 0, 0) })
+        body.addView(textView(meta, 11f, p.textDim).apply { setPadding(0, dp(10), 0, 0) })
+
+        val bodyScroll = ScrollView(context).apply {
+            isFillViewport = false
+            addView(body)
+        }
+        // weight=1：卡片被限高时，只有中间这块被压缩并滚动
+        card.addView(
+            bodyScroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { weight = 1f }
+        )
 
         // 按钮
         val row1 = LinearLayout(context).apply {
@@ -308,6 +303,18 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             }, weight(true)
         )
         card.addView(row2)
+
+        // 整张卡片最多占屏幕 78%：命令再长也压不掉按钮
+        card.post {
+            val maxH = (context.resources.displayMetrics.heightPixels * 0.78f).toInt()
+            if (card.height > maxH) {
+                (card.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                    lp.height = maxH
+                    card.layoutParams = lp
+                    card.requestLayout()
+                }
+            }
+        }
 
         val endAt = request.createdAt + request.timeoutMs
         val ticker = object : Runnable {
