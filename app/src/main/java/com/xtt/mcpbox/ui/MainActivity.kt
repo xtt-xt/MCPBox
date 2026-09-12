@@ -59,11 +59,19 @@ class MainActivity : ComponentActivity() {
         AppCore.init(application)
         setContent {
             var themeRev by remember { mutableStateOf(0) }
-            val themeId = remember(themeRev) { AppCore.prefs.themeId }
-            MCPBoxTheme(themeId = themeId) {
+            val seed = remember(themeRev) { AppCore.prefs.seedColor }
+            val style = remember(themeRev) { AppCore.prefs.paletteStyle }
+            val darkMode = remember(themeRev) { AppCore.prefs.darkMode }
+            val dynColor = remember(themeRev) { AppCore.prefs.dynamicColor }
+            MCPBoxTheme(
+                seedArgb = seed,
+                paletteStyleId = style,
+                darkModeId = darkMode,
+                dynamicColor = dynColor
+            ) {
                 // 把当前配色同步给悬浮窗（它在 Compose 外面，拿不到 MaterialTheme）
                 val cs = MaterialTheme.colorScheme
-                LaunchedEffect(themeId) {
+                LaunchedEffect(seed, style, darkMode, dynColor) {
                     AppCore.overlayPalette = OverlayPalette(
                         background = cs.background.toArgb(),
                         card = cs.surfaceContainer.toArgb(),
@@ -79,12 +87,7 @@ class MainActivity : ComponentActivity() {
                 AppRoot(
                     requestPermission = ::handlePermNeed,
                     onRequestShizuku = ::requestShizuku,
-                    themeId = themeId,
-                    onThemeChange = { id ->
-                        AppCore.prefs.themeId = id
-                        AppCore.prefs.dynamicColor = id == ThemeChoice.DYNAMIC.id
-                        themeRev++
-                    }
+                    onThemeChanged = { themeRev++ }
                 )
             }
         }
@@ -146,8 +149,7 @@ class MainActivity : ComponentActivity() {
 fun AppRoot(
     requestPermission: (PermNeed) -> Unit,
     onRequestShizuku: () -> Unit,
-    themeId: String,
-    onThemeChange: (String) -> Unit
+    onThemeChanged: () -> Unit
 ) {
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
@@ -272,8 +274,7 @@ fun AppRoot(
                     ctx = ctx,
                     status = status,
                     revision = revision,
-                    themeId = themeId,
-                    onThemeChange = onThemeChange,
+                    onThemeChanged = onThemeChanged,
                     onOpenCustomTools = { subScreen = "custom_tools" },
                     onChanged = { revision++ },
                     onRestartService = { McpService.restart(ctx) }

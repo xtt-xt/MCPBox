@@ -4,6 +4,13 @@
 package com.xtt.mcpbox.ui
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +45,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,8 +60,7 @@ fun SettingsScreen(
     ctx: Context,
     status: McpServer.ServerStatus,
     revision: Int,
-    themeId: String,
-    onThemeChange: (String) -> Unit,
+    onThemeChanged: () -> Unit,
     onOpenCustomTools: () -> Unit,
     onChanged: () -> Unit,
     onRestartService: () -> Unit
@@ -62,6 +70,7 @@ fun SettingsScreen(
     var showToken by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
     var passwordText by remember { mutableStateOf("") }
+    var showSeed by remember { mutableStateOf(false) }
     var shellTimeoutState by remember(revision) {
         mutableStateOf(AppCore.config.shellTimeoutMs / 1000)
     }
@@ -77,18 +86,77 @@ fun SettingsScreen(
 
         // ---------------------------------------------------------- 外观
         GroupLabel("外观")
+        val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
         CardGroup(
             listOf(
+                switchSpec(
+                    title = "动态取色",
+                    subtitle = if (sdkOk) "用系统壁纸的强调色当种子，Material You 原版配色"
+                    else "需要 Android 12 及以上，当前系统不支持",
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    checked = AppCore.prefs.dynamicColor
+                ) { on ->
+                    if (sdkOk) {
+                        AppCore.prefs.dynamicColor = on
+                        onThemeChanged()
+                    }
+                },
                 RowSpec(
+                    title = "种子颜色",
+                    subtitle = if (AppCore.prefs.dynamicColor) "动态取色开着，关掉它才会生效"
+                    else "整套配色都由这个颜色派生",
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Create,
+                    onClick = { showSeed = true },
+                    trailing = {
+                        Box(
+                            Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .background(Color(AppCore.prefs.seedColor))
+                        )
+                    }
+                ),
+                dropdownSpec(
+                    title = "调色板样式",
+                    subtitle = "同一个种子色，算法不同味道不同",
+                    icon = Icons.Filled.Star,
+                    options = PaletteStyle.entries.map { it.label },
+                    selectedIndex = PaletteStyle.entries.indexOf(PaletteStyle.of(AppCore.prefs.paletteStyle))
+                ) { index ->
+                    AppCore.prefs.paletteStyle = PaletteStyle.entries[index].id
+                    onThemeChanged()
+                },
+                dropdownSpec(
                     title = "颜色模式",
-                    subtitle = "跟随壁纸取色，或从预设里挑一个",
+                    subtitle = "深色 / 浅色 / 跟随系统",
+                    icon = Icons.Filled.Star,
+                    options = DarkMode.entries.map { it.label },
+                    selectedIndex = DarkMode.entries.indexOf(DarkMode.of(AppCore.prefs.darkMode))
+                ) { index ->
+                    AppCore.prefs.darkMode = DarkMode.entries[index].id
+                    onThemeChanged()
+                },
+                RowSpec(
+                    title = "预设配色",
+                    subtitle = "点一下直接换种子色",
                     icon = Icons.Filled.Star,
                     trailing = {
-                        PillDropdown(
-                            value = ThemeChoice.of(themeId).label,
-                            options = ThemeChoice.entries.map { it.label }
-                        ) { index ->
-                            onThemeChange(ThemeChoice.entries[index].id)
+                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            ThemeChoice.entries.take(4).forEach { c ->
+                                Box(
+                                    Modifier
+                                        .size(22.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(c.seed))
+                                        .clickable {
+                                            AppCore.prefs.seedColor = c.seed.toInt()
+                                            AppCore.prefs.dynamicColor = false
+                                            onThemeChanged()
+                                        }
+                                )
+                            }
                         }
                     }
                 )
@@ -120,21 +188,19 @@ fun SettingsScreen(
                     AppCore.saveConfig()
                     onChanged()
                 },
-                RowSpec(
+                dropdownSpec(
                     title = "响应格式",
                     subtitle = "自动最省心，不兼容时再手动切",
                     icon = Icons.Filled.Refresh,
-                    trailing = {
-                        val labels = listOf("自动", "JSON", "SSE")
-                        val values = listOf(Config.Modes.AUTO, Config.Modes.JSON, Config.Modes.SSE)
-                        val current = values.indexOf(AppCore.config.responseMode).coerceAtLeast(0)
-                        PillDropdown(labels[current], labels) { index ->
-                            AppCore.config.responseMode = values[index]
-                            AppCore.saveConfig()
-                            onChanged()
-                        }
-                    }
-                )
+                    options = listOf("自动", "JSON", "SSE"),
+                    selectedIndex = listOf(Config.Modes.AUTO, Config.Modes.JSON, Config.Modes.SSE)
+                        .indexOf(AppCore.config.responseMode).coerceAtLeast(0)
+                ) { index ->
+                    AppCore.config.responseMode =
+                        listOf(Config.Modes.AUTO, Config.Modes.JSON, Config.Modes.SSE)[index]
+                    AppCore.saveConfig()
+                    onChanged()
+                }
             )
         )
 
@@ -276,21 +342,19 @@ fun SettingsScreen(
                     icon = Icons.Filled.Build,
                     onClick = onOpenCustomTools
                 ),
-                RowSpec(
+                dropdownSpec(
                     title = "命令后端优先级",
                     subtitle = "auto 时依次尝试；Shizuku 要先去「终端」页授权",
                     icon = Icons.Filled.Share,
-                    trailing = {
-                        val prefs = listOf("shizuku,root,app", "root,shizuku,app", "app")
-                        val labels = listOf("Shizuku→Root→应用", "Root→Shizuku→应用", "只用应用沙箱")
-                        val current = prefs.indexOf(AppCore.config.shellPreference).coerceAtLeast(0)
-                        PillDropdown(labels[current], labels) { index ->
-                            AppCore.config.shellPreference = prefs[index]
-                            AppCore.saveConfig()
-                            onChanged()
-                        }
-                    }
-                ),
+                    options = listOf("Shizuku→Root→应用", "Root→Shizuku→应用", "只用应用沙箱"),
+                    selectedIndex = listOf("shizuku,root,app", "root,shizuku,app", "app")
+                        .indexOf(AppCore.config.shellPreference).coerceAtLeast(0)
+                ) { index ->
+                    AppCore.config.shellPreference =
+                        listOf("shizuku,root,app", "root,shizuku,app", "app")[index]
+                    AppCore.saveConfig()
+                    onChanged()
+                },
                 RowSpec(
                     title = "命令规则",
                     subtitle = "${AppCore.permissions.commandRules().size} 条 · 在「权限」页里管理",
@@ -452,6 +516,83 @@ fun SettingsScreen(
         )
     }
 
+    if (showSeed) {
+        val hsv = remember { FloatArray(3).also { android.graphics.Color.colorToHSV(AppCore.prefs.seedColor, it) } }
+        var hue by remember { mutableStateOf(hsv[0]) }
+        var sat by remember { mutableStateOf(hsv[1]) }
+        var bri by remember { mutableStateOf(hsv[2]) }
+        val cur = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, bri))
+        AlertDialog(
+            onDismissRequest = { showSeed = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text("种子颜色", fontSize = 20.sp) },
+            text = {
+                Column {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(cur)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            hexOf(cur),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    SEED_PRESETS.chunked(6).forEach { row ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            row.forEach { c ->
+                                val selected = cur == c.toInt()
+                                Box(
+                                    Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(c))
+                                        .then(
+                                            if (selected) Modifier.border(2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                            else Modifier
+                                        )
+                                        .clickable {
+                                            val f = FloatArray(3)
+                                            android.graphics.Color.colorToHSV(c.toInt(), f)
+                                            hue = f[0]; sat = f[1]; bri = f[2]
+                                        }
+                                )
+                            }
+                        }
+                    }
+                    SeedSlider("色相", hue, 0f..360f) { hue = it }
+                    SeedSlider("饱和度", sat, 0f..1f) { sat = it }
+                    SeedSlider("亮度", bri, 0f..1f) { bri = it }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.prefs.seedColor = cur
+                    AppCore.prefs.dynamicColor = false
+                    showSeed = false
+                    toast(ctx, "种子颜色已更新")
+                    onThemeChanged()
+                }) { Text("应用", color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSeed = false }) {
+                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
     if (showPassword) {
         AlertDialog(
             onDismissRequest = { showPassword = false },
@@ -527,4 +668,24 @@ fun SettingsScreen(
 @Composable
 private fun RowIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String) {
     RoundIconButton(icon, desc, size = 40, onClick = onClick)
+}
+
+private fun hexOf(argb: Int): String = String.format("#%06X", argb and 0xFFFFFF)
+
+@Composable
+private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.width(46.dp)
+        )
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            modifier = Modifier.weight(1f)
+        )
+    }
 }

@@ -89,7 +89,11 @@ fun HomeScreen(
                         onClick = { onToggleService(!status.running) },
                         trailing = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                StatusDot(if (status.running) Sem.ok else Sem.bad, 9)
+                                StatusDot(
+                                    if (status.running) MaterialTheme.colorScheme.tertiary
+                                    else MaterialTheme.colorScheme.error,
+                                    9
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 AppSwitch(status.running) { onToggleService(it) }
                             }
@@ -103,7 +107,7 @@ fun HomeScreen(
                             subtitle = it,
                             subtitleMaxLines = 2,
                             icon = Icons.Filled.Warning,
-                            iconTint = Sem.bad
+                            iconTint = MaterialTheme.colorScheme.error
                         )
                     )
                 }
@@ -122,7 +126,7 @@ fun HomeScreen(
                         icon = Icons.Filled.Share,
                         onClick = { copyText(ctx, ep.url, "连接地址已复制") },
                         trailing = {
-                            PillButton("复制", outlined = true, color = Sem.info, compact = true) {
+                            PillButton("复制", outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
                                 copyText(ctx, ep.url, "连接地址已复制")
                             }
                         }
@@ -274,9 +278,9 @@ private fun healthSpec(
     onClick = if (ok) null else ({ onPermNeed(need) }),
     trailing = {
         if (ok) {
-            OutlineTag("已就绪", Sem.ok)
+            OutlineTag("已就绪", MaterialTheme.colorScheme.tertiary)
         } else {
-            PillButton("授权", outlined = true, color = Sem.warn, compact = true) { onPermNeed(need) }
+            PillButton("授权", outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) { onPermNeed(need) }
         }
     }
 )

@@ -82,21 +82,17 @@ fun TerminalScreen(
         CardGroup(
             rows = buildList {
                 add(
-                    RowSpec(
+                    dropdownSpec(
                         title = if (running) "会话运行中" else "会话未启动",
                         subtitle = "Shizuku " + ShizukuHelper.statusText(ctx),
                         icon = Icons.Filled.Build,
-                        trailing = {
-                            PillDropdown(
-                                value = backendLabel.ifBlank { "自动" },
-                                options = ShellBackends.all().map { it.label }
-                            ) { index ->
-                                val launcher = ShellBackends.all().getOrNull(index) ?: return@PillDropdown
-                                toast(ctx, term.start(launcher.id))
-                                onChanged()
-                            }
-                        }
-                    )
+                        value = backendLabel.ifBlank { "自动" },
+                        options = ShellBackends.all().map { it.label }
+                    ) { index ->
+                        val launcher = ShellBackends.all().getOrNull(index) ?: return@dropdownSpec
+                        toast(ctx, term.start(launcher.id))
+                        onChanged()
+                    }
                 )
                 if (!shizukuGranted) {
                     add(

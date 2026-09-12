@@ -15,8 +15,8 @@ android {
         applicationId = "com.xtt.mcpbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.6.6"
+        versionCode = 16
+        versionName = "1.7.0"
         resourceConfigurations.add("zh")
     }
 
@@ -102,4 +102,9 @@ dependencies {
     // Shizuku：用 ADB shell 身份执行命令（需要用户在 Shizuku 里授权）
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+
+    // 从种子色派生整套 M3 配色（HCT 色彩空间）。
+    // 注意：material-color-utilities 没有独立坐标，它打包在 MDC 里，
+    // 包名就是 com.google.android.material.color.utilities.*
+    implementation("com.google.android.material:material:1.12.0")
 }

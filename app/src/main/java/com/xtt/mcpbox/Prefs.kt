@@ -3,6 +3,10 @@
 
 package com.xtt.mcpbox
 
+import com.xtt.mcpbox.ui.DEFAULT_SEED
+import com.xtt.mcpbox.ui.DarkMode
+import com.xtt.mcpbox.ui.PaletteStyle
+
 import android.content.Context
 import com.xtt.mcpbox.core.SettingsSource
 
@@ -19,7 +23,9 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_NOTIFY_SOUND = "approval_sound"
         const val KEY_AUTO_START = "auto_start_boot"
         const val KEY_DYNAMIC_COLOR = "dynamic_color"
-        const val KEY_THEME = "theme_id"
+        const val KEY_SEED = "seed_color"
+        const val KEY_PALETTE_STYLE = "palette_style"
+        const val KEY_DARK_MODE = "dark_mode"
         const val KEY_FIRST_RUN = "first_run_done"
     }
 
@@ -60,14 +66,20 @@ class Prefs(context: Context) : SettingsSource {
         get() = getBoolean(KEY_DYNAMIC_COLOR, true)
         set(value) = putBoolean(KEY_DYNAMIC_COLOR, value)
 
-    /**
-     * 主题色：dynamic / blue / green / purple / orange / rose / cyan。
-     * 老版本只存了 dynamicColor 这个布尔值，这里做个兼容。
-     */
-    var themeId: String
-        get() = getString(KEY_THEME, null)
-            ?: if (getBoolean(KEY_DYNAMIC_COLOR, true)) "dynamic" else "blue"
-        set(value) = putString(KEY_THEME, value)
+    /** 种子颜色（ARGB）：关掉动态取色时，整套配色由它派生。 */
+    var seedColor: Int
+        get() = getInt(KEY_SEED, DEFAULT_SEED)
+        set(value) = putInt(KEY_SEED, value)
+
+    /** 调色板样式：tonal / vibrant / expressive / fidelity / neutral / mono。 */
+    var paletteStyle: String
+        get() = getString(KEY_PALETTE_STYLE, PaletteStyle.TONAL_SPOT.id) ?: PaletteStyle.TONAL_SPOT.id
+        set(value) = putString(KEY_PALETTE_STYLE, value)
+
+    /** 深色模式：system / light / dark。 */
+    var darkMode: String
+        get() = getString(KEY_DARK_MODE, DarkMode.SYSTEM.id) ?: DarkMode.SYSTEM.id
+        set(value) = putString(KEY_DARK_MODE, value)
 
     var firstRunDone: Boolean
         get() = getBoolean(KEY_FIRST_RUN, false)

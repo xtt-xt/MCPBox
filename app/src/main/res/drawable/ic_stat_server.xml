@@ -1,11 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  通知栏小图标（状态栏 / 通知左侧）。
+  规范要求：单色 + 透明背景 —— 系统会按通知样式重新着色，
+  所以这里只画「>_」的剪影，不要背景、不要彩色，
+  否则会被渲染成一个白色实心方块。
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24"
     android:tint="#FFFFFF">
+
+    <!-- 提示符 > -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M4,4h16v7H4zM4,13h16v7H4zM7,6.5h4v2H7zM7,15.5h4v2H7zM16.5,6.5a1.2,1.2 0 1,1 0,2.4a1.2,1.2 0 1,1 0,-2.4zM16.5,15.5a1.2,1.2 0 1,1 0,2.4a1.2,1.2 0 1,1 0,-2.4z" />
+        android:fillColor="#00000000"
+        android:pathData="M5,6.5 L11.5,12 L5,17.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 光标 _ -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M13.5,17.5 L19,17.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round" />
 </vector>

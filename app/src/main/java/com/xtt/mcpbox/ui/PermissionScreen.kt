@@ -271,7 +271,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         val privateMode = AppCore.config.privateAccess
         CardGroup(
             listOf(
-                RowSpec(
+                dropdownSpec(
                     title = "私有目录访问",
                     subtitle = when (privateMode) {
                         "read" -> "只能读 /data/data 里的内容"
@@ -279,21 +279,13 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                         else -> "已禁止，AI 看不到应用私有数据"
                     },
                     icon = Icons.Filled.Lock,
-                    trailing = {
-                        PillDropdown(
-                            value = when (privateMode) {
-                                "read" -> "只读"
-                                "full" -> "可读写"
-                                else -> "禁止"
-                            },
-                            options = listOf("禁止", "只读", "可读写")
-                        ) { index ->
-                            AppCore.config.privateAccess = listOf("off", "read", "full")[index]
-                            AppCore.saveConfig()
-                            onChanged()
-                        }
-                    }
-                ),
+                    options = listOf("禁止", "只读", "可读写"),
+                    selectedIndex = listOf("off", "read", "full").indexOf(privateMode).coerceAtLeast(0)
+                ) { index ->
+                    AppCore.config.privateAccess = listOf("off", "read", "full")[index]
+                    AppCore.saveConfig()
+                    onChanged()
+                },
                 RowSpec(
                     title = "怎么生效",
                     subtitle = "应用自己读不了别家私有目录，所以开启后会通过 " +

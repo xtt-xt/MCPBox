@@ -356,9 +356,67 @@ fun SwitchRow(
  * 胶囊下拉：贴着胶囊弹出的锚点小菜单（RikkaHub 那种），
  * 选项 15sp、选中项用主题色并打勾。
  */
+/**
+ * 「整行可点 + 下拉选择」的规格。
+ *
+ * 以前只有右侧那个胶囊能点开菜单，现在点整行任意位置都能展开 ——
+ * 手指不用去戳那一小块。
+ */
 @Composable
-fun PillDropdown(value: String, options: List<String>, onSelect: (Int) -> Unit) {
+fun dropdownSpec(
+    title: String,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    value: String,
+    options: List<String>,
+    onSelect: (Int) -> Unit
+): RowSpec {
     var open by remember { mutableStateOf(false) }
+    return RowSpec(
+        title = title,
+        subtitle = subtitle,
+        icon = icon,
+        onClick = { open = true },
+        trailing = {
+            PillDropdown(
+                value = value,
+                options = options,
+                onSelect = onSelect,
+                expanded = open,
+                onExpandedChange = { open = it }
+            )
+        }
+    )
+}
+
+/** 同上，但直接给下标（省得调用处再算一遍）。 */
+@Composable
+fun dropdownSpec(
+    title: String,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit
+): RowSpec {
+    val value = options.getOrElse(selectedIndex.coerceIn(0, options.lastIndex)) { options.first() }
+    return dropdownSpec(title, subtitle, icon, value, options, onSelect)
+}
+
+@Composable
+fun PillDropdown(
+    value: String,
+    options: List<String>,
+    /** 传了就用外部状态控制展开（配合「点整行也能展开」）；不传则自己管。 */
+    expanded: Boolean? = null,
+    onExpandedChange: ((Boolean) -> Unit)? = null,
+    onSelect: (Int) -> Unit
+) {
+    var innerOpen by remember { mutableStateOf(false) }
+    val open = expanded ?: innerOpen
+    fun setOpen(v: Boolean) {
+        if (expanded == null) innerOpen = v else onExpandedChange?.invoke(v)
+    }
     val selected = options.indexOf(value).coerceAtLeast(0)
     val chevron by animateFloatAsState(
         targetValue = if (open) 180f else 0f, animationSpec = tween(190), label = "chevron"
@@ -368,7 +426,7 @@ fun PillDropdown(value: String, options: List<String>, onSelect: (Int) -> Unit) 
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(50),
-            modifier = Modifier.clickable { open = true }
+            modifier = Modifier.clickable { setOpen(true) }
         ) {
             Row(
                 Modifier.padding(start = 14.dp, end = 9.dp, top = 8.dp, bottom = 8.dp),
@@ -389,7 +447,7 @@ fun PillDropdown(value: String, options: List<String>, onSelect: (Int) -> Unit) 
 
         DropdownMenu(
             expanded = open,
-            onDismissRequest = { open = false },
+            onDismissRequest = { setOpen(false) },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(20.dp),
             offset = DpOffset(0.dp, 4.dp)
@@ -417,7 +475,7 @@ fun PillDropdown(value: String, options: List<String>, onSelect: (Int) -> Unit) 
                         }
                     },
                     onClick = {
-                        open = false
+                        setOpen(false)
                         onSelect(index)
                     }
                 )
