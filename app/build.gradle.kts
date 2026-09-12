@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 xtt
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")

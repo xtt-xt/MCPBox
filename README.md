@@ -1,5 +1,8 @@
 # MCP 文件盒 · MCPBox
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![构建与签名](https://github.com/xtt-xt/MCPBox/actions/workflows/build.yml/badge.svg)](https://github.com/xtt-xt/MCPBox/actions/workflows/build.yml)
+
 把 Android 手机变成一台 **MCP 文件服务器**：AI 客户端（RikkaHub / Claude Desktop / Cursor / Cline…）通过 MCP 协议读写手机文件、执行命令，而**每一次敏感操作都要经过手机上的悬浮窗审批**。
 
 - 单 APK，无外部依赖：HTTP/MCP 服务器、自带浏览器控制台、常驻终端全部在这一个进程里
@@ -173,4 +176,14 @@ harness/                      端到端测试
 
 ## 许可
 
-个人项目，未附带开源许可证；如需引用请先联系作者。
+Copyright (C) 2026 xtt
+
+本项目以 **GNU General Public License v3.0**（GPL-3.0）发布，完整条款见 [LICENSE](LICENSE)。
+
+简单说：
+
+- ✅ 可以自由使用、学习、修改、分发（包括商用）
+- ⚠️ 分发时（无论原版还是修改版，二进制或源码）**必须同样以 GPL-3.0 开放源代码**，并保留版权声明
+- ⚠️ 必须说明改动，且不提供任何担保
+
+> 本项目依赖均为 Apache-2.0 / MIT 等宽松许可（AndroidX、Jetpack Compose、Kotlin、kotlinx-coroutines、Shizuku），与 GPL-3.0 兼容。

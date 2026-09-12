@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 xtt
+
 package com.xtt.mcpbox.core
 
 import java.security.SecureRandom

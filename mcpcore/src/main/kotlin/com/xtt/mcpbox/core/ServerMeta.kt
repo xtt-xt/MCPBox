@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 xtt
+
 package com.xtt.mcpbox.core
 
 /** Identity/uptime of the embedded server, shared by the tools and the UI. */
