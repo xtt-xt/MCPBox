@@ -76,6 +76,7 @@ fun SettingsScreen(
     var showSeed by remember { mutableStateOf(false) }
     var showLang by remember { mutableStateOf(false) }
     var langInfo by remember { mutableStateOf("") }
+    val langChoices = com.xtt.mcpbox.i18n.Lang.languageChoices()
     val importLang = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -191,19 +192,12 @@ fun SettingsScreen(
                     title = L("语言"),
                     subtitle = L("中文 / English，也可以导入别人做的语言包"),
                     icon = Icons.Filled.Info,
-                    options = if (AppCore.prefs.catUnlocked)
-                        listOf("跟随系统", "中文", "English", "猫娘语")
-                    else listOf("跟随系统", "中文", "English"),
-                    selectedIndex = when (AppCore.prefs.appLang) {
-                        "zh" -> 1
-                        "en" -> 2
-                        "cat" -> 3
-                        else -> 0
-                    }
+                    options = langChoices.map { it.second },
+                    selectedIndex = langChoices
+                        .indexOfFirst { it.first == AppCore.prefs.appLang }
+                        .coerceAtLeast(0)
                 ) { index ->
-                    AppCore.prefs.appLang = if (AppCore.prefs.catUnlocked)
-                        listOf("system", "zh", "en", "cat")[index]
-                    else listOf("system", "zh", "en")[index]
+                    AppCore.prefs.appLang = langChoices[index].first
                     com.xtt.mcpbox.i18n.Lang.init(
                         ctx, AppCore.prefs.appLang, com.xtt.mcpbox.i18n.Lang.systemIsEnglish
                     )
@@ -606,9 +600,10 @@ fun SettingsScreen(
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("语言包"), fontSize = 20.sp) },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
-                        "当前语言：$cur\n内置英文词条：$builtinCount 条\n已导入语言包：" +
+                        "当前语言：${com.xtt.mcpbox.i18n.Lang.packDisplayName(cur)}\n" +
+                            "内置英文词条：$builtinCount 条\n已导入语言包：" +
                             com.xtt.mcpbox.i18n.Lang.packLanguages().joinToString("、").ifBlank { "无" },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.5.sp,
@@ -618,6 +613,49 @@ fun SettingsScreen(
                         Spacer(Modifier.height(10.dp))
                         Text(langInfo, color = MaterialTheme.colorScheme.primary, fontSize = 12.5.sp)
                     }
+                    // 已导入的语言包：可以逐个删掉
+                    val packs = com.xtt.mcpbox.i18n.Lang.packLanguages()
+                    if (packs.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            L("已导入的语言包"),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 13.sp
+                        )
+                        packs.forEach { id ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        com.xtt.mcpbox.i18n.Lang.packDisplayName(id),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        "$id · ${com.xtt.mcpbox.i18n.Lang.entryCount(id)} 条译文",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    com.xtt.mcpbox.i18n.Lang.deletePack(ctx, id)
+                                    if (AppCore.prefs.appLang == id) {
+                                        AppCore.prefs.appLang = "system"
+                                        com.xtt.mcpbox.i18n.Lang.init(
+                                            ctx, "system", com.xtt.mcpbox.i18n.Lang.systemIsEnglish
+                                        )
+                                    }
+                                    langInfo = L("已删除")
+                                    onLangChanged()
+                                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+                            }
+                        }
+                    }
+
                     Spacer(Modifier.height(14.dp))
                     PillButton(
                         L("导出模板"),

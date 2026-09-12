@@ -59,7 +59,15 @@ object ToolsShell {
             command = command,
             backend = launcher.id
         )
+        // 镜像到 App 的终端页：让 AI 干的活也能看见
+        ShellMirror.emit("\n[AI] \$ $command\n")
         val result = runner.run(launcher, command, workdir, timeoutMs)
+        ShellMirror.emit(buildString {
+            append(result.stdout)
+            if (result.stderr.isNotBlank()) append(result.stderr)
+            if (result.timedOut) append("\n[超时，已中断]\n")
+            if (result.truncated) append("\n[输出过长已截断]\n")
+        })
         ctx.log.add(
             LogKind.REQUEST, tool = ctx.tool, path = workdir, client = ctx.client,
             ok = result.ok,

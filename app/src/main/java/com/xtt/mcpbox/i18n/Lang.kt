@@ -34,6 +34,9 @@ object Lang {
     /** 用户导入的语言包：语言 id → (中文 → 译文)。 */
     private val packs = mutableMapOf<String, Map<String, String>>()
 
+    /** 语言包自己声明的名字（JSON 里的 name 字段）。 */
+    private val packNames = mutableMapOf<String, String>()
+
     /** 内置英文（随包发布）。 */
     private var builtin: Map<String, String> = emptyMap()
 
@@ -65,6 +68,26 @@ object Lang {
 
     fun packLanguages(): List<String> = packs.keys.sorted()
 
+    /** 语言下拉里显示的选项：语言 id → 显示名。 */
+    fun languageChoices(): List<Pair<String, String>> = buildList {
+        add("system" to "跟随系统")
+        add(ZH to "中文")
+        add(EN to "English")
+        if (packs.containsKey(CAT) || AndroidCatFlag.unlocked) add(CAT to "猫娘语")
+        packLanguages()
+            .filter { it != ZH && it != EN && it != CAT }
+            .forEach { add(it to packDisplayName(it)) }
+    }
+
+    /** 某个语言的显示名（导入的语言包用 JSON 里写的 name）。 */
+    fun packDisplayName(id: String): String = when (id) {
+        "system" -> "跟随系统"
+        ZH -> "中文"
+        EN -> "English"
+        CAT -> "猫娘语"
+        else -> packNames[id]?.takeIf { it.isNotBlank() } ?: id
+    }
+
     /** 猫娘语是内置的彩蛋语言，解锁后可用。 */
     fun catAvailable(ctx: android.content.Context): Boolean =
         AndroidCatFlag.unlocked
@@ -85,11 +108,17 @@ object Lang {
 
     private fun loadPacks(ctx: Context) {
         packs.clear()
+        packNames.clear()
         runCatching {
             ctx.filesDir.listFiles { f -> f.name.startsWith("lang_") && f.name.endsWith(".json") }
                 ?.forEach { file ->
                     val id = file.name.removePrefix("lang_").removeSuffix(".json")
-                    parseEntries(file.readText())?.let { packs[id] = it }
+                    val text = file.readText()
+                    parseEntries(text)?.let { packs[id] = it }
+                    runCatching {
+                        JSONObject(text).optString("name").takeIf { n -> n.isNotBlank() }
+                            ?.let { n -> packNames[id] = n }
+                    }
                 }
         }
     }
@@ -128,6 +157,9 @@ object Lang {
             if (map.isEmpty()) throw IllegalArgumentException("语言包里一条译文都没有")
             packFile(ctx, id).writeText(json)
             packs[id] = map
+            runCatching {
+                root.optString("name").takeIf { it.isNotBlank() }?.let { packNames[id] = it }
+            }
             id to map.size
         }
     }
@@ -147,7 +179,11 @@ object Lang {
     fun deletePack(ctx: Context, langId: String) {
         packFile(ctx, langId).delete()
         packs.remove(langId)
+        packNames.remove(langId)
     }
+
+    /** 语言包里的词条数（UI 展示用）。 */
+    fun entryCount(langId: String): Int = entriesOf(langId).size
 }
 
 /** 界面里到处都要用，短一点。 */

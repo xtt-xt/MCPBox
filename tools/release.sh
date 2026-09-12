@@ -45,9 +45,15 @@ echo "▶ 产物 $SIZE  md5=$MD5"
 
 if [ -n "${MCP_TOKEN:-}" ]; then
     echo "▶ 推送到手机"
-    curl -sS -m 300 -X POST --data-binary @"$APK" \
-        "$UPLOAD?path=$OUTDIR/MCPBox-$FULL-release.apk&token=$MCP_TOKEN"
-    echo
+    if curl -sS -m 300 -X POST --data-binary @"$APK" \
+        "$UPLOAD?path=$OUTDIR/MCPBox-$FULL-release.apk&token=$MCP_TOKEN"; then
+        echo
+    else
+        echo
+        echo "⚠ 推送失败（手机上的 MCP 服务器可能没在运行）"
+        echo "  打开 App 首页的服务器开关后，重跑一次本脚本即可，例如："
+        echo "  MCP_TOKEN=... tools/release.sh"
+    fi
 else
     echo "（没设 MCP_TOKEN，跳过推送到手机）"
 fi
@@ -62,5 +68,7 @@ if [ -n "$NEW_NAME" ]; then
     echo "▶ 已打 tag $FULL（推送后 CI 会自动建 Release）"
 fi
 
+# 用户在网页上改过 README 之类的话，remote 可能领先
+git pull --rebase -q origin main 2>/dev/null || true
 git push origin main --follow-tags
 echo "✓ 完成：$FULL"

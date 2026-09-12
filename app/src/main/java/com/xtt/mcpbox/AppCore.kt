@@ -103,6 +103,8 @@ object AppCore {
             ShizukuHelper.install(application)
 
             terminal = TerminalController(application)
+            // AI 执行的命令也显示在 App 的「终端」页里
+            com.xtt.mcpbox.core.ShellMirror.attach { text -> terminal.append(text) }
             server = McpServer(
                 config = config,
                 permissions = permissions,
