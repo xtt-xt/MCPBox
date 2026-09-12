@@ -26,6 +26,8 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_SEED = "seed_color"
         const val KEY_PALETTE_STYLE = "palette_style"
         const val KEY_DARK_MODE = "dark_mode"
+        const val KEY_UPDATE_DAILY = "update_check_daily"
+        const val KEY_UPDATE_LAST = "update_check_last"
         const val KEY_FIRST_RUN = "first_run_done"
     }
 
@@ -80,6 +82,16 @@ class Prefs(context: Context) : SettingsSource {
     var darkMode: String
         get() = getString(KEY_DARK_MODE, DarkMode.SYSTEM.id) ?: DarkMode.SYSTEM.id
         set(value) = putString(KEY_DARK_MODE, value)
+
+    /** 每天第一次打开 App 时自动检查更新。 */
+    var updateCheckDaily: Boolean
+        get() = getBoolean(KEY_UPDATE_DAILY, true)
+        set(value) = putBoolean(KEY_UPDATE_DAILY, value)
+
+    /** 上次检查更新的日期（yyyy-MM-dd），用来做「每天一次」。 */
+    var lastUpdateCheck: String
+        get() = getString(KEY_UPDATE_LAST, "") ?: ""
+        set(value) = putString(KEY_UPDATE_LAST, value)
 
     var firstRunDone: Boolean
         get() = getBoolean(KEY_FIRST_RUN, false)

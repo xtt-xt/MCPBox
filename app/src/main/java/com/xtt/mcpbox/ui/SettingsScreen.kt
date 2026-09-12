@@ -62,6 +62,8 @@ fun SettingsScreen(
     revision: Int,
     onThemeChanged: () -> Unit,
     onOpenCustomTools: () -> Unit,
+    onOpenTools: () -> Unit,
+    onOpenAbout: () -> Unit,
     onChanged: () -> Unit,
     onRestartService: () -> Unit
 ) {
@@ -88,7 +90,7 @@ fun SettingsScreen(
         GroupLabel("外观")
         val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
         CardGroup(
-            listOf(
+            listOfNotNull(
                 switchSpec(
                     title = "动态取色",
                     subtitle = if (sdkOk) "用系统壁纸的强调色当种子，Material You 原版配色"
@@ -102,10 +104,10 @@ fun SettingsScreen(
                         onThemeChanged()
                     }
                 },
-                RowSpec(
+                // 动态取色开着的时候，种子色不起作用，就不显示了
+                if (!AppCore.prefs.dynamicColor) RowSpec(
                     title = "种子颜色",
-                    subtitle = if (AppCore.prefs.dynamicColor) "动态取色开着，关掉它才会生效"
-                    else "整套配色都由这个颜色派生",
+                    subtitle = "整套配色都由这个颜色派生",
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Create,
                     onClick = { showSeed = true },
@@ -117,7 +119,7 @@ fun SettingsScreen(
                                 .background(Color(AppCore.prefs.seedColor))
                         )
                     }
-                ),
+                ) else null,
                 dropdownSpec(
                     title = "调色板样式",
                     subtitle = "同一个种子色，算法不同味道不同",
@@ -433,19 +435,24 @@ fun SettingsScreen(
         )
 
         // ---------------------------------------------------------- 关于
-        GroupLabel("关于")
-        CardColumn {
-            CardBox {
-                KeyValue("版本", "v${ServerMeta.version}")
-                KeyValue("设备", status.device)
-                KeyValue("工具数量", "${status.toolCount} 个（自定义 ${status.customToolCount}）")
-                KeyValue("MCP 协议", ServerMeta.PROTOCOL)
-                KeyValue("Shell 后端", com.xtt.mcpbox.core.ShellBackends.available().joinToString("、") { it.label }
-                    .ifBlank { "仅文件操作" })
-                KeyValue("服务状态", if (status.running) "运行中（端口 ${status.port}）" else "已停止")
-                KeyValue("允许目录", status.roots.joinToString("、"))
-            }
-        }
+        GroupLabel("工具与关于")
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = "工具管理",
+                    subtitle = "共 ${status.toolCount} 个 · 可单独启用/禁用、设权限",
+                    icon = Icons.Filled.Build,
+                    onClick = onOpenTools
+                ),
+                RowSpec(
+                    title = "关于",
+                    subtitle = "v${ServerMeta.version} · 开发者 xtt · 检查更新与开源鸣谢",
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info,
+                    onClick = onOpenAbout
+                )
+            )
+        )
         Spacer(Modifier.height(7.dp))
         CardGroup(
             listOf(

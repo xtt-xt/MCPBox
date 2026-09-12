@@ -37,7 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.xtt.mcpbox.AppCore
@@ -164,6 +167,19 @@ fun AppRoot(
     val tabStateHolder = rememberSaveableStateHolder()
     val screenStateHolder = rememberSaveableStateHolder()
 
+    // 每天第一次打开时检查一次更新（可以在「关于」里关掉）
+    var updateInfo by remember { mutableStateOf<com.xtt.mcpbox.UpdateChecker.Info?>(null) }
+    LaunchedEffect(Unit) {
+        val prefs = AppCore.prefs
+        if (prefs.updateCheckDaily && prefs.lastUpdateCheck != com.xtt.mcpbox.UpdateChecker.today()) {
+            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.xtt.mcpbox.UpdateChecker.check()
+            }
+            prefs.lastUpdateCheck = com.xtt.mcpbox.UpdateChecker.today()
+            if (r is com.xtt.mcpbox.UpdateChecker.Result.Newer) updateInfo = r.info
+        }
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             status = AppCore.server.status()
@@ -181,6 +197,45 @@ fun AppRoot(
         }
     }
 
+    updateInfo?.let { info ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { androidx.compose.material3.Text("发现新版本 ${info.tag}", fontSize = 20.sp) },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    androidx.compose.material3.Text(
+                        "当前版本 v${com.xtt.mcpbox.core.ServerMeta.version}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp
+                    )
+                    if (info.notes.isNotBlank()) {
+                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.Text(
+                            info.notes.take(600),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.5.sp,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    openUrl(ctx, info.url)
+                    updateInfo = null
+                }) { androidx.compose.material3.Text("去下载", color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { updateInfo = null }) {
+                    androidx.compose.material3.Text("稍后", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
     // 子页面（自定义工具）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧
     AnimatedContent(
         targetState = subScreen,
@@ -196,19 +251,33 @@ fun AppRoot(
         label = "subScreen"
     ) { screen ->
     screenStateHolder.SaveableStateProvider(screen) {
-    if (screen == "custom_tools") {
+    if (screen.isNotEmpty()) {
         Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
             Box(
                 Modifier
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                CustomToolsScreen(
-                    ctx = ctx,
-                    revision = revision,
-                    onChanged = { revision++ },
-                    onBack = { subScreen = "" }
-                )
+                when (screen) {
+                    "tools" -> ToolsScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                    "about" -> AboutScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                    else -> CustomToolsScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                }
             }
         }
     } else {
@@ -276,6 +345,8 @@ fun AppRoot(
                     revision = revision,
                     onThemeChanged = onThemeChanged,
                     onOpenCustomTools = { subScreen = "custom_tools" },
+                    onOpenTools = { subScreen = "tools" },
+                    onOpenAbout = { subScreen = "about" },
                     onChanged = { revision++ },
                     onRestartService = { McpService.restart(ctx) }
                 )

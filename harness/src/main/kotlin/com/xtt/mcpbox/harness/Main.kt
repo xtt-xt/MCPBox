@@ -610,6 +610,57 @@ fun main() {
         val localOk = http("GET", "$base/health", null, emptyMap())
         check("本机访问照常放行", localOk.code == 200 && localOk.body.contains("ok"), "code=${localOk.code}")
         config.consoleLocalOnly = false
+
+        println("\n[27] 工具级策略（启用 / 禁用 / 单独权限）")
+        val backupDisabled = config.disabledTools
+        val backupOverrides = config.toolOverrides
+
+        // 字符串解析（纯函数）
+        ToolPolicy.setDisabled(config, "delete_path", true)
+        check("禁用名单能解析", ToolPolicy.isDisabled(config, "delete_path"))
+        ToolPolicy.setOverride(config, "read_file", ToolPolicy.DENY)
+        check("单项权限能解析", ToolPolicy.overrideOf(config, "read_file") == ToolPolicy.DENY)
+        ToolPolicy.setOverride(config, "write_file", ToolPolicy.ALLOW)
+        check("多项权限能共存", ToolPolicy.overrides(config).size == 2)
+        ToolPolicy.setOverride(config, "read_file", ToolPolicy.ASK)
+        check("设成询问会移除覆盖", ToolPolicy.overrideOf(config, "read_file") == null)
+
+        // 网络行为
+        val listRes = http("POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":21,"method":"tools/list"}""", sessionHeaders)
+        check("被禁用的工具不出现在 tools/list", !listRes.body.contains("\"delete_path\""), "")
+
+        val disabledCall = http("POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"delete_path","arguments":{"path":"/sdcard/nope"}}}""",
+            sessionHeaders)
+        check("调用被禁用的工具会被拒绝", disabledCall.body.contains("禁用"), disabledCall.body.take(140))
+
+        ToolPolicy.setDisabled(config, "delete_path", false)
+        check(
+            "重新启用后回到列表",
+            http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":23,"method":"tools/list"}""", sessionHeaders)
+                .body.contains("\"delete_path\"")
+        )
+
+        val sandboxRoot = config.roots.firstOrNull() ?: "/"
+        ToolPolicy.setOverride(config, "list_dir", ToolPolicy.DENY)
+        val deniedCall = http("POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"list_dir","arguments":{"path":"$sandboxRoot"}}}""",
+            sessionHeaders)
+        check(
+            "单独设为禁止的工具调用被拒",
+            deniedCall.body.contains("禁止") || deniedCall.body.contains("拒绝"),
+            deniedCall.body.take(140)
+        )
+
+        ToolPolicy.setOverride(config, "list_dir", ToolPolicy.ALLOW)
+        val allowedCall = http("POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"list_dir","arguments":{"path":"$sandboxRoot"}}}""",
+            sessionHeaders)
+        check("单独设为允许的工具能调用", !allowedCall.body.contains("已被单独设为"), allowedCall.body.take(140))
+
+        config.disabledTools = backupDisabled
+        config.toolOverrides = backupOverrides
     } finally {
         server.stop()
     }

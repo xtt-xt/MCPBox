@@ -104,6 +104,20 @@ class ApprovalCenter(
         command: String? = null,
         backend: String? = null
     ) {
+        // 工具级权限（在「工具管理」里单独设过就优先）
+        when (ToolPolicy.overrideOf(config, tool)) {
+            ToolPolicy.ALLOW -> return
+            ToolPolicy.DENY -> {
+                log.add(
+                    LogKind.APPROVAL, tool, path, client, ok = false,
+                    message = "工具「$tool」已被单独设为禁止"
+                )
+                throw PermissionDeniedException(
+                    "工具「$tool」已被单独设为「禁止」（可在 App 的「工具管理」里改回来）"
+                )
+            }
+            else -> Unit
+        }
         val decision = permissions.decide(perm, path, command)
         when (decision.action) {
             PermAction.ALLOW -> return

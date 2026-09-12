@@ -577,7 +577,13 @@ class McpServer(
 
             "tools/list" -> {
                 log.add(LogKind.REQUEST, tool = "tools/list", client = remote, message = "列出工具")
-                RpcOut(rpcResult(id, jo("tools" to tools.map { it.toMcpJson() })))
+                RpcOut(
+                    rpcResult(
+                        id,
+                        jo("tools" to tools.filter { !ToolPolicy.isDisabled(config, it.name) }
+                            .map { it.toMcpJson() })
+                    )
+                )
             }
 
             "tools/call" -> {
@@ -602,6 +608,9 @@ class McpServer(
         val args = params.obj("arguments") ?: JsonObject(emptyMap())
         val spec = tools.firstOrNull { it.name == name }
             ?: return toolErrorResult("未知工具：$name（可用 tools/list 查看全部工具）")
+        if (ToolPolicy.isDisabled(config, name)) {
+            return toolErrorResult("工具「$name」已在 App 里被禁用（可在「设置 → 工具管理」里启用）")
+        }
         val ctx = CallContext(
             tool = name,
             args = args,

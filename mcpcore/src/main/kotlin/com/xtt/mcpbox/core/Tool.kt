@@ -4,6 +4,7 @@
 package com.xtt.mcpbox.core
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 
 data class ToolResult(
@@ -89,6 +90,12 @@ class ToolSpec(
         "description" to description,
         "inputSchema" to schema
     )
+
+    /** 参数名列表（给 UI 展示用）。 */
+    val paramNames: List<String>
+        get() = runCatching {
+            schema["properties"]?.jsonObject?.keys?.toList() ?: emptyList()
+        }.getOrDefault(emptyList())
 
     val annotations: JsonObject get() = jo(
         "title" to title,
