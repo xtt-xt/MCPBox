@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -564,6 +565,7 @@ fun ChoiceChip(text: String, active: Boolean, color: Color, onClick: () -> Unit)
                 if (active) color.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline,
                 RoundedCornerShape(50)
             )
+            .clip(RoundedCornerShape(50))
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 8.dp)
     )

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -206,6 +207,7 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
             shape = shape,
             modifier = Modifier
                 .fillMaxWidth()
+                .clip(shape)                      // ripple 与按下底色都跟着圆角走
                 .clickable(
                     interactionSource = interaction,
                     indication = ripple(color = MaterialTheme.colorScheme.primary),
@@ -427,7 +429,7 @@ fun PillDropdown(
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(50),
-            modifier = Modifier.clickable { setOpen(true) }
+            modifier = Modifier.clip(RoundedCornerShape(50)).clickable { setOpen(true) }
         ) {
             Row(
                 Modifier.padding(start = 14.dp, end = 9.dp, top = 8.dp, bottom = 8.dp),
@@ -559,6 +561,7 @@ fun RoundIconButton(
         shape = CircleShape,
         modifier = Modifier
             .size(size.dp)
+            .clip(CircleShape)
             .clickable { onClick() }
     ) {
         Box(contentAlignment = Alignment.Center) {
@@ -581,7 +584,7 @@ fun PillButton(
         color = if (outlined) Color.Transparent else color,
         shape = RoundedCornerShape(50),
         border = if (outlined) BorderStroke(1.dp, color.copy(alpha = 0.7f)) else null,
-        modifier = modifier.clickable { onClick() }
+        modifier = modifier.clip(RoundedCornerShape(50)).clickable { onClick() }
     ) {
         Box(
             Modifier.padding(
@@ -754,6 +757,7 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
+                    .clip(RoundedCornerShape(50))     // 按压/选中底色都限制在胶囊内
                     .clickable(
                         interactionSource = interaction,
                         indication = ripple(color = MaterialTheme.colorScheme.primary)
