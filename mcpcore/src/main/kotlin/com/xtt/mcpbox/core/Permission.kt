@@ -45,7 +45,9 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
     );
 
     companion object {
-        fun of(id: String?): PermKey? = entries.firstOrNull { it.id == id }
+        /** 大小写不敏感：老版本存的是大写（ALLOW / ASK / DENY），新版本统一小写，两种都要认。 */
+        fun of(id: String?): PermKey? =
+            entries.firstOrNull { it.id.equals(id?.trim(), ignoreCase = true) }
     }
 }
 
@@ -55,7 +57,12 @@ enum class PermAction(val id: String, val label: String) {
     DENY("deny", "拒绝");
 
     companion object {
-        fun of(id: String?): PermAction? = entries.firstOrNull { it.id == id }
+        /**
+         * 大小写不敏感：早期版本把枚举直接 toString 落盘（大写 `ASK`），
+         * 而 id 是小写 `ask`。不兼容的话用户改过的开关重启后会静默回落到默认值。
+         */
+        fun of(id: String?): PermAction? =
+            entries.firstOrNull { it.id.equals(id?.trim(), ignoreCase = true) }
     }
 }
 
@@ -153,7 +160,8 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
 
     fun persist() {
         val obj = jo(
-            "switches" to switches,
+            // 统一写小写 id（老数据可能是大写，load 时大小写都能认）
+            "switches" to switches.mapValues { it.value.id },
             "rules" to rules.map { JSON_DEC.encodeToJsonElement(Rule.serializer(), it) }
         )
         src.putString(Config.Keys.PERMISSIONS, obj.toString())

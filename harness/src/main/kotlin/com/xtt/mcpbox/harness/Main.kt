@@ -799,6 +799,33 @@ fun main() {
         check("关掉后调不动", offCall.body.contains("未知工具"), offCall.body.take(140))
         config.memoryEnabled = true
 
+        println("\n[35] 权限开关持久化（大小写兼容）")
+        val backupPerms = settings.getString(Config.Keys.PERMISSIONS, "")
+        check("PermAction.of 大小写不敏感", PermAction.of("ALLOW") == PermAction.ALLOW && PermAction.of("allow") == PermAction.ALLOW)
+        check("PermKey.of 大小写不敏感", PermKey.of("FS.READ") == PermKey.READ)
+        check("乱七八糟的值返回 null", PermAction.of("nope") == null)
+
+        permissions.setSwitch(PermKey.DELETE, PermAction.DENY)
+        val rawPerms = settings.getString(Config.Keys.PERMISSIONS, "") ?: ""
+        check("落盘统一写小写 id", rawPerms.contains("\"fs.delete\":\"deny\""), rawPerms.take(200))
+        permissions.load()
+        check("重新加载后仍是 DENY", permissions.switchOf(PermKey.DELETE) == PermAction.DENY)
+
+        // 模拟早期版本写的大写枚举名
+        settings.putString(
+            Config.Keys.PERMISSIONS,
+            """{"switches":{"fs.delete":"DENY","fs.read":"ALLOW"},"rules":[]}"""
+        )
+        permissions.load()
+        check("老版本大写 DENY 能读出来", permissions.switchOf(PermKey.DELETE) == PermAction.DENY)
+        check("老版本大写 ALLOW 能读出来", permissions.switchOf(PermKey.READ) == PermAction.ALLOW)
+        check("没写到的键回落到默认", permissions.switchOf(PermKey.WRITE) == PermKey.WRITE.default)
+
+        if (backupPerms != null) {
+            settings.putString(Config.Keys.PERMISSIONS, backupPerms)
+            permissions.load()
+        }
+
         println("\n[28] ShellMirror：AI 命令镜像到终端")
         val mirrored = StringBuilder()
         ShellMirror.attach { text -> mirrored.append(text) }

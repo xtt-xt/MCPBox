@@ -63,7 +63,8 @@ object ToolPolicy {
         config.toolOverrides.split(';').mapNotNull { entry ->
             val i = entry.indexOf('=')
             if (i <= 0) null
-            else entry.substring(0, i).trim() to entry.substring(i + 1).trim()
+            // 值统一小写：兼容手工改过配置 / 早期版本写的大写
+            else entry.substring(0, i).trim() to entry.substring(i + 1).trim().lowercase()
         }.filter { it.first.isNotEmpty() }.toMap()
 
     /** 配置里明确写着的值；没写过就是 null。 */
