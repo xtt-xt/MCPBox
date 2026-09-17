@@ -64,6 +64,7 @@ fun SettingsScreen(
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onOpenTools: () -> Unit,
+    onOpenMemory: () -> Unit,
     onOpenAbout: () -> Unit,
     onChanged: () -> Unit,
     onRestartService: () -> Unit
@@ -437,10 +438,18 @@ fun SettingsScreen(
             listOf(
                 RowSpec(
                     title = L("工具管理"),
-                    subtitle = L("共 %s 个 · 可单独启用/禁用、设权限；右上角 + 新建自定义工具").format(status.toolCount),
+                    subtitle = L("共 %s 个 · 可单独启用/禁用、设权限（跟随 / 允许 / 询问 / 拒绝）；右上角 + 新建自定义工具").format(status.toolCount),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Build,
                     onClick = onOpenTools
+                ),
+                RowSpec(
+                    title = L("记忆库"),
+                    subtitle = L("给 AI 的长期记忆：%s 个实体 · %s 条关系")
+                        .format(AppCore.memory.graph.entities.size, AppCore.memory.graph.relations.size),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    onClick = onOpenMemory
                 )
             )
         )

@@ -31,6 +31,10 @@ class CallContext(
     val customTools: CustomToolStore,
     /** 本地读不到时走 root / Shizuku 的文件桥。 */
     val bridge: FileBridge,
+    /** 记忆库。 */
+    val memory: MemoryStore,
+    /** 内置工具文案覆盖。 */
+    val toolMeta: ToolMetaStore,
     val startedAt: Long = System.currentTimeMillis()
 ) {
 
@@ -84,6 +88,10 @@ class ToolSpec(
     val schema: JsonObject,
     val handler: (CallContext) -> ToolResult
 ) {
+    /** 复制一份并替换文案（内置工具的说明可以被用户改写）。 */
+    fun withMeta(title: String, description: String): ToolSpec =
+        ToolSpec(name = name, title = title, description = description, perm = perm, schema = schema, handler = handler)
+
     fun toMcpJson(): JsonObject = jo(
         "name" to name,
         "title" to title,

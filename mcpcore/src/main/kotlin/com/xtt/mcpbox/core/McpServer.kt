@@ -39,7 +39,11 @@ class McpServer(
     val customTools: CustomToolStore,
     val approval: ApprovalCenter,
     val log: EventLog,
-    val host: HostInfo? = null
+    val host: HostInfo? = null,
+    /** 记忆库（不传则用纯内存实例，测试方便）。 */
+    val memory: MemoryStore = MemoryStore(),
+    /** 内置工具的文案覆盖。 */
+    val toolMeta: ToolMetaStore = ToolMetaStore(MemorySettings())
 ) {
 
     val sandbox = PathSandbox(config)
@@ -60,11 +64,15 @@ class McpServer(
 
     private val gateway = FileGateway(config, sandbox, approval, log, bridge)
     /** 内置工具。 */
-    val builtinTools: List<ToolSpec> = ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools)
+    val builtinTools: List<ToolSpec> =
+        ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
+            ToolsToken.specs() + ToolsMemory.specs(memory)
 
     /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。 */
     val tools: List<ToolSpec>
-        get() = builtinTools + ToolsShell.customSpecs(customTools)
+        get() = (builtinTools + ToolsShell.customSpecs(customTools))
+            .filter { config.memoryEnabled || it.perm != PermKey.MEMORY }
+            .map { toolMeta.apply(it) }
 
     private val http = HttpServer(handler = ::dispatch, serverName = ServerMeta.NAME)
     val sessions = ConcurrentHashMap<String, Session>()
@@ -623,7 +631,9 @@ class McpServer(
             trash = trash,
             host = host,
             customTools = customTools,
-            bridge = bridge
+            bridge = bridge,
+            memory = memory,
+            toolMeta = toolMeta
         )
         val started = System.currentTimeMillis()
         val pathForLog = args.str("path") ?: args.str("source")

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -399,6 +400,7 @@ private fun permIcon(key: PermKey): ImageVector = when (key) {
     PermKey.SHELL -> Icons.Filled.Build
     PermKey.TOOLS -> Icons.Filled.Refresh
     PermKey.SYSTEM -> Icons.Filled.Info
+    PermKey.MEMORY -> Icons.Filled.Star
 }
 
 fun actionColor(action: PermAction): Color = when (action) {

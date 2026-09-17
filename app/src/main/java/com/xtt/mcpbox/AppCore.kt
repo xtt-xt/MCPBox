@@ -12,7 +12,9 @@ import com.xtt.mcpbox.core.CustomToolStore
 import com.xtt.mcpbox.core.DefaultRoots
 import com.xtt.mcpbox.core.EventLog
 import com.xtt.mcpbox.core.McpServer
+import com.xtt.mcpbox.core.MemoryStore
 import com.xtt.mcpbox.core.PermissionStore
+import com.xtt.mcpbox.core.ToolMetaStore
 import com.xtt.mcpbox.core.PosixShLauncher
 import com.xtt.mcpbox.core.ServerMeta
 import com.xtt.mcpbox.core.ShellBackends
@@ -39,6 +41,10 @@ object AppCore {
     lateinit var host: AndroidHost
         private set
     lateinit var customTools: CustomToolStore
+        private set
+    lateinit var toolMeta: ToolMetaStore
+        private set
+    lateinit var memory: MemoryStore
         private set
     lateinit var terminal: TerminalController
         private set
@@ -82,6 +88,9 @@ object AppCore {
             approval = ApprovalCenter(config, permissions, log)
             host = AndroidHost(application, config)
             customTools = CustomToolStore(config, prefs)
+            toolMeta = ToolMetaStore(prefs)
+            // 记忆库独立成文件，不塞进 SharedPreferences
+            memory = MemoryStore(java.io.File(application.filesDir, "memory/graph.json"))
 
             // 语言：跟随系统时，系统语言不是中文就按英文走
             com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = prefs.catUnlocked
@@ -111,7 +120,9 @@ object AppCore {
                 customTools = customTools,
                 approval = approval,
                 log = log,
-                host = host
+                host = host,
+                memory = memory,
+                toolMeta = toolMeta
             )
             initialized = true
         }

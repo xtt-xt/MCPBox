@@ -62,6 +62,8 @@ class Config(private val src: SettingsSource) {
         const val CONSOLE_PASSWORD = "console_password"
         const val DISABLED_TOOLS = "disabled_tools"
         const val TOOL_OVERRIDES = "tool_overrides"
+        const val TOOL_META = "tool_meta_json"
+        const val MEMORY_ENABLED = "memory_enabled"
         const val SHELL_TIMEOUT = "shell_timeout"
         const val SHELL_PREFERENCE = "shell_preference"
         const val TERMINAL_BACKEND = "terminal_backend"
@@ -108,8 +110,12 @@ class Config(private val src: SettingsSource) {
     @Volatile var consolePassword: String = ""
     /** 被禁用的工具名（逗号分隔）：不出现在 tools/list，也无法调用。 */
     @Volatile var disabledTools: String = ""
-    /** 单个工具的权限覆盖：name=allow|ask|deny;...（空 = 跟随全局权限矩阵）。 */
+    /** 单个工具的权限覆盖：name=allow|ask|deny|follow;...（follow / 空 = 跟随全局权限矩阵）。 */
     @Volatile var toolOverrides: String = ""
+    /** 内置工具的文案覆盖（JSON 列表）。 */
+    @Volatile var toolMeta: String = ""
+    /** 记忆库总开关：关掉后记忆工具在 tools/list 里消失。 */
+    @Volatile var memoryEnabled: Boolean = true
     @Volatile var revision: Long = 0
 
     companion object {
@@ -151,6 +157,8 @@ class Config(private val src: SettingsSource) {
         consolePassword = src.getString(Keys.CONSOLE_PASSWORD, "") ?: ""
         disabledTools = src.getString(Keys.DISABLED_TOOLS, "") ?: ""
         toolOverrides = src.getString(Keys.TOOL_OVERRIDES, "") ?: ""
+        toolMeta = src.getString(Keys.TOOL_META, "") ?: ""
+        memoryEnabled = src.getBoolean(Keys.MEMORY_ENABLED, true)
         revision++
     }
 
@@ -177,6 +185,8 @@ class Config(private val src: SettingsSource) {
         src.putString(Keys.CONSOLE_PASSWORD, consolePassword)
         src.putString(Keys.DISABLED_TOOLS, disabledTools)
         src.putString(Keys.TOOL_OVERRIDES, toolOverrides)
+        src.putString(Keys.TOOL_META, toolMeta)
+        src.putBoolean(Keys.MEMORY_ENABLED, memoryEnabled)
         revision++
     }
 

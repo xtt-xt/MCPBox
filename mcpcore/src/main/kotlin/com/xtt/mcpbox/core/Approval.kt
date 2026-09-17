@@ -35,7 +35,9 @@ data class ApprovalRequest(
     /** 命令类审批：终端 / 自定义工具要执行的命令。 */
     val command: String? = null,
     /** 后端：app / root / shizuku。 */
-    val backend: String? = null
+    val backend: String? = null,
+    /** 「始终允许/拒绝」记住的是这个工具本身，而不是命令前缀或全局权限。 */
+    val toolScoped: Boolean = false
 ) {
     /** 「始终允许」会记住的东西：命令取基础命令名，其它取权限本身。 */
     val rememberLabel: String
@@ -105,7 +107,8 @@ class ApprovalCenter(
         backend: String? = null
     ) {
         // 工具级权限（在「工具管理」里单独设过就优先）
-        when (ToolPolicy.overrideOf(config, tool)) {
+        val toolOverride = ToolPolicy.effectiveOverride(config, tool)
+        when (toolOverride) {
             ToolPolicy.ALLOW -> return
             ToolPolicy.DENY -> {
                 log.add(
@@ -115,6 +118,15 @@ class ApprovalCenter(
                 throw PermissionDeniedException(
                     "工具「$tool」已被单独设为「禁止」（可在 App 的「工具管理」里改回来）"
                 )
+            }
+            ToolPolicy.ASK -> {
+                // 单独设成「询问」= 无视全局矩阵，每次都弹窗
+                ask(
+                    perm, tool, path, summary, detail, client,
+                    "工具「$tool」被单独设为「询问」", mediaType, byteSize, command, backend,
+                    toolScoped = true
+                )
+                return
             }
             else -> Unit
         }
@@ -145,13 +157,18 @@ class ApprovalCenter(
         mediaType: String?,
         byteSize: Long?,
         command: String?,
-        backend: String?
+        backend: String?,
+        /** true = 这次弹窗来自「工具单独设为询问」，记住的应该是这个工具本身。 */
+        toolScoped: Boolean = false
     ) {
-        val prefix = command?.let { commandPrefix(it) }
+        val prefix = if (toolScoped) null else command?.let { commandPrefix(it) }
         val fullDetail = buildString {
             if (!detail.isNullOrBlank()) append(detail).append('\n')
-            if (prefix != null) {
-                append("选「始终允许 / 始终拒绝」会记住这条规则：以 ")
+            append("来源：").append(source)
+            if (toolScoped) {
+                append("\n选「始终允许 / 始终拒绝」会把「").append(tool).append("」这个工具本身设为允许 / 拒绝。")
+            } else if (prefix != null) {
+                append("\n选「始终允许 / 始终拒绝」会记住这条规则：以 ")
                 append('`').append(prefix).append("` 开头的命令")
             }
         }.trim().ifBlank { null }
@@ -169,7 +186,8 @@ class ApprovalCenter(
             mediaType = mediaType,
             byteSize = byteSize,
             command = command,
-            backend = backend
+            backend = backend,
+            toolScoped = toolScoped
         )
         val future = CompletableFuture<ApprovalDecision>()
         pending[req.id] = Pending(req, future)
@@ -214,7 +232,14 @@ class ApprovalCenter(
         val finalDecision = decision ?: ApprovalDecision.DENY_ONCE
         when (finalDecision) {
             ApprovalDecision.ALLOW_ALWAYS -> {
-                if (prefix != null) {
+                if (toolScoped) {
+                    ToolPolicy.setOverride(config, tool, ToolPolicy.ALLOW)
+                    config.save()
+                    log.add(
+                        LogKind.APPROVAL, tool, path, client, ok = true,
+                        message = "用户选择「始终允许」→ 工具「$tool」已单独设为允许"
+                    )
+                } else if (prefix != null) {
                     permissions.addCommandRule(prefix, PermAction.ALLOW, note = "来自审批弹窗")
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = true,
@@ -229,7 +254,14 @@ class ApprovalCenter(
                 }
             }
             ApprovalDecision.DENY_ALWAYS -> {
-                if (prefix != null) {
+                if (toolScoped) {
+                    ToolPolicy.setOverride(config, tool, ToolPolicy.DENY)
+                    config.save()
+                    log.add(
+                        LogKind.APPROVAL, tool, path, client, ok = false,
+                        message = "用户选择「始终拒绝」→ 工具「$tool」已单独设为拒绝"
+                    )
+                } else if (prefix != null) {
                     permissions.addCommandRule(prefix, PermAction.DENY, note = "来自审批弹窗")
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = false,

@@ -112,7 +112,9 @@ fun main() {
 
     val server = McpServer(
         config = config, customTools = customTools, permissions = permissions,
-        approval = approval, log = log, host = null
+        approval = approval, log = log, host = null,
+        memory = MemoryStore(File(root, "memory/graph.json")),
+        toolMeta = ToolMetaStore(settings)
     )
     println("== 启动服务器 (${root.absolutePath}) ==")
     if (!server.start()) {
@@ -622,9 +624,6 @@ fun main() {
         check("单项权限能解析", ToolPolicy.overrideOf(config, "read_file") == ToolPolicy.DENY)
         ToolPolicy.setOverride(config, "write_file", ToolPolicy.ALLOW)
         check("多项权限能共存", ToolPolicy.overrides(config).size == 2)
-        ToolPolicy.setOverride(config, "read_file", ToolPolicy.ASK)
-        check("设成询问会移除覆盖", ToolPolicy.overrideOf(config, "read_file") == null)
-
         // 网络行为
         val listRes = http("POST", "$base/mcp",
             """{"jsonrpc":"2.0","id":21,"method":"tools/list"}""", sessionHeaders)
@@ -661,6 +660,144 @@ fun main() {
 
         config.disabledTools = backupDisabled
         config.toolOverrides = backupOverrides
+
+        println("\n[29] 工具权限四态（跟随 / 允许 / 询问 / 拒绝）")
+        val backupOverrides2 = config.toolOverrides
+        ToolPolicy.setOverride(config, "read_file", ToolPolicy.ASK)
+        check("设成询问会保留覆盖", ToolPolicy.overrideOf(config, "read_file") == ToolPolicy.ASK)
+        check("询问算明确设定过", ToolPolicy.isExplicit(ToolPolicy.effectiveOverride(config, "read_file")))
+        ToolPolicy.setOverride(config, "read_file", ToolPolicy.FOLLOW)
+        check(
+            "设成跟随不会被当成出厂默认",
+            ToolPolicy.effectiveOverride(config, "read_file") == ToolPolicy.FOLLOW
+        )
+        ToolPolicy.setOverride(config, "read_file", null)
+        check("清除后回到出厂默认", ToolPolicy.overrideOf(config, "read_file") == null)
+        check("get_token 出厂默认是询问", ToolPolicy.effectiveOverride(config, "get_token") == ToolPolicy.ASK)
+        check("普通工具出厂默认是跟随", ToolPolicy.effectiveOverride(config, "list_dir") == ToolPolicy.FOLLOW)
+
+        // 工具级「询问」= 无视全局矩阵，每次都要弹窗
+        ToolPolicy.setOverride(config, "list_dir", ToolPolicy.ASK)
+        answer("列出目录", ApprovalDecision.ALLOW_ONCE)
+        val askCall = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"list_dir","arguments":{"path":"$sandboxRoot"}}}""",
+            sessionHeaders
+        )
+        check("工具级询问会弹窗，允许一次后成功", !askCall.body.contains("未批准"), askCall.body.take(140))
+
+        // 弹窗里选「始终允许」→ 记住的是这个工具本身
+        answer("列出目录", ApprovalDecision.ALLOW_ALWAYS)
+        http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"list_dir","arguments":{"path":"$sandboxRoot"}}}""",
+            sessionHeaders
+        )
+        check("选始终允许后工具本身被设为允许", ToolPolicy.overrideOf(config, "list_dir") == ToolPolicy.ALLOW)
+        ToolPolicy.setOverride(config, "list_dir", null)
+        config.toolOverrides = backupOverrides2
+
+        println("\n[30] 内置工具文案覆盖（改说明）")
+        val backupMeta = config.toolMeta
+        server.toolMeta.set("list_dir", "看目录", "自定义说明：只列名字")
+        val metaList = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":43,"method":"tools/list"}""", sessionHeaders)
+        check("tools/list 里能看到新说明", metaList.body.contains("自定义说明：只列名字"), metaList.body.take(200))
+        check("tools/list 里能看到新标题", metaList.body.contains("看目录"))
+        check("工具名不受影响", metaList.body.contains("\"list_dir\""))
+        server.toolMeta.reset("list_dir")
+        val metaList2 = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":44,"method":"tools/list"}""", sessionHeaders)
+        check("恢复后用回内置说明", !metaList2.body.contains("自定义说明：只列名字"))
+        config.toolMeta = backupMeta
+        server.toolMeta.load()
+
+        println("\n[31] get_token 工具")
+        answer("获取访问令牌", ApprovalDecision.ALLOW_ONCE)
+        val tokenCall = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":45,"method":"tools/call","params":{"name":"get_token","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("get_token 能调用", tokenCall.body.contains("testtoken123"), tokenCall.body.take(200))
+        check("get_token 返回端口", tokenCall.body.contains("18720"))
+
+        println("\n[32] 记忆库图结构")
+        val ms = MemoryStore(null)
+        val c1 = ms.createEntities(
+            listOf(
+                Triple("项目：MCPBox", "项目", "projects"),
+                Triple("用户偏好：深色主题", "用户偏好", "xtt")
+            )
+        )
+        check("新建两个实体", c1.created == 2 && c1.skipped == 0)
+        val c2 = ms.createEntities(listOf(Triple("项目：MCPBox", "项目", "projects")))
+        check("重名实体只跳过不重复建", c2.created == 0 && c2.skipped == 1)
+        check("实体数量正确", ms.graph.entities.size == 2)
+        check("按名字能取到", ms.entity("项目：MCPBox")?.folder == "projects")
+        check("观察去重：加两条", ms.addObservations("项目：MCPBox", listOf("用 Kotlin", "用 Compose")) == 2)
+        check("重复观察会被跳过", ms.addObservations("项目：MCPBox", listOf("用 Kotlin")) == 0)
+        check("观察总数正确", ms.entity("项目：MCPBox")?.observations?.size == 2)
+        check("删除指定观察", ms.deleteObservations("项目：MCPBox", listOf("用 Compose")) == 1)
+        check("建立关系", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 1)
+        check("重复关系不重加", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 0)
+        check("能查到邻居", ms.neighbours("项目：MCPBox") == listOf("用户偏好：深色主题"))
+        check("搜索命中实体名", ms.search("MCPBox").entities.any { it.name == "项目：MCPBox" })
+        check("搜索命中观察内容", ms.search("Kotlin").entities.any { it.name == "项目：MCPBox" })
+        check("搜索会带上邻居", ms.search("MCPBox").entities.size == 2)
+        check("分区过滤生效", ms.snapshot(folder = "xtt").entities.size == 1)
+        check("类型过滤生效", ms.snapshot(type = "项目").entities.size == 1)
+        check("统计文本含实体数", ms.statsText().contains("实体：2"))
+        check("重命名会带动关系", ms.updateEntity("项目：MCPBox", newName = "项目：MCPBox v2"))
+        check(
+            "关系两端都改名了",
+            ms.graph.relations.first().to == "项目：MCPBox v2" && ms.hasEntity("项目：MCPBox v2")
+        )
+        check("删实体连带删关系", ms.deleteEntities(listOf("用户偏好：深色主题")) == 1 && ms.graph.relations.isEmpty())
+
+        println("\n[33] 记忆工具（走 MCP）")
+        answer("记忆", ApprovalDecision.ALLOW_ALWAYS)
+        val createRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":"create_entities","arguments":{"entities":[{"name":"事件：修好了构建","entityType":"事件","folder":"dev","observations":["aapt2 用 qemu 包装解决"]}]}}}""",
+            sessionHeaders
+        )
+        check("create_entities 成功", createRes.body.contains("已创建 1 个实体"), createRes.body.take(200))
+        val relRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":52,"method":"tools/call","params":{"name":"create_relations","arguments":{"relations":[{"from":"事件：修好了构建","to":"事件：修好了构建","relationType":"PART_OF"}]}}}""",
+            sessionHeaders
+        )
+        check("create_relations 成功", relRes.body.contains("已建立"), relRes.body.take(200))
+        val searchRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":53,"method":"tools/call","params":{"name":"search_nodes","arguments":{"query":"aapt2"}}}""",
+            sessionHeaders
+        )
+        check("search_nodes 搜到观察内容", searchRes.body.contains("qemu"), searchRes.body.take(200))
+        val statsRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":54,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("memory_stats 有输出", statsRes.body.contains("实体："), statsRes.body.take(200))
+        val delRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":55,"method":"tools/call","params":{"name":"delete_entities","arguments":{"names":["事件：修好了构建"]}}}""",
+            sessionHeaders
+        )
+        check("delete_entities 成功", delRes.body.contains("已删除 1 个实体"), delRes.body.take(200))
+        check("删完记忆库空了", server.memory.graph.entities.isEmpty())
+
+        println("\n[34] 记忆库总开关")
+        config.memoryEnabled = false
+        val offList = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":56,"method":"tools/list"}""", sessionHeaders)
+        check("关掉后记忆工具消失", !offList.body.contains("\"create_entities\""))
+        val offCall = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":57,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("关掉后调不动", offCall.body.contains("未知工具"), offCall.body.take(140))
+        config.memoryEnabled = true
 
         println("\n[28] ShellMirror：AI 命令镜像到终端")
         val mirrored = StringBuilder()

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -129,7 +130,7 @@ private fun ToolListPage(
     val custom = filtered.filter { it.name !in builtinNames }
     val builtin = filtered.filter { it.name in builtinNames }
     val disabledCount = ToolPolicy.disabled(AppCore.config).size
-    val overrideCount = ToolPolicy.overrides(AppCore.config).size
+    val overrideCount = ToolPolicy.explicitCount(AppCore.config)
 
     Column(
         Modifier
@@ -190,12 +191,18 @@ private fun ToolListPage(
 @Composable
 private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) -> Unit): RowSpec {
     val disabled = ToolPolicy.isDisabled(AppCore.config, spec.name)
-    val override = ToolPolicy.overrideOf(AppCore.config, spec.name)
+    val override = ToolPolicy.effectiveOverride(AppCore.config, spec.name)
+    val overrideColor = when (override) {
+        ToolPolicy.DENY -> MaterialTheme.colorScheme.error
+        ToolPolicy.ALLOW -> MaterialTheme.colorScheme.tertiary
+        ToolPolicy.ASK -> Sem.warn
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     val subtitle = buildString {
         append(L(spec.title))
         val tags = mutableListOf<String>()
         if (disabled) tags.add(L("已禁用"))
-        if (override != null) tags.add(L(ToolPolicy.label(override)))
+        if (ToolPolicy.isExplicit(override)) tags.add(L(ToolPolicy.label(override)))
         if (spec.name !in builtinNames) tags.add(L("自定义"))
         if (tags.isNotEmpty()) append(" · ").append(tags.joinToString(" / "))
     }
@@ -206,14 +213,12 @@ private fun toolRow(spec: ToolSpec, builtinNames: Set<String>, onOpen: (String) 
         icon = Icons.Filled.Build,
         iconTint = when {
             disabled -> MaterialTheme.colorScheme.outline
-            override == ToolPolicy.DENY -> MaterialTheme.colorScheme.error
-            override == ToolPolicy.ALLOW -> MaterialTheme.colorScheme.tertiary
-            else -> MaterialTheme.colorScheme.primary
+            else -> overrideColor
         },
         onClick = { onOpen(spec.name) },
         trailing = {
             if (disabled) OutlineTag(L("已禁用"), MaterialTheme.colorScheme.outline)
-            else if (override != null) OutlineTag(L(ToolPolicy.label(override)), MaterialTheme.colorScheme.primary)
+            else if (ToolPolicy.isExplicit(override)) OutlineTag(L(ToolPolicy.label(override)), overrideColor)
         }
     )
 }
@@ -240,12 +245,61 @@ private fun ToolDetailPage(
         }
         return
     }
-    val builtin = spec.name in AppCore.server.builtinTools.map { it.name }
+    val builtinSpec = remember(revision, name) { AppCore.server.builtinTools.firstOrNull { it.name == name } }
+    val builtin = builtinSpec != null
     val custom = AppCore.customTools.byName(spec.name)
     var confirmDelete by remember { mutableStateOf(false) }
+    var showPermDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
 
     val disabled = ToolPolicy.isDisabled(AppCore.config, spec.name)
-    val override = ToolPolicy.overrideOf(AppCore.config, spec.name)
+    val override = ToolPolicy.effectiveOverride(AppCore.config, spec.name)
+    val overrideColor = when (override) {
+        ToolPolicy.DENY -> MaterialTheme.colorScheme.error
+        ToolPolicy.ALLOW -> MaterialTheme.colorScheme.tertiary
+        ToolPolicy.ASK -> Sem.warn
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val metaCustomized = AppCore.toolMeta.isCustomized(spec.name)
+
+    if (showPermDialog) {
+        val values = ToolPolicy.ALL_VALUES
+        ChoiceDialog(
+            title = L("「%s」的权限").format(spec.name),
+            options = values.map { permLabel(it) },
+            selected = values.indexOf(override).coerceAtLeast(0),
+            onDismiss = { showPermDialog = false },
+            onSelect = { idx ->
+                ToolPolicy.setOverride(AppCore.config, spec.name, values[idx])
+                AppCore.saveConfig()
+                showPermDialog = false
+                onChanged()
+            }
+        )
+    }
+
+    if (showEditDialog && builtinSpec != null) {
+        ToolMetaDialog(
+            name = spec.name,
+            defaultTitle = builtinSpec.title,
+            defaultDescription = builtinSpec.description,
+            currentTitle = spec.title,
+            currentDescription = spec.description,
+            onDismiss = { showEditDialog = false },
+            onSave = { t, d ->
+                AppCore.toolMeta.set(spec.name, t, d)
+                showEditDialog = false
+                toast(ctx, L("说明已更新，AI 下次 tools/list 就会看到"))
+                onChanged()
+            },
+            onReset = {
+                AppCore.toolMeta.reset(spec.name)
+                showEditDialog = false
+                toast(ctx, L("已恢复内置说明"))
+                onChanged()
+            }
+        )
+    }
 
     Column(
         Modifier
@@ -284,35 +338,51 @@ private fun ToolDetailPage(
                     title = L("权限"),
                     subtitle = when (override) {
                         ToolPolicy.ALLOW -> L("这个工具的所有操作直接放行，不弹审批")
+                        ToolPolicy.ASK -> L("每次都弹窗问你，不看全局权限矩阵")
                         ToolPolicy.DENY -> L("无论全局怎么设，这个工具一律拒绝")
                         else -> L("跟随全局权限矩阵（%s）").format(L(spec.perm.title))
                     },
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Info,
+                    onClick = { showPermDialog = true },
                     trailing = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                ToolPolicy.ALLOW to L("允许"),
-                                ToolPolicy.ASK to L("询问"),
-                                ToolPolicy.DENY to L("禁止")
-                            ).forEach { (value, text) ->
-                                val active = (override ?: ToolPolicy.ASK) == value
-                                PillButton(
-                                    text,
-                                    outlined = !active,
-                                    compact = true,
-                                    color = if (active) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                ) {
-                                    ToolPolicy.setOverride(AppCore.config, spec.name, value)
-                                    AppCore.saveConfig()
-                                    onChanged()
-                                }
-                            }
-                        }
+                        OutlineTag(L(ToolPolicy.label(override)), overrideColor)
                     }
                 )
             )
+        )
+
+        GroupLabel(L("说明"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("显示名称"),
+                    subtitle = spec.title,
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info,
+                    onClick = if (builtin) ({ showEditDialog = true }) else null,
+                    trailing = if (builtin) ({
+                        OutlineTag(
+                            if (metaCustomized) L("已改") else L("默认"),
+                            if (metaCustomized) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }) else null
+                ),
+                RowSpec(
+                    title = L("给 AI 看的说明"),
+                    subtitle = spec.description,
+                    subtitleMaxLines = 5,
+                    icon = Icons.Filled.Info,
+                    onClick = if (builtin) ({ showEditDialog = true }) else null
+                ),
+                if (!builtin) RowSpec(
+                    title = L("怎么改"),
+                    subtitle = L("自定义工具的说明在上面的「编辑自定义工具」里改"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info
+                ) else null
+            ).filterNotNull()
         )
 
         GroupLabel(L("详情"))
@@ -406,3 +476,99 @@ private fun ToolDetailPage(
 /** 参数名列表，展示用。 */
 private fun paramNames(spec: ToolSpec): String =
     spec.paramNames.joinToString(", ").ifBlank { L("无") }
+
+/** 权限四态的中文标签。 */
+private fun permLabel(value: String): String = L(ToolPolicy.label(value))
+
+/**
+ * 编辑内置工具的「显示名称」和「给 AI 看的说明」。
+ * 只改文案，工具的行为、参数、权限都不受影响；留空 = 用回内置原文。
+ */
+@Composable
+private fun ToolMetaDialog(
+    name: String,
+    defaultTitle: String,
+    defaultDescription: String,
+    currentTitle: String,
+    currentDescription: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+    onReset: () -> Unit
+) {
+    var title by remember { mutableStateOf(if (currentTitle == defaultTitle) "" else currentTitle) }
+    var desc by remember { mutableStateOf(if (currentDescription == defaultDescription) "" else currentDescription) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
+            MaxTvScrollView(fraction = 0.78f) {
+                Column(Modifier.padding(22.dp)) {
+                    Text(
+                        L("编辑工具说明"),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 19.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                    )
+                    Text(
+                        name,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = title,
+                        onValueChange = { title = it },
+                        label = { Text(L("显示名称"), fontSize = 12.sp) },
+                        placeholder = { Text(defaultTitle, fontSize = 13.sp) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = desc,
+                        onValueChange = { desc = it },
+                        label = { Text(L("给 AI 看的说明"), fontSize = 12.sp) },
+                        placeholder = { Text(defaultDescription, fontSize = 12.sp) },
+                        minLines = 5,
+                        maxLines = 12,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        L("留空表示用回内置原文。说明会出现在 AI 的 tools/list 里，改完立刻生效，") +
+                            L("不影响工具本身的行为和权限。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(Modifier.height(18.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton(
+                            L("恢复默认"), Modifier.weight(1f), outlined = true,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
+                        ) { onReset() }
+                        PillButton(
+                            L("取消"), Modifier.weight(1f), outlined = true,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
+                        ) { onDismiss() }
+                        PillButton(
+                            L("保存"), Modifier.weight(1f), color = MaterialTheme.colorScheme.primary,
+                            compact = true
+                        ) { onSave(title, desc) }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -27,11 +27,14 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -55,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -843,4 +847,23 @@ fun OutlineTag(text: String, color: Color) {
             .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(50))
             .padding(horizontal = 10.dp, vertical = 4.dp)
     )
+}
+
+/**
+ * 弹窗用的滚动容器：内容少时贴合内容高度，内容多时最多占屏幕的 [fraction]（默认 78%）。
+ * 重写 onMeasure 而不是用 post{} 读高度，避免"时好时坏"的测量时机问题。
+ */
+@Composable
+fun MaxTvScrollView(
+    fraction: Float = 0.78f,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val screenH = LocalConfiguration.current.screenHeightDp
+    Box(
+        modifier
+            .fillMaxWidth()
+            .heightIn(max = (screenH * fraction).dp)
+            .verticalScroll(rememberScrollState())
+    ) { content() }
 }

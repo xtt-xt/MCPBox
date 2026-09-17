@@ -37,6 +37,11 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
         "system.info", "系统信息",
         "设备信息与服务器状态",
         PermAction.ALLOW
+    ),
+    MEMORY(
+        "memory", "记忆库",
+        "创建 / 修改 / 查询 AI 的长期记忆",
+        PermAction.ALLOW
     );
 
     companion object {
