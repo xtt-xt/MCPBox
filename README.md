@@ -19,7 +19,9 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 | | |
 |---|---|
-| **39 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库… |
+| **44 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库、工具包… |
+| **工具包（省 token）** | 工具分 6 个包按需加载，默认只带 27 个，**省三分之一上下文**；AI 能自己开关包 |
+| **会话隔离** | 客户端地址填 `/mcp/p/<名字>` 就是独立会话，各有各的激活状态，可持久化 / 重置 |
 | **逐次审批** | 顶层悬浮窗 + 通知栏兜底，支持「允许一次 / 始终允许 / 拒绝 / 始终拒绝」 |
 | **权限矩阵** | 7 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
 | **工具级权限四态** | 单个工具可单独设「跟随 / 允许 / 询问 / 拒绝」，其中「询问」无视全局矩阵、每次都弹窗 |
@@ -52,6 +54,8 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 **Shell / 扩展（8）**：`run_shell` `shell_info` `create_custom_tool` `update_custom_tool` `delete_custom_tool` `list_custom_tools` `export_custom_tools` `import_custom_tools`
 
 **令牌（1）**：`get_token`（调用它自己不需要令牌，用于解开「AI 要先拿到 token 才能传文件」的死循环）
+
+**工具包（5）**：`list_packs` `activate_pack` `deactivate_pack` `reset_packs`（免审批，只影响可见性）、`manage_pack`（建/改/删自定义包，走「自定义工具」权限）
 
 **记忆库（10）**：`create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
 
@@ -104,6 +108,52 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 - 存储：`filesDir/memory/graph.json`，原子写入（先写 `.tmp` 再改名），断电最多丢最后一次写入。
 - 搜索 `search_nodes` 会连带返回命中实体的**直接邻居**，方便顺着线索往下读。
 - 重名实体只跳过不覆盖；重命名会自动同步关系两端；删实体会连带删掉它的所有关系。
+
+## 工具包（省 token）
+
+工具定义要在**每一轮请求**里重复带给模型。44 个工具全带上大约 7500 token，
+聊 20 轮就是 15 万——而且大部分轮次根本用不到那么多工具。
+
+所以把工具分包，`tools/list` 只返回**基础包 + 已激活包**里的工具：
+
+| 包 | 工具数 | 出厂 |
+|---|---|---|
+| `core` 基础（含包管理本身） | 9 | **常驻** |
+| `file.read` 文件读取 | 8 | 开 |
+| `memory` 记忆库 | 10 | 开 |
+| `file.write` 文件写入 | 9 | 关 |
+| `shell` 命令与自定义工具 | 8 | 关 |
+| `my.tools` 我的工具 | 动态 | 关 |
+
+默认 27 个工具 ≈ 4600 token，**比全带上省三分之一**。
+
+**关键设计：包只影响 `tools/list`，不影响 `tools/call`。**
+调任何存在的工具都允许（照常走权限矩阵）。这样即使客户端不处理
+`notifications/tools/list_changed`（很多都不处理），也不会出现「激活了却调不到」的死锁。
+
+### AI 可以自己开关包
+
+`initialize` 的 instructions 里会写明「你看到的工具是分包的」，并列出还没激活的包。
+要用别的工具时，AI 自己 `list_packs` → `activate_pack` 就行，不用你操心。
+
+也可以自己建包（`manage_pack`，或 App 里「＋ 新建工具包」）：把常用工具组合起来，起个名字、写清用途。
+
+### 会话隔离：`/mcp/p/<名字>`
+
+MCP 协议层面**无法感知「AI 开了新对话」**——客户端只在启动时 `initialize` 一次，
+之后所有对话共用同一条连接。所以用请求路径来区分：
+
+```
+/mcp            → 默认会话
+/mcp/p/编码     → 编码场景（可以自己激活 file.write + shell）
+/mcp/p/写作     → 写作场景（只要 memory）
+```
+
+每份状态存在 `filesDir/profiles/<名字>.json`，重启 App 也保留；
+在权限页可以选会话、重置、删除。
+
+**TTL 兜底**（可关，默认 30 分钟）：超过这段时间没请求就回到默认包集，
+这样「隔一阵开新对话」拿到的也是干净状态。设置 → AI 工具 →「会话状态自动重置」。
 
 ## 文件进出通道
 
@@ -210,7 +260,9 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   Shell.kt                    shell 后端（应用 / root / Shizuku）
   WebConsole.kt / Config.kt / CustomTools.kt / EventLog.kt
   Memory.kt                   记忆库：实体 + 观察 + 关系，原子写入 graph.json
-  ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
+  ToolPack.kt                 工具包：内置包定义 + 自定义包存储
+  ProfileStore.kt             会话（URL profile）：激活状态 + TTL，原子写盘
+  ToolsPacks.kt / ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
 harness/                      端到端测试
 ```
 
