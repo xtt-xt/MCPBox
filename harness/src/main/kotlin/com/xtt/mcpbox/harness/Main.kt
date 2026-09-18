@@ -32,6 +32,9 @@ private fun check(name: String, ok: Boolean, detail: String = "") {
 
 private class Resp(val code: Int, val body: String, val headers: Map<String, List<String>>)
 
+/** tools/list 响应里工具个数（直接数 name 字段）。 */
+private fun countTools(body: String): Int = Regex("\"name\\\":\"").findAll(body).count()
+
 private fun http(
     method: String,
     url: String,
@@ -114,8 +117,17 @@ fun main() {
         config = config, customTools = customTools, permissions = permissions,
         approval = approval, log = log, host = null,
         memory = MemoryStore(File(root, "memory/graph.json")),
-        toolMeta = ToolMetaStore(settings)
+        toolMeta = ToolMetaStore(settings),
+        packs = PackStore(settings),
+        profiles = ProfileStore(File(root, "profiles"), config)
     )
+    // 默认会话把所有包都打开：下面大量老测试都假设「tools/list 返回全部工具」。
+    // 工具包的过滤行为在 [37] 段用独立的会话单独验证。
+    server.profiles.setActive(
+        ProfileStore.DEFAULT_ID,
+        BuiltinPacks.ALL.map { it.id } + ToolPack.MY_TOOLS_ID
+    )
+
     println("== 启动服务器 (${root.absolutePath}) ==")
     if (!server.start()) {
         println("启动失败：${server.lastError}")
@@ -836,6 +848,168 @@ fun main() {
             settings.putString(Config.Keys.PERMISSIONS, backupPerms)
             permissions.load()
         }
+
+        println("\n[35] 工具包：模型与存储")
+        val ps = PackStore(settings)
+        check("内置包有 5 个", BuiltinPacks.ALL.size == 5)
+        check("core 是常驻包", BuiltinPacks.CORE.core)
+        check("出厂默认 3 个包", BuiltinPacks.defaults() == setOf("core", "file.read", "memory"))
+        check("my.tools 是内置 id", ps.isBuiltin("my.tools"))
+        check("core 是内置 id", ps.isBuiltin("core"))
+        check("all() 含「我的工具」", ps.all(listOf("x")).any { it.id == "my.tools" })
+        check("「我的工具」跟着自定义工具走", ps.all(listOf("a", "b")).first { it.id == "my.tools" }.tools == listOf("a", "b"))
+
+        val created = ps.add(ToolPack(id = "img", title = "图片处理", description = "处理图片用", tools = listOf("read_image")))
+        check("能新建自定义包", created.id == "img" && !created.builtin)
+        check("出现了", ps.all().any { it.id == "img" })
+        check("同名不能再建", runCatching { ps.add(ToolPack(id = "img", title = "重复", tools = listOf("read_file"))) }.isFailure)
+        check("内置 id 不能占用", runCatching { ps.add(ToolPack(id = "core", title = "冒充", tools = listOf("read_file"))) }.isFailure)
+        check("内置包不能删", runCatching { ps.remove("core") }.isFailure)
+        check("空标题会被拒", runCatching { ps.add(ToolPack(id = "x1", title = "", tools = listOf("read_file"))) }.isFailure)
+        check("空工具列表会被拒（工具层校验）", runCatching { ps.add(ToolPack(id = "x2", title = "空包", tools = emptyList())) }.isSuccess)
+        val updated = ps.update(ToolPack(id = "img", title = "图片处理 v2", description = "改了", tools = listOf("read_image", "file_info")))
+        check("能更新自定义包", updated.title == "图片处理 v2" && updated.tools.size == 2)
+        check("更新内置包会失败", runCatching { ps.update(ToolPack(id = "core", title = "改", tools = listOf("x"))) }.isFailure)
+        check("能删除自定义包", ps.remove("img") && !ps.all().any { it.id == "img" })
+        check("删不存在的返回 false", !ps.remove("nope"))
+
+        println("\n[36] 工具包：会话状态与 TTL")
+        val pd = ProfileStore(File(root, "profiles2"), config)
+        check("默认会话名", ProfileStore.sanitize("") == "default")
+        check("中文会话名可用", ProfileStore.sanitize("编码") == "编码")
+        check("挡掉路径穿越 /", ProfileStore.sanitize("../../etc") == "default")
+        check("挡掉路径穿越 ..", ProfileStore.sanitize("a..b") == "default")
+        check("挡掉反斜杠", ProfileStore.sanitize("a\\b") == "default")
+        check("挡掉奇怪符号", ProfileStore.sanitize("a;rm -rf") == "default")
+        check("超长会被截断", ProfileStore.sanitize("x".repeat(100)).length == 32)
+
+        check("新会话默认激活 3 个包", pd.active("s1") == setOf("core", "file.read", "memory"))
+        check("激活一个包", pd.activate("s1", "shell"))
+        check("重复激活返回 false", !pd.activate("s1", "shell"))
+        check("激活后包含 shell", pd.active("s1").contains("shell"))
+        check("会话之间互相隔离", !pd.peek("s2").contains("shell"))
+        check("停用一个包", pd.deactivate("s1", "shell"))
+        check("停用后不含 shell", !pd.active("s1").contains("shell"))
+        check("停用没激活的返回 false", !pd.deactivate("s1", "shell"))
+        pd.activate("s1", "file.write")
+        pd.reset("s1")
+        check("重置回默认", pd.active("s1") == setOf("core", "file.read", "memory"))
+        check("会话列表含 default 与 s1", pd.ids().containsAll(listOf("s1")))
+        pd.remove("s1")
+        check("删会话", !pd.ids().contains("s1"))
+
+        // TTL：把时间戳退回到很久以前，应该被判过期并重置
+        config.profileTtlEnabled = true
+        config.profileTtlMinutes = 30
+        pd.activate("ttl", "shell")
+        check("TTL 前是激活的", pd.peek("ttl").contains("shell"))
+        pd.expireForTest("ttl", 31)
+        check("TTL 到期后回默认", pd.active("ttl") == setOf("core", "file.read", "memory"))
+        config.profileTtlEnabled = false
+        pd.activate("ttl2", "shell")
+        pd.expireForTest("ttl2", 9999)
+        check("关掉 TTL 就不会过期", pd.active("ttl2").contains("shell"))
+        config.profileTtlEnabled = true
+
+        println("\n[37] 工具包：tools/list 按会话过滤")
+        val pkUrl = "$base/mcp/p/%E5%8C%85%E6%B5%8B%E8%AF%95"   // 会话名：包测试
+        server.profiles.reset("包测试")
+        val fresh = http("POST", pkUrl, """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""", sessionHeaders)
+        check("新会话拿得到 read_file", fresh.body.contains("\"read_file\""))
+        check("新会话拿得到记忆工具", fresh.body.contains("\"create_entities\""))
+        check("新会话拿得到包管理工具", fresh.body.contains("\"list_packs\""))
+        check("新会话拿不到 write_file（文件写入没激活）", !fresh.body.contains("\"write_file\""))
+        check("新会话拿不到 run_shell", !fresh.body.contains("\"run_shell\""))
+        check(
+            "HTTP 返回的工具数与内部计算一致",
+            countTools(fresh.body) == server.toolsFor("包测试").size,
+            "http=${countTools(fresh.body)} inner=${server.toolsFor("包测试").size}"
+        )
+        check("默认会话不受影响", countTools(
+            http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""", sessionHeaders).body
+        ) > countTools(fresh.body))
+
+        val actRes = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":63,"method":"tools/call","params":{"name":"activate_pack","arguments":{"pack":"file.write"}}}""",
+            sessionHeaders
+        )
+        check("activate_pack 能调用", actRes.body.contains("已激活"), actRes.body.take(200))
+        val afterAct = http("POST", pkUrl, """{"jsonrpc":"2.0","id":64,"method":"tools/list"}""", sessionHeaders)
+        check("激活后 write_file 出现了", afterAct.body.contains("\"write_file\""), afterAct.body.take(300))
+        check("激活后 run_shell 还是没出现", !afterAct.body.contains("\"run_shell\""))
+        check("另一个会话没被连累", !http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":64,"method":"tools/list"}""", sessionHeaders
+        ).let { it.body.contains("\"run_shell\"") } == false)
+
+        // 关键：没激活也能调用 —— 免得客户端不处理 list_changed 时死锁
+        answer("列出回收站", ApprovalDecision.ALLOW_ONCE)
+        val callInactive = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":67,"method":"tools/call","params":{"name":"list_trash","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("未激活包里的工具照样能调用", !callInactive.body.contains("未知工具"), callInactive.body.take(200))
+
+        val deact = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":65,"method":"tools/call","params":{"name":"deactivate_pack","arguments":{"pack":"file.write"}}}""",
+            sessionHeaders
+        )
+        check("deactivate_pack 能调用", deact.body.contains("已停用"), deact.body.take(200))
+        val afterDeact = http("POST", pkUrl, """{"jsonrpc":"2.0","id":66,"method":"tools/list"}""", sessionHeaders)
+        check("停用后 write_file 又不见了", !afterDeact.body.contains("\"write_file\""))
+
+        val coreP = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":68,"method":"tools/call","params":{"name":"deactivate_pack","arguments":{"pack":"core"}}}""",
+            sessionHeaders
+        )
+        check("core 包不能停用", coreP.body.contains("不能停用"), coreP.body.take(200))
+
+        println("\n[38] 工具包：列表、重置、建包")
+        val lp = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":71,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("list_packs 有输出", lp.body.contains("工具包") && lp.body.contains("file.write"), lp.body.take(200))
+        check("list_packs 会说明包只影响可见性", lp.body.contains("不影响调用"))
+
+        answer("管理工具包", ApprovalDecision.ALLOW_ONCE)
+        val mk = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":72,"method":"tools/call","params":{"name":"manage_pack","arguments":{"action":"create","id":"mytest","title":"测试包","description":"媒体测试用","tools":["read_image","file_info"]}}}""",
+            sessionHeaders
+        )
+        check("manage_pack 能建包", mk.body.contains("已新建"), mk.body.take(250))
+        check("建包后出现在 list_packs", http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":73,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}""",
+            sessionHeaders
+        ).body.contains("测试包"))
+
+        val badPack = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":74,"method":"tools/call","params":{"name":"activate_pack","arguments":{"pack":"没有这个包"}}}""",
+            sessionHeaders
+        )
+        check("激活不存在的包会报错", badPack.body.contains("没有叫"), badPack.body.take(200))
+
+        val rst = http(
+            "POST", pkUrl,
+            """{"jsonrpc":"2.0","id":75,"method":"tools/call","params":{"name":"reset_packs","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("reset_packs 能调用", rst.body.contains("已重置回默认"), rst.body.take(200))
+
+        val rmPack = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":76,"method":"tools/call","params":{"name":"manage_pack","arguments":{"action":"delete","id":"mytest"}}}""",
+            sessionHeaders
+        )
+        check("manage_pack 能删包", rmPack.body.contains("已删除工具包"), rmPack.body.take(200))
 
         println("\n[28] ShellMirror：AI 命令镜像到终端")
         val mirrored = StringBuilder()

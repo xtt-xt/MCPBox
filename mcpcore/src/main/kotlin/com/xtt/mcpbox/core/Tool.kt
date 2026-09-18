@@ -35,6 +35,14 @@ class CallContext(
     val memory: MemoryStore,
     /** 内置工具文案覆盖。 */
     val toolMeta: ToolMetaStore,
+    /** 当前会话（URL profile），决定哪些工具包是激活的。 */
+    val profile: String = ProfileStore.DEFAULT_ID,
+    /** 工具包定义。 */
+    val packs: PackStore = PackStore(MemorySettings()),
+    /** 各 profile 的激活状态。 */
+    val profiles: ProfileStore = ProfileStore(null, Config(MemorySettings())),
+    /** 当前全部工具名（不管激活状态），给 manage_pack 校验用。 */
+    val allToolNames: Set<String> = emptySet(),
     val startedAt: Long = System.currentTimeMillis()
 ) {
 

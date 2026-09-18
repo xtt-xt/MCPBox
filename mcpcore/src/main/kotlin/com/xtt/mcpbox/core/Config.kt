@@ -64,6 +64,9 @@ class Config(private val src: SettingsSource) {
         const val TOOL_OVERRIDES = "tool_overrides"
         const val TOOL_META = "tool_meta_json"
         const val MEMORY_ENABLED = "memory_enabled"
+        const val TOOL_PACKS = "tool_packs_json"
+        const val PROFILE_TTL_ENABLED = "profile_ttl_enabled"
+        const val PROFILE_TTL_MINUTES = "profile_ttl_minutes"
         const val SHELL_TIMEOUT = "shell_timeout"
         const val SHELL_PREFERENCE = "shell_preference"
         const val TERMINAL_BACKEND = "terminal_backend"
@@ -116,6 +119,14 @@ class Config(private val src: SettingsSource) {
     @Volatile var toolMeta: String = ""
     /** 记忆库总开关：关掉后记忆工具在 tools/list 里消失。 */
     @Volatile var memoryEnabled: Boolean = true
+    /** 用户自建的工具包（JSON 列表）。 */
+    @Volatile var toolPacks: String = ""
+    /**
+     * 会话状态的 TTL 兜底：超过 [profileTtlMinutes] 分钟没请求就回到默认包集。
+     * 关掉 = 激活状态一直保持，完全手动控制。
+     */
+    @Volatile var profileTtlEnabled: Boolean = true
+    @Volatile var profileTtlMinutes: Int = 30
     @Volatile var revision: Long = 0
 
     companion object {
@@ -159,6 +170,9 @@ class Config(private val src: SettingsSource) {
         toolOverrides = src.getString(Keys.TOOL_OVERRIDES, "") ?: ""
         toolMeta = src.getString(Keys.TOOL_META, "") ?: ""
         memoryEnabled = src.getBoolean(Keys.MEMORY_ENABLED, true)
+        toolPacks = src.getString(Keys.TOOL_PACKS, "") ?: ""
+        profileTtlEnabled = src.getBoolean(Keys.PROFILE_TTL_ENABLED, true)
+        profileTtlMinutes = src.getInt(Keys.PROFILE_TTL_MINUTES, 30).coerceIn(1, 1440)
         revision++
     }
 
@@ -187,6 +201,9 @@ class Config(private val src: SettingsSource) {
         src.putString(Keys.TOOL_OVERRIDES, toolOverrides)
         src.putString(Keys.TOOL_META, toolMeta)
         src.putBoolean(Keys.MEMORY_ENABLED, memoryEnabled)
+        src.putString(Keys.TOOL_PACKS, toolPacks)
+        src.putBoolean(Keys.PROFILE_TTL_ENABLED, profileTtlEnabled)
+        src.putInt(Keys.PROFILE_TTL_MINUTES, profileTtlMinutes)
         revision++
     }
 

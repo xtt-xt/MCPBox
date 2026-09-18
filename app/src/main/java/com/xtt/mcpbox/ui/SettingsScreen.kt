@@ -104,6 +104,7 @@ fun SettingsScreen(
         mutableStateOf(AppCore.config.shellTimeoutMs / 1000)
     }
     var timeoutState by remember(revision) { mutableStateOf(AppCore.config.approvalTimeoutMs / 1000) }
+    var ttlMinutesState by remember(revision) { mutableStateOf(AppCore.config.profileTtlMinutes) }
 
     Column(
         Modifier
@@ -450,8 +451,42 @@ fun SettingsScreen(
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Star,
                     onClick = onOpenMemory
-                )
-            )
+                ),
+                switchSpec(
+                    title = L("会话状态自动重置"),
+                    subtitle = if (AppCore.config.profileTtlEnabled)
+                        L("超过 %s 分钟没请求就回到默认工具包（新对话更干净）")
+                            .format(AppCore.config.profileTtlMinutes)
+                    else L("不自动重置，激活状态一直保持到手动改"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Refresh,
+                    checked = AppCore.config.profileTtlEnabled
+                ) {
+                    AppCore.config.profileTtlEnabled = it
+                    AppCore.saveConfig()
+                    onChanged()
+                },
+                if (AppCore.config.profileTtlEnabled) RowSpec(
+                    title = L("重置间隔"),
+                    subtitle = L("%s 分钟没动静就重置").format(ttlMinutesState),
+                    icon = Icons.Filled.Refresh,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Slider(
+                                value = ttlMinutesState.toFloat(),
+                                onValueChange = { ttlMinutesState = it.toInt() },
+                                onValueChangeFinished = {
+                                    AppCore.config.profileTtlMinutes = ttlMinutesState
+                                    AppCore.saveConfig()
+                                    onChanged()
+                                },
+                                valueRange = 5f..240f,
+                                modifier = Modifier.width(160.dp)
+                            )
+                        }
+                    }
+                ) else null
+            ).filterNotNull()
         )
         Spacer(Modifier.height(7.dp))
 

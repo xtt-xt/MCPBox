@@ -14,7 +14,9 @@ class Session(
     val id: String,
     val protocolVersion: String,
     val clientName: String,
-    val clientVersion: String
+    val clientVersion: String,
+    /** 这条连接属于哪个会话（URL profile），决定工具包激活状态。 */
+    val profile: String = ProfileStore.DEFAULT_ID
 ) {
     @Volatile var sse: SseWriter? = null
     @Volatile var lastSeen: Long = System.currentTimeMillis()
@@ -43,7 +45,11 @@ class McpServer(
     /** 记忆库（不传则用纯内存实例，测试方便）。 */
     val memory: MemoryStore = MemoryStore(),
     /** 内置工具的文案覆盖。 */
-    val toolMeta: ToolMetaStore = ToolMetaStore(MemorySettings())
+    val toolMeta: ToolMetaStore = ToolMetaStore(MemorySettings()),
+    /** 工具包定义（内置 + 用户自建）。 */
+    val packs: PackStore = PackStore(MemorySettings()),
+    /** 各会话（URL profile）的工具包激活状态。 */
+    val profiles: ProfileStore = ProfileStore(null, config)
 ) {
 
     val sandbox = PathSandbox(config)
@@ -66,13 +72,36 @@ class McpServer(
     /** 内置工具。 */
     val builtinTools: List<ToolSpec> =
         ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
-            ToolsToken.specs() + ToolsMemory.specs(memory)
+            ToolsToken.specs() + ToolsMemory.specs(memory) + ToolsPacks.specs(packs, profiles)
 
-    /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。 */
+    /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
     val tools: List<ToolSpec>
         get() = (builtinTools + ToolsShell.customSpecs(customTools))
             .filter { config.memoryEnabled || it.perm != PermKey.MEMORY }
             .map { toolMeta.apply(it) }
+
+    /**
+     * 某个会话在 `tools/list` 里应该看到什么：
+     * 基础包 + 已激活包里的工具。
+     *
+     * 注意 `tools/call` **不**按这个过滤 —— 调任何存在的工具都允许，
+     * 免得客户端不处理 `notifications/tools/list_changed` 时出现「激活了却调不到」。
+     */
+    fun toolsFor(profile: String): List<ToolSpec> {
+        val visible = ToolsPacks.visibleNames(
+            packs = packs,
+            profiles = profiles,
+            profile = profile,
+            customToolNames = customTools.tools.map { it.name },
+            disabled = ToolPolicy.disabled(config),
+            memoryEnabled = config.memoryEnabled
+        )
+        return tools.filter { it.name in visible }
+    }
+
+    /** 全部工具名（不管包激活状态），给 manage_pack 校验用。 */
+    private fun allToolNames(): Set<String> =
+        (builtinTools + ToolsShell.customSpecs(customTools)).map { it.name }.toSet()
 
     private val http = HttpServer(handler = ::dispatch, serverName = ServerMeta.NAME)
     val sessions = ConcurrentHashMap<String, Session>()
@@ -158,6 +187,18 @@ class McpServer(
         // ② 网页密码保护：没登录就跳登录页（带 token 的程序调用不受影响）
         if (config.consoleAuthEnabled && path != "/login" && path != "/logout" && !webAuthorized(req)) {
             return ex.respond(302, null, ByteArray(0), cors + mapOf("Location" to "/login"))
+        }
+
+        // ③ 工具包会话：/mcp/p/<名字> 和 /mcp 是同一个服务，
+        //    只是每个名字有自己独立的「激活了哪些工具包」状态。
+        //    客户端把地址配成不同的路径，就等于不同场景各自一份状态。
+        if (path.startsWith("/mcp/p/")) {
+            val profile = ProfileStore.sanitize(path.removePrefix("/mcp/p/"))
+            return handleMcp(req, ex, cors, profile)
+        }
+        if (path.startsWith("/sse/p/")) {
+            val profile = ProfileStore.sanitize(path.removePrefix("/sse/p/"))
+            return handleLegacySse(req, ex, cors, profile)
         }
 
         return when (path) {
@@ -359,7 +400,12 @@ class McpServer(
     private fun respondGateway(ex: Exchange, cors: Map<String, String>, r: FileGateway.Result): Boolean =
         ex.respond(r.status, r.contentType, r.body, cors + r.headers)
 
-    private fun handleMcp(req: HttpRequest, ex: Exchange, cors: Map<String, String>): Boolean {
+    private fun handleMcp(
+        req: HttpRequest,
+        ex: Exchange,
+        cors: Map<String, String>,
+        profile: String = ProfileStore.DEFAULT_ID
+    ): Boolean {
         val session = req.header("mcp-session-id")?.let { sessions[it] }
         if (!checkAuth(req)) {
             return ex.respondText(
@@ -390,12 +436,12 @@ class McpServer(
                 }
                 if (wantsSse) {
                     val sse = ex.openSse(cors + (session?.let { mapOf("Mcp-Session-Id" to it.id) } ?: emptyMap()))
-                    val (responses, _) = collectResponses(parsed, session, req.remote)
+                    val (responses, _) = collectResponses(parsed, session, req.remote, profile)
                     responses.forEach { sse.send(it.toString(), "message") }
                     sse.close()
                     true
                 } else {
-                    val (responses, newSessionId) = collectResponses(parsed, session, req.remote)
+                    val (responses, newSessionId) = collectResponses(parsed, session, req.remote, profile)
                     val headers = cors + when {
                         newSessionId != null -> mapOf("Mcp-Session-Id" to newSessionId)
                         session != null -> mapOf("Mcp-Session-Id" to session.id)
@@ -455,7 +501,12 @@ class McpServer(
     }
 
     /** Legacy HTTP+SSE transport: GET /sse, then POST /messages?sessionId=xxx */
-    private fun handleLegacySse(req: HttpRequest, ex: Exchange, cors: Map<String, String>): Boolean {
+    private fun handleLegacySse(
+        req: HttpRequest,
+        ex: Exchange,
+        cors: Map<String, String>,
+        profile: String = ProfileStore.DEFAULT_ID
+    ): Boolean {
         if (!checkAuth(req)) {
             return ex.respondText(401, "text/plain; charset=utf-8", "未授权：缺少或错误的 token", cors)
         }
@@ -463,7 +514,8 @@ class McpServer(
             id = Tokens.newId(),
             protocolVersion = ServerMeta.PROTOCOL,
             clientName = req.query["name"] ?: "sse-client",
-            clientVersion = ""
+            clientVersion = "",
+            profile = profile
         )
         sessions[session.id] = session
         clients[req.remote] = ClientTouch(req.remote, System.currentTimeMillis(), session.label())
@@ -499,7 +551,10 @@ class McpServer(
                 400, "application/json; charset=utf-8", jo("error" to "JSON 解析失败").toString(), cors
             )
         ex.respond(202, null, ByteArray(0), cors)
-        val (responses, _) = collectResponses(parsed, session, req.remote)
+        val (responses, _) = collectResponses(
+            parsed, session, req.remote,
+            session?.profile ?: ProfileStore.DEFAULT_ID
+        )
         val sse = session.sse
         responses.forEach { r ->
             val ok = sse?.send(r.toString(), "message") ?: false
@@ -513,13 +568,14 @@ class McpServer(
     private fun collectResponses(
         parsed: JsonElement,
         session: Session?,
-        remote: String
+        remote: String,
+        profile: String = ProfileStore.DEFAULT_ID
     ): Pair<List<JsonObject>, String?> {
         val outs = when (parsed) {
             is JsonArray -> parsed.mapNotNull { el ->
-                (el as? JsonObject)?.let { processMessage(it, session, remote) }
+                (el as? JsonObject)?.let { processMessage(it, session, remote, profile) }
             }
-            is JsonObject -> listOfNotNull(processMessage(parsed, session, remote))
+            is JsonObject -> listOfNotNull(processMessage(parsed, session, remote, profile))
             else -> emptyList()
         }
         val newSessionId = outs.firstOrNull { it.sessionId != null }?.sessionId
@@ -527,7 +583,12 @@ class McpServer(
     }
 
     /** The response is null for notifications (no id) and for pure acknowledgements. */
-    private fun processMessage(msg: JsonObject, session: Session?, remote: String): RpcOut? {
+    private fun processMessage(
+        msg: JsonObject,
+        session: Session?,
+        remote: String,
+        profile: String = ProfileStore.DEFAULT_ID
+    ): RpcOut? {
         val method = msg.str("method")
         val id = msg["id"]
         val isNotification = id == null || id is JsonNull
@@ -547,7 +608,8 @@ class McpServer(
                 val version = clientInfo?.str("version") ?: ""
                 val newSession = session ?: Session(
                     id = Tokens.newId(), protocolVersion = negotiated,
-                    clientName = name, clientVersion = version
+                    clientName = name, clientVersion = version,
+                    profile = profile
                 )
                 newSession.initialized = true
                 sessions[newSession.id] = newSession
@@ -571,7 +633,7 @@ class McpServer(
                                 "title" to ServerMeta.TITLE,
                                 "version" to ServerMeta.version
                             ),
-                            "instructions" to instructions()
+                            "instructions" to instructions(profile)
                         )
                     ),
                     newSession.id
@@ -584,19 +646,21 @@ class McpServer(
             "ping" -> RpcOut(rpcResult(id, JsonObject(emptyMap())))
 
             "tools/list" -> {
-                log.add(LogKind.REQUEST, tool = "tools/list", client = remote, message = "列出工具")
+                log.add(
+                    LogKind.REQUEST, tool = "tools/list", client = remote,
+                    message = "列出工具（会话 $profile）"
+                )
                 RpcOut(
                     rpcResult(
                         id,
-                        jo("tools" to tools.filter { !ToolPolicy.isDisabled(config, it.name) }
-                            .map { it.toMcpJson() })
+                        jo("tools" to toolsFor(profile).map { it.toMcpJson() })
                     )
                 )
             }
 
             "tools/call" -> {
                 val paramsCopy = params
-                RpcOut(rpcResult(id, callTool(paramsCopy, remote)))
+                RpcOut(rpcResult(id, callTool(paramsCopy, remote, profile)))
             }
 
             "resources/list" -> RpcOut(rpcResult(id, jo("resources" to emptyList<Any>())))
@@ -610,7 +674,11 @@ class McpServer(
     }
 
     /** Executes one tool and always returns a `{content, isError}` result object. */
-    private fun callTool(params: JsonObject, remote: String): JsonObject {
+    private fun callTool(
+        params: JsonObject,
+        remote: String,
+        profile: String = ProfileStore.DEFAULT_ID
+    ): JsonObject {
         val name = params.str("name")
             ?: return toolErrorResult("tools/call 缺少参数 name")
         val args = params.obj("arguments") ?: JsonObject(emptyMap())
@@ -633,7 +701,11 @@ class McpServer(
             customTools = customTools,
             bridge = bridge,
             memory = memory,
-            toolMeta = toolMeta
+            toolMeta = toolMeta,
+            profile = profile,
+            packs = packs,
+            profiles = profiles,
+            allToolNames = allToolNames()
         )
         val started = System.currentTimeMillis()
         val pathForLog = args.str("path") ?: args.str("source")
@@ -687,13 +759,27 @@ class McpServer(
 
     private fun firstLine(text: String): String = text.split('\n').firstOrNull()?.take(180) ?: ""
 
-    private fun instructions(): String = buildString {
+    private fun instructions(profile: String = ProfileStore.DEFAULT_ID): String = buildString {
         append("这是运行在手机上的文件管理服务器（MCP 文件盒），可以直接读写手机本地文件。\n")
         append("根目录：").append(config.roots.joinToString("、")).append('\n')
         append("路径规则：可写绝对路径；相对路径和 ~ 表示第一个根目录。\n")
         append("安全机制：涉及写入/删除的操作会实时在手机上弹出审批窗口，被拒绝时不要反复重试。\n")
         append("删除默认进入回收站，可用 list_trash / restore_trash 找回。\n")
-        append("终端：run_shell 可以执行 Shell 命令（后端 ")
+
+        // 工具包机制：AI 必须知道「自己看到的不是全部工具」
+        val visible = toolsFor(profile).map { it.name }.toSet()
+        val inactive = packs.all(customTools.tools.map { it.name })
+            .filter { !it.core && it.id !in profiles.active(profile) && it.tools.any { t -> t !in visible } }
+        append("\n【工具包】你看到的工具是分包的，当前会话（").append(profile).append("）只加载了一部分。\n")
+        if (inactive.isNotEmpty()) {
+            append("还没激活的包：")
+            append(inactive.joinToString("；") { "${it.title}（${it.id}）—— ${it.description}" })
+            append('\n')
+        }
+        append("要用的工具不在列表里时，先 list_packs 看有哪些包，再用 activate_pack 打开。\n")
+        append("注意：包只决定「工具列表里能不能看见」，直接按名字调用也是可以的；包本身不改变权限。\n")
+
+        append("\n终端：run_shell 可以执行 Shell 命令（后端 ")
         append(ShellBackends.pick("auto", config)?.label ?: "无")
         append("），危险命令同样会弹窗审批，用户可以「始终允许」某条命令。\n")
         if (customTools.tools.isNotEmpty()) {
@@ -701,8 +787,6 @@ class McpServer(
             append(customTools.tools.joinToString("、") { it.name })
             append("（用户自己定义的操作，可直接调用）。\n")
         }
-        append("自定义工具管理：create_custom_tool / update_custom_tool / delete_custom_tool / ")
-        append("list_custom_tools / export_custom_tools / import_custom_tools。\n")
         append("建议流程：server_info 了解环境 → list_dir / search_files 定位 → read_file 查看 → ")
         append("write_file / edit_file 修改 → notify_user 通知用户。\n")
         append("当前权限：")
@@ -724,7 +808,11 @@ class McpServer(
                 400, "application/json; charset=utf-8", jo("error" to "缺少 tool").toString(), cors
             )
         val args = body.obj("arguments") ?: body.obj("args") ?: JsonObject(emptyMap())
-        val result = callTool(jo("name" to name, "arguments" to args), req.remote)
+        val result = callTool(
+            jo("name" to name, "arguments" to args),
+            req.remote,
+            req.query["profile"] ?: ProfileStore.DEFAULT_ID
+        )
         return ex.respondText(200, "application/json; charset=utf-8", result.toString(), cors)
     }
 

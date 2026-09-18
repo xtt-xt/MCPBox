@@ -13,7 +13,9 @@ import com.xtt.mcpbox.core.DefaultRoots
 import com.xtt.mcpbox.core.EventLog
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.MemoryStore
+import com.xtt.mcpbox.core.PackStore
 import com.xtt.mcpbox.core.PermissionStore
+import com.xtt.mcpbox.core.ProfileStore
 import com.xtt.mcpbox.core.ToolMetaStore
 import com.xtt.mcpbox.core.PosixShLauncher
 import com.xtt.mcpbox.core.ServerMeta
@@ -45,6 +47,10 @@ object AppCore {
     lateinit var toolMeta: ToolMetaStore
         private set
     lateinit var memory: MemoryStore
+        private set
+    lateinit var packs: PackStore
+        private set
+    lateinit var profiles: ProfileStore
         private set
     lateinit var terminal: TerminalController
         private set
@@ -89,6 +95,8 @@ object AppCore {
             host = AndroidHost(application, config)
             customTools = CustomToolStore(config, prefs)
             toolMeta = ToolMetaStore(prefs)
+            packs = PackStore(prefs)
+            profiles = ProfileStore(java.io.File(application.filesDir, "profiles"), config)
             // 记忆库独立成文件，不塞进 SharedPreferences
             memory = MemoryStore(java.io.File(application.filesDir, "memory/graph.json"))
 
@@ -122,7 +130,9 @@ object AppCore {
                 log = log,
                 host = host,
                 memory = memory,
-                toolMeta = toolMeta
+                toolMeta = toolMeta,
+                packs = packs,
+                profiles = profiles
             )
             initialized = true
         }

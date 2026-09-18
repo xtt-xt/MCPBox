@@ -103,6 +103,9 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
             }
         )
 
+        // ---------------------------------------------------------- 工具包
+        PacksSection(ctx = ctx, revision = revision, onChanged = onChanged)
+
         // ---------------------------------------------------------- 快捷操作
         GroupLabel(L("快捷操作"))
         CardGroup(
