@@ -849,7 +849,7 @@ fun main() {
             permissions.load()
         }
 
-        println("\n[35] 工具包：模型与存储")
+        println("\n[36] 工具包：模型与存储")
         val ps = PackStore(settings)
         check("内置包有 5 个", BuiltinPacks.ALL.size == 5)
         check("core 是常驻包", BuiltinPacks.CORE.core)
@@ -873,7 +873,7 @@ fun main() {
         check("能删除自定义包", ps.remove("img") && !ps.all().any { it.id == "img" })
         check("删不存在的返回 false", !ps.remove("nope"))
 
-        println("\n[36] 工具包：会话状态与 TTL")
+        println("\n[37] 工具包：会话状态与 TTL")
         val pd = ProfileStore(File(root, "profiles2"), config)
         check("默认会话名", ProfileStore.sanitize("") == "default")
         check("中文会话名可用", ProfileStore.sanitize("编码") == "编码")
@@ -911,7 +911,7 @@ fun main() {
         check("关掉 TTL 就不会过期", pd.active("ttl2").contains("shell"))
         config.profileTtlEnabled = true
 
-        println("\n[37] 工具包：tools/list 按会话过滤")
+        println("\n[38] 工具包：tools/list 按会话过滤")
         val pkUrl = "$base/mcp/p/%E5%8C%85%E6%B5%8B%E8%AF%95"   // 会话名：包测试
         server.profiles.reset("包测试")
         val fresh = http("POST", pkUrl, """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""", sessionHeaders)
@@ -968,7 +968,7 @@ fun main() {
         )
         check("core 包不能停用", coreP.body.contains("不能停用"), coreP.body.take(200))
 
-        println("\n[38] 工具包：列表、重置、建包")
+        println("\n[39] 工具包：列表、重置、建包")
         val lp = http(
             "POST", "$base/mcp",
             """{"jsonrpc":"2.0","id":71,"method":"tools/call","params":{"name":"list_packs","arguments":{}}}""",
@@ -1011,7 +1011,7 @@ fun main() {
         )
         check("manage_pack 能删包", rmPack.body.contains("已删除工具包"), rmPack.body.take(200))
 
-        println("\n[28] ShellMirror：AI 命令镜像到终端")
+        println("\n[40] ShellMirror：AI 命令镜像到终端")
         val mirrored = StringBuilder()
         ShellMirror.attach { text -> mirrored.append(text) }
         check("attach 后标记为已接上", ShellMirror.isAttached)

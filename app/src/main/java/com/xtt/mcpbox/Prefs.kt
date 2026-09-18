@@ -31,6 +31,8 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_APP_LANG = "app_lang"
         const val KEY_CAT = "cat_unlocked"
         const val KEY_FIRST_RUN = "first_run_done"
+        /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
+        const val KEY_PACK_PROFILE = "pack_profile_view"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -108,6 +110,15 @@ class Prefs(context: Context) : SettingsSource {
     var firstRunDone: Boolean
         get() = getBoolean(KEY_FIRST_RUN, false)
         set(value) = putBoolean(KEY_FIRST_RUN, value)
+
+    /**
+     * 权限页里「工具包」正在查看哪个会话。
+     * 这只是**界面状态**（方便你切走再回来还在原处），
+     * AI 实际用哪个会话由它请求的地址 `/mcp/p/<名字>` 决定。
+     */
+    var packProfileView: String
+        get() = getString(KEY_PACK_PROFILE, "default") ?: "default"
+        set(value) = putString(KEY_PACK_PROFILE, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     fun clearAll() = sp.edit().clear().apply()

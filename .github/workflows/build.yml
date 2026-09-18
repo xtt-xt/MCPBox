@@ -50,7 +50,7 @@ jobs:
             echo "::warning::没有配置 KEYSTORE_BASE64，本次会产出未签名的 release APK"
           fi
 
-      - name: 端到端测试（138 项断言）
+      - name: 端到端测试
         run: ./gradlew :harness:e2e --no-daemon --stacktrace
 
       - name: 构建 release 与 debug

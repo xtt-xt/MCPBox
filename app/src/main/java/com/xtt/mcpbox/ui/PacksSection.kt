@@ -48,11 +48,18 @@ fun PacksSection(
     revision: Int,
     onChanged: () -> Unit
 ) {
-    var profile by remember { mutableStateOf("default") }
+    // 正在查看哪个会话：存进 Prefs，切走再回来（甚至重启 App）都还在原处。
+    // 注意这只是「界面在看哪个」，AI 实际用哪个由它请求的 /mcp/p/<名字> 决定。
+    var profile by remember { mutableStateOf(AppCore.prefs.packProfileView) }
     var pickProfile by remember { mutableStateOf(false) }
     var creatingProfile by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDelete by remember { mutableStateOf<ToolPack?>(null) }
+
+    fun selectProfile(id: String) {
+        profile = id
+        AppCore.prefs.packProfileView = id
+    }
 
     val customNames = remember(revision) { AppCore.customTools.tools.map { it.name } }
     val all = remember(revision, customNames) { AppCore.packs.all(customNames) }
@@ -62,7 +69,11 @@ fun PacksSection(
     }
 
     if (pickProfile) {
-        val options = profileIds + L("＋ 新建会话…")
+        val options = profileIds.map { id ->
+            val t = AppCore.profiles.stateOf(id).updatedAt
+            if (id == "default") id
+            else id + "　" + L("（%s）").format(relativeTime(t))
+        } + L("＋ 新建会话…")
         ChoiceDialog(
             title = L("当前会话"),
             options = options,
@@ -70,7 +81,7 @@ fun PacksSection(
             onDismiss = { pickProfile = false },
             onSelect = { idx ->
                 pickProfile = false
-                if (idx < profileIds.size) profile = profileIds[idx]
+                if (idx < profileIds.size) selectProfile(profileIds[idx])
                 else creatingProfile = true
             }
         )
@@ -87,7 +98,7 @@ fun PacksSection(
                 val id = name.trim()
                 if (id.isNotEmpty()) {
                     AppCore.profiles.reset(id)
-                    profile = id
+                    selectProfile(id)
                 }
                 creatingProfile = false
                 onChanged()
@@ -101,7 +112,7 @@ fun PacksSection(
         listOf(
             RowSpec(
                 title = L("当前会话"),
-                subtitle = L("客户端地址填 /mcp/p/名字 就是不同会话，各有各的激活状态"),
+                subtitle = L("只是「我正在看哪个会话」，跟 AI 用哪个无关；AI 用哪个由它请求的地址决定"),
                 subtitleMaxLines = 2,
                 icon = Icons.Filled.Build,
                 onClick = { pickProfile = true },
@@ -109,6 +120,56 @@ fun PacksSection(
             )
         )
     )
+
+    // 直接给出该填进客户端的地址，省得自己拼
+    Spacer(Modifier.height(7.dp))
+    val lanIp = remember { com.xtt.mcpbox.core.LocalNet.primary() ?: "127.0.0.1" }
+    val port = AppCore.config.port
+    val profilePath = if (profile == "default") "/mcp"
+    else "/mcp/p/" + runCatching { java.net.URLEncoder.encode(profile, "UTF-8") }.getOrDefault(profile)
+    val fullUrl = "http://$lanIp:$port$profilePath"
+    CardColumn {
+        CardBox {
+            Text(
+                L("会话「%s」的地址").format(profile),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.5.sp
+            )
+            Text(
+                fullUrl,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                L("令牌别写在地址里，放到自定义请求头更干净：") + "\n" +
+                    "Authorization: Bearer " + (if (AppCore.config.tokenEnabled) AppCore.config.token else "…"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.5.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 16.sp
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PillButton(
+                    L("复制地址"), Modifier.weight(1f), outlined = true,
+                    color = MaterialTheme.colorScheme.primary, compact = true
+                ) { copyText(ctx, fullUrl, L("地址已复制")) }
+                PillButton(
+                    L("复制请求头"), Modifier.weight(1f), outlined = true,
+                    color = MaterialTheme.colorScheme.primary, compact = true
+                ) {
+                    copyText(
+                        ctx,
+                        "Authorization: Bearer ${AppCore.config.token}",
+                        L("请求头已复制")
+                    )
+                }
+            }
+        }
+    }
 
     Spacer(Modifier.height(7.dp))
     CardGroup(
@@ -193,7 +254,7 @@ fun PacksSection(
                     color = MaterialTheme.colorScheme.error, compact = true
                 ) {
                     AppCore.profiles.remove(profile)
-                    profile = "default"
+                    selectProfile("default")
                     toast(ctx, L("已删除会话"))
                     onChanged()
                 }
@@ -432,4 +493,16 @@ private fun PackEditorDialog(
 private fun autoId(title: String): String {
     val base = title.trim().take(24).replace(Regex("[^\\p{L}\\p{N}._-]"), "_")
     return base.ifBlank { "pack" } + "_" + System.currentTimeMillis().toString(36).takeLast(4)
+}
+
+/** 「3 分钟前」这种相对时间，给会话列表用。 */
+private fun relativeTime(ts: Long): String {
+    if (ts <= 0L) return L("还没用过")
+    val d = System.currentTimeMillis() - ts
+    return when {
+        d < 60_000L -> L("刚刚")
+        d < 3_600_000L -> L("%s 分钟前").format(d / 60_000L)
+        d < 86_400_000L -> L("%s 小时前").format(d / 3_600_000L)
+        else -> L("%s 天前").format(d / 86_400_000L)
+    }
 }
