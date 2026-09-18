@@ -19,9 +19,11 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 | | |
 |---|---|
-| **28 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具… |
+| **39 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库… |
 | **逐次审批** | 顶层悬浮窗 + 通知栏兜底，支持「允许一次 / 始终允许 / 拒绝 / 始终拒绝」 |
-| **权限矩阵** | 6 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
+| **权限矩阵** | 7 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
+| **工具级权限四态** | 单个工具可单独设「跟随 / 允许 / 询问 / 拒绝」，其中「询问」无视全局矩阵、每次都弹窗 |
+| **记忆库** | 给 AI 的长期记忆：实体 + 观察 + 关系（知识图谱），能在 App 里浏览和编辑 |
 | **文件网关** | `POST /upload`、`GET /download`，外加手机浏览器直接可用的上传网页 |
 | **应用私有目录** | 可读可写 `/data/data/<包名>`，三档（禁止 / 只读 / 可读写），经 root 转发 |
 | **内置终端** | 常驻 shell，`cd`/`export` 状态保留、命令历史、Ctrl-C 中断、清屏 |
@@ -49,6 +51,10 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 **Shell / 扩展（8）**：`run_shell` `shell_info` `create_custom_tool` `update_custom_tool` `delete_custom_tool` `list_custom_tools` `export_custom_tools` `import_custom_tools`
 
+**令牌（1）**：`get_token`（调用它自己不需要令牌，用于解开「AI 要先拿到 token 才能传文件」的死循环）
+
+**记忆库（10）**：`create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
+
 ## 权限模型
 
 | 权限键 | 默认 | 说明 |
@@ -58,7 +64,8 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | `fs.delete` | 询问 | 删除（默认还会先进回收站） |
 | `shell.exec` | 询问 | 执行命令（用户自己在终端敲的不算） |
 | `tools.manage` | 询问 | 新建/修改/删除自定义工具 |
-| `system.info` | 允许 | 设备信息、存储信息 |
+| `system.info` | 允许 | 设备信息、存储信息、获取令牌 |
+| `memory` | 允许 | 记忆库的读写（关掉总开关后记忆工具直接从 `tools/list` 消失） |
 
 **规则（Rule）**可以覆盖开关，粒度更细：
 
@@ -66,6 +73,37 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 - 命令规则：`pm list packages` 前缀 → 允许；`rm -rf` 正则 → 拒绝（按顺序首条命中）
 
 在审批弹窗上点「始终允许 / 始终拒绝」会自动生成对应规则，之后同类操作不再打扰。
+
+单个工具还能在「设置 → AI 工具 → 工具管理」里单独设权限，四态含义：
+
+| 取值 | 含义 |
+|---|---|
+| 跟随（默认） | 按上面的全局权限矩阵走 |
+| 允许 | 这个工具的所有操作直接放行，不弹审批 |
+| 询问 | **无视全局矩阵**，这个工具每次调用都弹窗问你一次 |
+| 拒绝 | 无论全局怎么设，一律拒绝 |
+
+在「询问」触发的弹窗里选「始终允许 / 始终拒绝」，记住的是**这个工具本身**，不会改动全局权限开关。
+
+## 记忆库
+
+给 AI 的长期记忆，结构是经典的知识图谱三元组：
+
+| 概念 | 说明 |
+|---|---|
+| **实体** | 一个节点：项目、工具、事件、人物、用户偏好… 名字唯一 |
+| **观察** | 挂在实体身上的一条条事实短句（增删时自动去重） |
+| **关系** | 两个实体之间的有向边：`from ──PART_OF──▸ to` |
+
+实体类型、分区（folder）、关系谓词都是**自由文本**，不强制枚举 —— AI 自己会自然长出
+「项目事实 / 用户偏好 / 事件」这类结构，关系谓词一般用大写下划线（`PART_OF`、`HAPPENS_AT`、
+`INVOLVES`、`CORRECTS`、`UPDATES`…）。
+
+- 界面：**设置 → AI 工具 → 记忆库**。支持搜索、按分区过滤，点进实体可以改名 / 改类型 /
+  改分区、增删观察、增删关系；点关系能跳到对方实体。
+- 存储：`filesDir/memory/graph.json`，原子写入（先写 `.tmp` 再改名），断电最多丢最后一次写入。
+- 搜索 `search_nodes` 会连带返回命中实体的**直接邻居**，方便顺着线索往下读。
+- 重名实体只跳过不覆盖；重命名会自动同步关系两端；删实体会连带删掉它的所有关系。
 
 ## 文件进出通道
 
@@ -159,7 +197,7 @@ git tag v1.6.4 && git push origin v1.6.4
 ```
 app/                          Android 应用（Compose UI + 服务 + 悬浮窗）
   src/main/java/com/xtt/mcpbox/
-    ui/                       界面：首页/终端/权限/日志/设置/自定义工具
+    ui/                       界面：首页/终端/权限/日志/设置/工具管理/记忆库
     server/                   前台服务、审批广播、开机自启
     AndroidHost.kt            设备信息、通知等系统能力
     ShizukuShell.kt           Shizuku 进程启动器
@@ -171,6 +209,8 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   PathSandbox.kt / TrashManager.kt / FileBridge.kt / FileGateway.kt
   Shell.kt                    shell 后端（应用 / root / Shizuku）
   WebConsole.kt / Config.kt / CustomTools.kt / EventLog.kt
+  Memory.kt                   记忆库：实体 + 观察 + 关系，原子写入 graph.json
+  ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
 harness/                      端到端测试
 ```
 
