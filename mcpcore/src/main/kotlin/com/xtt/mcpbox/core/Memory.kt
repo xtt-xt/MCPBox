@@ -241,7 +241,11 @@ class MemoryStore(private val file: File? = null) {
                 entities = graph.entities.map { e ->
                     if (e.name != name) e
                     else {
-                        val fresh = texts.map { it.trim() }.filter { it.isNotEmpty() && it !in e.observations }
+                        // 先去空、去重（同一批里传了重复的也算一次），再排掉已经存在的
+                        val fresh = texts.map { it.trim() }
+                            .filter { it.isNotEmpty() }
+                            .distinct()
+                            .filter { it !in e.observations }
                         added = fresh.size
                         if (fresh.isEmpty()) e.copy(updatedAt = now)
                         else e.copy(observations = e.observations + fresh, updatedAt = now)

@@ -736,6 +736,17 @@ fun main() {
         check("观察去重：加两条", ms.addObservations("项目：MCPBox", listOf("用 Kotlin", "用 Compose")) == 2)
         check("重复观察会被跳过", ms.addObservations("项目：MCPBox", listOf("用 Kotlin")) == 0)
         check("观察总数正确", ms.entity("项目：MCPBox")?.observations?.size == 2)
+        // 同一批里传了重复内容，也只能算一条（回归：曾经漏了对 texts 自身的去重）
+        check(
+            "同一批里的重复项只算一次",
+            ms.addObservations("项目：MCPBox", listOf("批次重复", "批次重复", "批次重复")) == 1,
+            "实际 ${ms.addObservations("项目：MCPBox", listOf("批次重复"))}"
+        )
+        check(
+            "批次重复确实只留一条",
+            ms.entity("项目：MCPBox")?.observations?.count { it == "批次重复" } == 1
+        )
+        check("清掉批次重复", ms.deleteObservations("项目：MCPBox", listOf("批次重复")) == 1)
         check("删除指定观察", ms.deleteObservations("项目：MCPBox", listOf("用 Compose")) == 1)
         check("建立关系", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 1)
         check("重复关系不重加", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 0)
