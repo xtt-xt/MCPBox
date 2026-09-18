@@ -219,12 +219,39 @@ fun PacksSection(
         )
     )
 
+    Spacer(Modifier.height(7.dp))
+    CardGroup(
+        listOf(
+            switchSpec(
+                title = L("让 AI 自己开关工具包"),
+                subtitle = if (AppCore.config.aiPackControl)
+                    L("已打开：AI 能看到并能调用包管理工具。注意大多数客户端只在连接时拉一次工具列表，新激活的包要重连后才能用")
+                else L("已关闭（推荐）：包纯粹是你自己的设置，AI 看到什么就用什么，不会白跑几轮去激活"),
+                subtitleMaxLines = 3,
+                icon = Icons.Filled.Build,
+                checked = AppCore.config.aiPackControl
+            ) { on ->
+                AppCore.config.aiPackControl = on
+                AppCore.saveConfig()
+                onChanged()
+            }
+        )
+    )
+
     Spacer(Modifier.height(10.dp))
     Column(Modifier.padding(horizontal = 14.dp)) {
         Text(
-            L("包只决定「AI 的工具列表里能不能看见」，不影响调用，也不会绕过上面的权限。") +
+            L("工具包决定「AI 的工具列表里出现哪些工具」，用来省 token；也不会绕过上面的权限。") +
                 L("默认只加载基础 + 文件读取 + 记忆库，能省约三分之一 token。"),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            lineHeight = 17.sp
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            L("重要：大多数 MCP 客户端只在连接时读取一次工具列表，所以改完工具包后，") +
+                L("要让 AI 看到变化，需要重新连接（或重启 App）。"),
+            color = Sem.warn,
             fontSize = 12.sp,
             lineHeight = 17.sp
         )

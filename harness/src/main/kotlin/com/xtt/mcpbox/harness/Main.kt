@@ -59,6 +59,11 @@ private fun http(
     return Resp(code, text, conn.headerFields)
 }
 
+/** 从 tools/list 的响应里精确取出工具名集合（避免描述文本里的词误伤断言）。 */
+private fun toolNamesIn(body: String): Set<String> =
+    Regex("\\\"name\\\":\\\"([a-zA-Z_0-9]+)\\\"").findAll(body)
+        .map { it.groupValues[1] }.toSet()
+
 fun main() {
     val root = Files.createTempDirectory("mcpbox-e2e").toFile()
     File(root, "docs").mkdirs()
@@ -912,6 +917,8 @@ fun main() {
         config.profileTtlEnabled = true
 
         println("\n[38] 工具包：tools/list 按会话过滤")
+        // 这一节要测包管理工具本身，先把「让 AI 自己开关包」打开（默认是关的）
+        config.aiPackControl = true
         val pkUrl = "$base/mcp/p/%E5%8C%85%E6%B5%8B%E8%AF%95"   // 会话名：包测试
         server.profiles.reset("包测试")
         val fresh = http("POST", pkUrl, """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""", sessionHeaders)
@@ -975,7 +982,8 @@ fun main() {
             sessionHeaders
         )
         check("list_packs 有输出", lp.body.contains("工具包") && lp.body.contains("file.write"), lp.body.take(200))
-        check("list_packs 会说明包只影响可见性", lp.body.contains("不影响调用"))
+        check("list_packs 会说明包影响可见性", lp.body.contains("工具列表里能看见什么"))
+        check("list_packs 会提醒需要重连", lp.body.contains("重新连接"))
 
         answer("管理工具包", ApprovalDecision.ALLOW_ONCE)
         val mk = http(
@@ -1011,7 +1019,77 @@ fun main() {
         )
         check("manage_pack 能删包", rmPack.body.contains("已删除工具包"), rmPack.body.take(200))
 
-        println("\n[40] ShellMirror：AI 命令镜像到终端")
+        println("\n[40] 工具包：默认「不让 AI 知道包」（省 token + 不给 AI 挖坑）")
+
+        // 前面的初始化故意把默认会话设成「全部包都开」（老测试依赖它），
+        // 这段要验证「未激活的包看不见」，所以先还原成出厂状态，测完再还原回去。
+        val savedDefaultActive = server.profiles.peek(ProfileStore.DEFAULT_ID)
+        server.profiles.reset(ProfileStore.DEFAULT_ID)
+
+        // 关掉开关后：包管理工具应该整体消失
+        config.aiPackControl = false
+        val off = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":81,"method":"tools/list"}""", sessionHeaders)
+        val offNames = toolNamesIn(off.body)
+        check("关掉后看不到任何包管理工具", offNames.none { it in BuiltinPacks.PACK_TOOLS }, offNames.toString())
+        check("关掉后基础能力还在", "server_info" in offNames && "get_token" in offNames, offNames.toString())
+        check(
+            "关掉后已激活包的工具照常可见",
+            "read_file" in offNames && "create_entities" in offNames, offNames.toString()
+        )
+        check(
+            "关掉后未激活包的工具仍然不可见",
+            "write_file" !in offNames && "run_shell" !in offNames, offNames.toString()
+        )
+        check(
+            "HTTP 的工具数与内部计算一致",
+            offNames.size == server.toolsFor("default").size,
+            "http=${offNames.size} inner=${server.toolsFor("default").size}"
+        )
+
+        // 内核计算也要一致
+        val innerOff = server.toolsFor("default").map { it.name }
+        check("内部计算里没有包管理工具", innerOff.none { it in BuiltinPacks.PACK_TOOLS }, innerOff.toString())
+        check("内部计算里有 read_file", "read_file" in innerOff)
+
+        // 拿着旧缓存的 AI 来调包工具 → 给明确指引，而不是默默执行
+        val oldCache = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":82,"method":"tools/call","params":{"name":"activate_pack","arguments":{"pack":"shell"}}}""",
+            sessionHeaders
+        )
+        check("关掉时调 activate_pack 会被挡下", oldCache.body.contains("由用户"), oldCache.body.take(250))
+        check("挡下时会说明怎么打开", oldCache.body.contains("让 AI 自己开关工具包"), oldCache.body.take(250))
+
+        // instructions 里也不该再提工具包
+        val initOff = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":83,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}""",
+            auth + mapOf("Accept" to "application/json")
+        )
+        check("关掉时 instructions 不提工具包", !initOff.body.contains("【工具包】"), initOff.body.take(300))
+
+        // 打开后：工具回来，instructions 也提
+        config.aiPackControl = true
+        val on = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":84,"method":"tools/list"}""", sessionHeaders)
+        val onNames = toolNamesIn(on.body)
+        check("打开后包管理工具都回来了", BuiltinPacks.PACK_TOOLS.all { it in onNames }, onNames.toString())
+        val initOn = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":85,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}""",
+            auth + mapOf("Accept" to "application/json")
+        )
+        check("打开时 instructions 会讲工具包", initOn.body.contains("【工具包】"), initOn.body.take(300))
+        check("打开时会提醒需要重连才能生效", initOn.body.contains("需要客户端重新连接"), initOn.body.take(400))
+
+        // 省下来的 token：包管理工具的数量
+        check("包管理工具共 5 个", BuiltinPacks.PACK_TOOLS.size == 5)
+
+        // 还原：默认会话恢复「全部打开」，开关也回到默认的关
+        server.profiles.setActive(ProfileStore.DEFAULT_ID, savedDefaultActive)
+        check("默认会话已还原成全部打开", server.profiles.peek(ProfileStore.DEFAULT_ID).contains("shell"))
+        config.aiPackControl = false
+
+        println("\n[41] ShellMirror：AI 命令镜像到终端")
         val mirrored = StringBuilder()
         ShellMirror.attach { text -> mirrored.append(text) }
         check("attach 后标记为已接上", ShellMirror.isAttached)

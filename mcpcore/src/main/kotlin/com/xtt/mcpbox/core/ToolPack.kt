@@ -42,16 +42,22 @@ data class ToolPack(
 
 object BuiltinPacks {
 
+    /**
+     * 包管理工具。**只有打开「让 AI 自己开关包」时才会出现在 tools/list 里**，
+     * 否则纯属白占 token（默认关，见 [Config.aiPackControl]）。
+     */
+    val PACK_TOOLS = listOf(
+        "list_packs", "activate_pack", "deactivate_pack", "reset_packs", "manage_pack"
+    )
+
     val CORE = ToolPack(
         id = ToolPack.CORE_ID,
         title = "基础",
-        description = "服务器状态、设备信息、通知、访问令牌，以及工具包的查询与切换。永远可用。",
+        description = "服务器状态、设备信息、通知、访问令牌。永远可用。",
         tools = listOf(
             // 原有基础能力
-            "server_info", "get_device_info", "notify_user", "get_token",
-            // 包管理（必须常驻，否则 AI 没法自己激活别的包）
-            "list_packs", "activate_pack", "deactivate_pack", "reset_packs", "manage_pack"
-        ),
+            "server_info", "get_device_info", "notify_user", "get_token"
+        ) + PACK_TOOLS,
         builtin = true,
         core = true,
         defaultActive = true

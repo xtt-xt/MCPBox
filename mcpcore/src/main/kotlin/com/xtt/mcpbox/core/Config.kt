@@ -65,6 +65,7 @@ class Config(private val src: SettingsSource) {
         const val TOOL_META = "tool_meta_json"
         const val MEMORY_ENABLED = "memory_enabled"
         const val TOOL_PACKS = "tool_packs_json"
+        const val AI_PACK_CONTROL = "ai_pack_control"
         const val PROFILE_TTL_ENABLED = "profile_ttl_enabled"
         const val PROFILE_TTL_MINUTES = "profile_ttl_minutes"
         const val SHELL_TIMEOUT = "shell_timeout"
@@ -122,6 +123,17 @@ class Config(private val src: SettingsSource) {
     /** 用户自建的工具包（JSON 列表）。 */
     @Volatile var toolPacks: String = ""
     /**
+     * 让 AI 自己开关工具包（默认**关**）。
+     *
+     * 为什么默认关：实测主流客户端（RikkaHub 等）**只在连接时拉一次 tools/list，
+     * 之后再也不会重新拉**，而服务端也无法通知它刷新。所以 AI 激活了包，
+     * 这一轮、下一轮都调不到里面的工具 —— 白白浪费好几轮对话。
+     *
+     * 因此默认把「包」当成**用户侧的长期设置**：你在权限页勾好，AI 看到什么就用什么，
+     * 完全不知道有包这回事，零摩擦。打开这个开关才会把包管理工具和说明暴露给 AI。
+     */
+    @Volatile var aiPackControl: Boolean = false
+    /**
      * 会话状态的 TTL 兜底：超过 [profileTtlMinutes] 分钟没请求就回到默认包集。
      * 关掉 = 激活状态一直保持，完全手动控制。
      */
@@ -171,6 +183,7 @@ class Config(private val src: SettingsSource) {
         toolMeta = src.getString(Keys.TOOL_META, "") ?: ""
         memoryEnabled = src.getBoolean(Keys.MEMORY_ENABLED, true)
         toolPacks = src.getString(Keys.TOOL_PACKS, "") ?: ""
+        aiPackControl = src.getBoolean(Keys.AI_PACK_CONTROL, false)
         profileTtlEnabled = src.getBoolean(Keys.PROFILE_TTL_ENABLED, true)
         profileTtlMinutes = src.getInt(Keys.PROFILE_TTL_MINUTES, 30).coerceIn(1, 1440)
         revision++
@@ -202,6 +215,7 @@ class Config(private val src: SettingsSource) {
         src.putString(Keys.TOOL_META, toolMeta)
         src.putBoolean(Keys.MEMORY_ENABLED, memoryEnabled)
         src.putString(Keys.TOOL_PACKS, toolPacks)
+        src.putBoolean(Keys.AI_PACK_CONTROL, aiPackControl)
         src.putBoolean(Keys.PROFILE_TTL_ENABLED, profileTtlEnabled)
         src.putInt(Keys.PROFILE_TTL_MINUTES, profileTtlMinutes)
         revision++

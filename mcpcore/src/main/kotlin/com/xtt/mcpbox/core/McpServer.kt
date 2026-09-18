@@ -94,7 +94,8 @@ class McpServer(
             profile = profile,
             customToolNames = customTools.tools.map { it.name },
             disabled = ToolPolicy.disabled(config),
-            memoryEnabled = config.memoryEnabled
+            memoryEnabled = config.memoryEnabled,
+            aiPackControl = config.aiPackControl
         )
         return tools.filter { it.name in visible }
     }
@@ -687,6 +688,15 @@ class McpServer(
         if (ToolPolicy.isDisabled(config, name)) {
             return toolErrorResult("工具「$name」已在 App 里被禁用（可在「设置 → 工具管理」里启用）")
         }
+        // 包管理工具：用户没打开「让 AI 自己开关包」时，明确拒绝并说清怎么办。
+        // （正常情况下它们根本不在 tools/list 里，这里是防客户端拿着旧缓存来调。）
+        if (name in BuiltinPacks.PACK_TOOLS && !config.aiPackControl) {
+            return toolErrorResult(
+                "工具包现在由用户在 App 里手动管理，「$name」没有开放给 AI。\n" +
+                    "需要的话请让用户去「权限 → 工具包」勾选好要用的包，" +
+                    "并打开「让 AI 自己开关工具包」，然后重新连接 MCP 服务。"
+            )
+        }
         val ctx = CallContext(
             tool = name,
             args = args,
@@ -766,18 +776,23 @@ class McpServer(
         append("安全机制：涉及写入/删除的操作会实时在手机上弹出审批窗口，被拒绝时不要反复重试。\n")
         append("删除默认进入回收站，可用 list_trash / restore_trash 找回。\n")
 
-        // 工具包机制：AI 必须知道「自己看到的不是全部工具」
-        val visible = toolsFor(profile).map { it.name }.toSet()
-        val inactive = packs.all(customTools.tools.map { it.name })
-            .filter { !it.core && it.id !in profiles.active(profile) && it.tools.any { t -> t !in visible } }
-        append("\n【工具包】你看到的工具是分包的，当前会话（").append(profile).append("）只加载了一部分。\n")
-        if (inactive.isNotEmpty()) {
-            append("还没激活的包：")
-            append(inactive.joinToString("；") { "${it.title}（${it.id}）—— ${it.description}" })
-            append('\n')
+        // 工具包机制：只在「让 AI 自己开关包」打开时才告诉 AI。
+        // 默认关 —— 因为客户端只在连接时拉一次 tools/list，AI 激活了也调不到，
+        // 说出来只会让 AI 白跑 list_packs / activate_pack 好几轮。
+        if (config.aiPackControl) {
+            val visible = toolsFor(profile).map { it.name }.toSet()
+            val inactive = packs.all(customTools.tools.map { it.name })
+                .filter { !it.core && it.id !in profiles.active(profile) && it.tools.any { t -> t !in visible } }
+            append("\n【工具包】你看到的工具是分包的，当前会话（").append(profile).append("）只加载了一部分。\n")
+            if (inactive.isNotEmpty()) {
+                append("还没激活的包：")
+                append(inactive.joinToString("；") { "${it.title}（${it.id}）—— ${it.description}" })
+                append('\n')
+            }
+            append("要用的工具不在列表里时，先 list_packs 看有哪些包，再用 activate_pack 打开。\n")
+            append("注意：激活之后**需要客户端重新连接才能生效**，这一轮里不一定能用上；")
+            append("实在调不到就请用户去 App 的「权限 → 工具包」里勾选，并重连客户端。\n")
         }
-        append("要用的工具不在列表里时，先 list_packs 看有哪些包，再用 activate_pack 打开。\n")
-        append("注意：包只决定「工具列表里能不能看见」，直接按名字调用也是可以的；包本身不改变权限。\n")
 
         append("\n终端：run_shell 可以执行 Shell 命令（后端 ")
         append(ShellBackends.pick("auto", config)?.label ?: "无")

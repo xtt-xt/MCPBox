@@ -469,5 +469,11 @@ object LangEn {
     "复制请求头" to "Copy header",
     "请求头已复制" to "Header copied",
     "＋ 新建会话…" to "+ New session…",
+    "让 AI 自己开关工具包" to "Let the AI manage tool packs",
+    "已打开：AI 能看到并能调用包管理工具。注意大多数客户端只在连接时拉一次工具列表，新激活的包要重连后才能用" to "On: the AI can see and use the pack tools. Note most clients fetch the tool list once per connection, so a newly activated pack needs a reconnect to be usable",
+    "已关闭（推荐）：包纯粹是你自己的设置，AI 看到什么就用什么，不会白跑几轮去激活" to "Off (recommended): packs are purely your own setting — the AI just uses what it sees, no wasted turns trying to activate",
+    "工具包决定「AI 的工具列表里出现哪些工具」，用来省 token；也不会绕过上面的权限。" to "Tool packs decide which tools show up in the AI's tool list, to save tokens. They never bypass the permissions above. ",
+    "重要：大多数 MCP 客户端只在连接时读取一次工具列表，所以改完工具包后，" to "Important: most MCP clients read the tool list only once per connection, so after changing packs ",
+    "要让 AI 看到变化，需要重新连接（或重启 App）。" to "you need to reconnect (or restart the app) for the AI to see the change.",
     )
 }

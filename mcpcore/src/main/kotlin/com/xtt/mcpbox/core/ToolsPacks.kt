@@ -73,8 +73,10 @@ object ToolsPacks {
                     append("「").append(pack.title).append("」（").append(id).append("）。\n")
                     append("新增可见的工具 ").append(pack.tools.size).append(" 个：\n")
                     pack.tools.forEach { append("  · ").append(it).append('\n') }
-                    append("\n如果客户端不会自动刷新工具列表，让用户手动刷新一下；")
-                    append("或者直接按名字调用也行 —— 调用不受激活状态限制。\n")
+                    append("\n注意：大多数 MCP 客户端**只在连接时拉一次工具列表**，之后不会再拉，")
+                    append("服务端也无法通知它刷新。所以这些工具通常**要等客户端重新连接（或重启 App）后才能调用**。\n")
+                    append("如果你现在就要用，可以直接试着按名字调用 —— 服务端允许，但客户端可能拦下来；")
+                    append("被拦了就告诉用户「请重新连接 MCP 服务」，不要反复重试。\n")
                     append("当前会话：").append(ctx.profile)
                 }.trimEnd()
             )
@@ -87,7 +89,7 @@ object ToolsPacks {
         name = "deactivate_pack",
         title = "停用工具包",
         description = "停用一个工具包，把它的工具从工具列表里收起来（省 token）。" +
-            "基础包不能停用。注意：停用只是「看不见」，不影响调用。",
+            "基础包不能停用。注意：停用后这些工具不再出现在 tools/list 里。",
         perm = PermKey.SYSTEM,
         schema = Schema.obj(
             mapOf("pack" to Schema.str("要停用的包 id")),
@@ -209,7 +211,8 @@ object ToolsPacks {
         profile: String,
         customToolNames: List<String>,
         disabled: Set<String>,
-        memoryEnabled: Boolean
+        memoryEnabled: Boolean,
+        aiPackControl: Boolean = true
     ): Set<String> {
         val active = profiles.active(profile)
         val names = LinkedHashSet<String>()
@@ -218,6 +221,9 @@ object ToolsPacks {
         }
         // 记忆库总开关关掉时，即使 memory 包激活着也不显示
         if (!memoryEnabled) names.removeAll(BuiltinPacks.MEMORY.tools.toSet())
+        // 不给 AI 开关包的权限时，包管理工具也一并收起（省约 520 token，
+        // 而且它们本来就调不到新工具，留着只会误导 AI 白试）
+        if (!aiPackControl) names.removeAll(BuiltinPacks.PACK_TOOLS.toSet())
         names.removeAll(disabled)
         return names
     }
@@ -237,7 +243,8 @@ object ToolsPacks {
             profile = ctx.profile,
             customToolNames = customNames,
             disabled = emptySet(),
-            memoryEnabled = ctx.config.memoryEnabled
+            memoryEnabled = ctx.config.memoryEnabled,
+            aiPackControl = true
         )
 
         return buildString {
@@ -254,7 +261,8 @@ object ToolsPacks {
                 append("\n○ 未激活（").append(off.size).append("）—— 需要时用 activate_pack 打开\n")
                 off.forEach { append(one(it, showTools = false)) }
             }
-            append("\n提示：包只决定「工具列表里能不能看见」，不影响调用。")
+            append("\n提示：包决定「工具列表里能看见什么」。停用只是从列表里收起来；")
+            append("要在客户端生效，需要让它重新连接（或重启 App）。")
         }.trimEnd()
     }
 
