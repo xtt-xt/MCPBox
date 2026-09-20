@@ -270,35 +270,54 @@ object ToolsUi {
     /** 抓一次屏幕结构（自动挑 dump 参数、重试、读回 XML、解析）。 */
     private fun snapshot(ctx: CallContext, launcher: CommandLauncher): Snapshot {
         val xml = dumpXml(ctx, launcher)
-            ?: ctx.fail(
-                "读取界面结构失败：uiautomator 没有产出内容。\n" +
-                    "常见原因：\n" +
-                    "  · 界面正在播放动画（uiautomator 要等界面静止，等一下再试即可）\n" +
-                    "  · 刚刚连续 dump 过（uiautomator 不能短时间并发，隔几秒再试）\n" +
-                    "  · 当前是自绘界面（游戏、视频、部分系统页面），根本没有控件树 —— " +
-                    "这种情况请改用 ui_screenshot 看一眼 + ui_tap 传坐标点。"
-            )
         val (w, h) = screenSize(launcher)
         return parseSnapshot(xml, w, h)
     }
 
-    /** dump 落文件再 cat 回来（一条命令往返，避免依赖 App 自身读权限）。失败会重试。 */
-    private fun dumpXml(ctx: CallContext, launcher: CommandLauncher): String? {
-        val lastError = StringBuilder()
+    /** uiautomator 失败时，把它的原话翻译成能照着做的建议。 */
+    private fun dumpFailureHelp(err: String): String {
+        val idle = err.contains("idle state", ignoreCase = true)
+        val head = if (err.isBlank()) "uiautomator 没有产出任何内容。" else "uiautomator 报错：\n  $err\n"
+        return head + when {
+            idle ->
+                "\n**原因**：当前前台界面上有**停不下来的动画**（比如聊天页的「正在输入 / 思考中」转圈、播放器进度），" +
+                    "uiautomator 会一直等界面静止，等不到就放弃。这是它的老毛病，没有开关能跳过。\n\n" +
+                    "可以这样做：\n" +
+                    "  · 用 ui_screenshot 看一眼画面，直接用坐标 ui_tap（最常用）\n" +
+                    "  · 把界面切到静止的一页（比如返回上一级）再 ui_dump\n" +
+                    "  · 在系统「开发者选项」里把动画缩放关掉（只对系统动画有效，App 自绘的无效）"
+
+            else ->
+                "\n可能的原因：\n" +
+                    "  · 刚刚连续 dump 过（uiautomator 不能短时间并发，隔几秒再试）\n" +
+                    "  · 当前是自绘界面（游戏、视频、部分系统页面），根本没有控件树 —— " +
+                    "这种只能用 ui_screenshot + ui_tap 走坐标"
+        }
+    }
+
+    /** dump 落文件再读回来；失败会重试，最终失败则带着诊断信息抛错。 */
+    private fun dumpXml(ctx: CallContext, launcher: CommandLauncher): String {
+        var lastError = ""
         repeat(DUMP_RETRY) { round ->
-            // 先不带 --compressed：实测在某些 ROM 上 --compressed 会直接 "could not get idle state"
+            // 先不带 --compressed：实测某些 ROM 上 --compressed 反而更容易失败
             for (flag in listOf("", "--compressed ")) {
-                val cmd = "uiautomator dump $flag$DUMP_REMOTE >/dev/null 2>&1; cat $DUMP_REMOTE 2>/dev/null"
+                val cmd = "uiautomator dump $flag$DUMP_REMOTE 2>&1; cat $DUMP_REMOTE 2>/dev/null"
                 val res = runner.run(launcher, cmd, null, 30_000, maxOutput = 16 * 1024 * 1024)
                 val text = res.stdout
-                if (text.contains("<hierarchy")) return text
-                val err = (res.stderr + res.stdout).trim()
-                if (err.isNotEmpty()) lastError.clear().append(err.take(400))
+                val idx = text.indexOf("<hierarchy")
+                if (idx >= 0) {
+                    val start = text.lastIndexOf("<?xml", idx).takeIf { it >= 0 } ?: idx
+                    return text.substring(start)
+                }
+                val err = text.lineSequence()
+                    .filter { it.isNotBlank() && !it.startsWith("UI hierchary") }
+                    .joinToString(" ").trim().take(300)
+                if (err.isNotEmpty()) lastError = err
             }
-            if (round < DUMP_RETRY - 1) Thread.sleep(500)
+            if (round < DUMP_RETRY - 1) Thread.sleep(400)
         }
-        if (lastError.isNotEmpty()) ShellMirror.emit("\n[UI] dump 失败：$lastError\n")
-        return null
+        if (lastError.isNotEmpty()) ShellMirror.emit("\n[UI] 读取界面结构失败：$lastError\n")
+        ctx.fail(dumpFailureHelp(lastError))
     }
 
     /** 过滤出要展示的节点。 */
@@ -453,7 +472,7 @@ object ToolsUi {
         ctx.guard(PermKey.UI, null, "读取界面结构", "后端：${launcher.label}")
 
         if (ctx.args.boolOr("raw", false)) {
-            val xml = dumpXml(ctx, launcher) ?: ctx.fail("读取界面结构失败（uiautomator 没有产出内容），详见 ui_dump 的说明。")
+            val xml = dumpXml(ctx, launcher)
             return@ToolSpec ToolResult("原始 XML（${xml.length} 字符，已截断到 20000）\n----\n" + xml.take(20_000))
         }
 
