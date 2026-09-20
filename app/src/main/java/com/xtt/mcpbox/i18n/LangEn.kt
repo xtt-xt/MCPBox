@@ -138,6 +138,7 @@ object LangEn {
     "已启用" to "On",
     "已复制" to "Copied",
     "已就绪" to "Ready",
+    "已显示 %s / %s 条 · 继续下滑自动加载" to "Showing %s of %s · scroll on to load more",
     "已清空，网页密码改用访问令牌" to "Cleared; the console password now uses the access token",
     "已生成新令牌，旧配置需要更新" to "New token generated — update your old configs",
     "已禁止，AI 看不到应用私有数据" to "Blocked; the AI can't see private app data",

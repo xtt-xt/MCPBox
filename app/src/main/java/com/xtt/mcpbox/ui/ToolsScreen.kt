@@ -76,9 +76,9 @@ fun ToolsScreen(
             val entering = targetState.isNotEmpty()
             val slide = if (entering) 1 else -1
             (
-                slideInHorizontally(tween(280)) { w -> slide * w / 3 } + fadeIn(tween(200))
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
                 ).togetherWith(
-                slideOutHorizontally(tween(240)) { w -> -slide * w / 6 } + fadeOut(tween(160))
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "toolPage"

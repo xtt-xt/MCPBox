@@ -8,6 +8,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -180,7 +182,10 @@ fun SettingsScreen(
                                         .size(22.dp)
                                         .clip(CircleShape)
                                         .background(Color(c.seed))
-                                        .clickable {
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = ripple(color = MaterialTheme.colorScheme.primary)
+                                        ) {
                                             AppCore.prefs.seedColor = c.seed.toInt()
                                             AppCore.prefs.dynamicColor = false
                                             onThemeChanged()
@@ -808,7 +813,10 @@ fun SettingsScreen(
                                             if (selected) Modifier.border(2.5.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
                                             else Modifier
                                         )
-                                        .clickable {
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = ripple(color = MaterialTheme.colorScheme.primary)
+                                        ) {
                                             val f = FloatArray(3)
                                             android.graphics.Color.colorToHSV(c.toInt(), f)
                                             hue = f[0]; sat = f[1]; bri = f[2]

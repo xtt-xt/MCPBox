@@ -14,11 +14,10 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,13 +34,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,9 +77,9 @@ fun MemoryScreen(
             val entering = targetState.isNotEmpty()
             val slide = if (entering) 1 else -1
             (
-                slideInHorizontally(tween(280)) { w -> slide * w / 3 } + fadeIn(tween(200))
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
                 ).togetherWith(
-                slideOutHorizontally(tween(240)) { w -> -slide * w / 6 } + fadeOut(tween(160))
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "memoryPage"
@@ -138,6 +134,18 @@ private fun MemoryListPage(
                     )
         }.sortedBy { it.name.lowercase() }
     }
+    val scroll = rememberScrollState()
+    // 实体卡比日志行高，一次全渲染同样会卡首帧：先渲染 60 张，快滑到底之前自动补
+    val shownCount = rememberPagedCount(list.size, scroll, resetKey = query to folder)
+    // 关系按实体名索引，避免每张卡都把整张关系表扫一遍
+    val relOf = remember(graph) {
+        val map = mutableMapOf<String, MutableList<MemoryRelation>>()
+        graph.relations.forEach { r ->
+            map.getOrPut(r.from) { mutableListOf() }.add(r)
+            map.getOrPut(r.to) { mutableListOf() }.add(r)
+        }
+        map
+    }
 
     if (showNew) {
         TextInputDialog(
@@ -165,7 +173,7 @@ private fun MemoryListPage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(bottom = 24.dp)
     ) {
         PageHeader(
@@ -236,10 +244,11 @@ private fun MemoryListPage(
                 Modifier.padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                list.forEach { e ->
-                    EntityCard(e, graph.relations.filter { it.from == e.name || it.to == e.name }) { onOpen(e.name) }
+                list.take(shownCount).forEach { e ->
+                    EntityCard(e, relOf[e.name].orEmpty()) { onOpen(e.name) }
                 }
             }
+            PagedHint(shownCount, list.size)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -257,77 +266,70 @@ private fun MemoryListPage(
 
 @Composable
 private fun EntityCard(e: MemoryEntity, relations: List<MemoryRelation>, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(24.dp)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable { onClick() }
-    ) {
-        Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    e.name,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 15.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                if (e.type.isNotBlank()) {
-                    Spacer(Modifier.width(8.dp))
-                    OutlineTag(e.type, MaterialTheme.colorScheme.primary)
-                }
-            }
-
-            val meta = buildString {
-                append(e.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER })
-                append(" · ").append(L("%s 条观察").format(e.observations.size))
-                if (relations.isNotEmpty()) append(" · ").append(L("%s 条关系").format(relations.size))
-            }
+    // 按下底色 160ms 渐变 + primary ripple，两者都裁在 24dp 圆角里
+    PressCardBox(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                meta,
+                e.name,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (e.type.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                OutlineTag(e.type, MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        val meta = buildString {
+            append(e.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER })
+            append(" · ").append(L("%s 条观察").format(e.observations.size))
+            if (relations.isNotEmpty()) append(" · ").append(L("%s 条关系").format(relations.size))
+        }
+        Text(
+            meta,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 3.dp)
+        )
+
+        e.observations.take(3).forEach { o ->
+            Text(
+                "· $o",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 5.dp)
+            )
+        }
+        if (e.observations.size > 3) {
+            Text(
+                L("… 还有 %s 条").format(e.observations.size - 3),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.5.sp,
                 modifier = Modifier.padding(top = 3.dp)
             )
-
-            e.observations.take(3).forEach { o ->
-                Text(
-                    "· $o",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.5.sp,
-                    lineHeight = 17.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 5.dp)
-                )
-            }
-            if (e.observations.size > 3) {
-                Text(
-                    L("… 还有 %s 条").format(e.observations.size - 3),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.5.sp,
-                    modifier = Modifier.padding(top = 3.dp)
-                )
-            }
-            if (relations.isNotEmpty()) {
-                Text(
-                    relations.take(2).joinToString("　") { r ->
-                        if (r.from == e.name) "${r.type} ▸ ${r.to}" else "◂ ${r.type} ${r.from}"
-                    },
-                    color = Sem.info,
-                    fontSize = 11.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 5.dp)
-                )
-            }
+        }
+        if (relations.isNotEmpty()) {
+            Text(
+                relations.take(2).joinToString("　") { r ->
+                    if (r.from == e.name) "${r.type} ▸ ${r.to}" else "◂ ${r.type} ${r.from}"
+                },
+                color = Sem.info,
+                fontSize = 11.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 5.dp)
+            )
         }
     }
 }
+
 
 /* ------------------------------------------------------------------ 详情页 */
 
@@ -355,6 +357,9 @@ private fun MemoryDetailPage(
     }
     val relations = remember(revision, name) { AppCore.memory.relationsOf(name) }
     val allNames = remember(revision) { AppCore.memory.graph.entities.map { it.name }.filter { it != name } }
+    val scroll = rememberScrollState()
+    // 观察可能有上百条，和日志一样分批渲染
+    val obsShown = rememberPagedCount(entity.observations.size, scroll, resetKey = name)
 
     var editMeta by remember { mutableStateOf<String?>(null) }        // "name"/"type"/"folder"
     var addObs by remember { mutableStateOf(false) }
@@ -435,92 +440,49 @@ private fun MemoryDetailPage(
     }
 
     if (confirmDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmDelete = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除实体"), fontSize = 20.sp) },
-            text = {
-                Text(
-                    L("确定删除「%s」吗？它的观察和 %s 条关系都会一起删掉。").format(entity.name, relations.size),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppCore.memory.deleteEntities(listOf(name))
-                    confirmDelete = false
-                    toast(ctx, L("已删除「%s」").format(name))
-                    onChanged()
-                    onBack()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        AppAlertDialog(
+            title = L("删除实体"),
+            text = L("确定删除「%s」吗？它的观察和 %s 条关系都会一起删掉。")
+                .format(entity.name, relations.size),
+            confirmText = L("删除"),
+            confirmColor = MaterialTheme.colorScheme.error,
+            onDismiss = { confirmDelete = false },
+            onConfirm = {
+                AppCore.memory.deleteEntities(listOf(name))
+                toast(ctx, L("已删除「%s」").format(name))
+                onChanged()
+                onBack()
             }
         )
     }
 
     deleteObs?.let { obs ->
-        AlertDialog(
-            onDismissRequest = { deleteObs = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除这条观察"), fontSize = 19.sp) },
-            text = {
-                Text(obs, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppCore.memory.deleteObservations(name, listOf(obs))
-                    deleteObs = null
-                    onChanged()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteObs = null }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        AppAlertDialog(
+            title = L("删除这条观察"),
+            text = obs,
+            confirmText = L("删除"),
+            confirmColor = MaterialTheme.colorScheme.error,
+            onDismiss = { deleteObs = null },
+            onConfirm = { AppCore.memory.deleteObservations(name, listOf(obs)) ; onChanged() }
         )
     }
 
     deleteRel?.let { rel ->
-        AlertDialog(
-            onDismissRequest = { deleteRel = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除这条关系"), fontSize = 19.sp) },
-            text = {
-                Text(
-                    "${rel.from} ──${rel.type}──▸ ${rel.to}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppCore.memory.deleteRelations(listOf(Triple(rel.from, rel.to, rel.type)))
-                    deleteRel = null
-                    onChanged()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteRel = null }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        AppAlertDialog(
+            title = L("删除这条关系"),
+            text = "${rel.from} ──${rel.type}──▸ ${rel.to}",
+            confirmText = L("删除"),
+            confirmColor = MaterialTheme.colorScheme.error,
+            mono = true,
+            onDismiss = { deleteRel = null },
+            onConfirm = { AppCore.memory.deleteRelations(listOf(Triple(rel.from, rel.to, rel.type))) ; onChanged() }
         )
     }
 
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(bottom = 24.dp)
     ) {
         PageHeader(
@@ -558,7 +520,7 @@ private fun MemoryDetailPage(
                 Modifier.padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                entity.observations.forEach { o ->
+                entity.observations.take(obsShown).forEach { o ->
                     val shape = RoundedCornerShape(20.dp)
                     Row(
                         Modifier
@@ -583,6 +545,7 @@ private fun MemoryDetailPage(
                     }
                 }
             }
+            PagedHint(obsShown, entity.observations.size)
         }
         Spacer(Modifier.height(8.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
@@ -603,37 +566,37 @@ private fun MemoryDetailPage(
                 relations.forEach { r ->
                     val outgoing = r.from == entity.name
                     val other = if (outgoing) r.to else r.from
-                    val shape = RoundedCornerShape(20.dp)
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(shape)
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .clickable { if (AppCore.memory.hasEntity(other)) onOpen(other) }
-                            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    val linked = AppCore.memory.hasEntity(other)
+                    // 按下底色 160ms + primary ripple；对端不存在就点不动（也就没有反馈）
+                    PressCardBox(
+                        onClick = { onOpen(other) },
+                        shape = RoundedCornerShape(20.dp),
+                        enabled = linked,
+                        contentPadding = PaddingValues(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)
                     ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                (if (outgoing) "▸ " else "◂ ") + other,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                r.type,
-                                color = Sem.info,
-                                fontSize = 11.5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    (if (outgoing) "▸ " else "◂ ") + other,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    r.type,
+                                    color = Sem.info,
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                            RoundIconButton(
+                                Icons.Filled.Delete, L("删除"),
+                                tint = MaterialTheme.colorScheme.error,
+                                size = 34
+                            ) { deleteRel = r }
                         }
-                        RoundIconButton(
-                            Icons.Filled.Delete, L("删除"),
-                            tint = MaterialTheme.colorScheme.error,
-                            size = 34
-                        ) { deleteRel = r }
                     }
                 }
             }
@@ -663,8 +626,9 @@ private fun MemoryDetailPage(
 private data class InputField(val key: String, val label: String, val hint: String)
 
 /**
- * 通用文本输入弹窗。单字段时自动聚焦，多字段时纵向排列。
- * 整体限高 + 可滚动，长内容也不会把按钮挤出屏幕。
+ * 通用文本输入弹窗。多字段时纵向排列。
+ * 正文区单独限高（屏高 62%）+ 可滚动，**按钮固定在限高区外** —— 字段再多也顶不掉按钮。
+ * 进出场走 AppDialog：进入 300ms 减速 / 退出 150ms 加速。
  */
 @Composable
 private fun TextInputDialog(
@@ -679,13 +643,9 @@ private fun TextInputDialog(
         mutableStateOf(fields.associate { it.key to (initial[it.key] ?: "") })
     }
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        androidx.compose.material3.Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-        ) {
-            MaxTvScrollView(fraction = 0.78f) {
+    AppDialog(onDismiss = onDismiss) { close ->
+        Column {
+            MaxTvScrollView(fraction = 0.62f) {
                 Column(Modifier.padding(22.dp)) {
                     Text(
                         title,
@@ -708,16 +668,20 @@ private fun TextInputDialog(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PillButton(
-                            L("取消"), Modifier.weight(1f), outlined = true,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
-                        ) { onDismiss() }
-                        PillButton(
-                            L("保存"), Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.primary, compact = true
-                        ) { onConfirm(values.value) }
+                }
+            }
+            Column(Modifier.padding(start = 22.dp, end = 22.dp, bottom = 18.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PillButton(
+                        L("取消"), Modifier.weight(1f), outlined = true,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
+                    ) { close() }
+                    PillButton(
+                        L("保存"), Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.primary, compact = true
+                    ) {
+                        close()
+                        onConfirm(values.value)
                     }
                 }
             }

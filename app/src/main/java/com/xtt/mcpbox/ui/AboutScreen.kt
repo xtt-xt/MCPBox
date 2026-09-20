@@ -81,7 +81,7 @@ fun AboutScreen(
     val scope = rememberCoroutineScope()
     var catTaps by remember { mutableStateOf(0) }
     var catTarget by remember { mutableStateOf(1f) }
-    val catScale by animateFloatAsState(catTarget, tween(130), label = "catScale")
+    val catScale by animateFloatAsState(catTarget, tween(150), label = "catScale")
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<UpdateChecker.Result?>(null) }
     val version = ServerMeta.version
@@ -129,12 +129,12 @@ fun AboutScreen(
                     }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication = null
+                        indication = null        // 彩蛋：反馈是缩放 + 喵声，不再叠波纹
                     ) {
                         catTaps++
                         catTarget = 0.86f
                         scope.launch {
-                            delay(95)
+                            delay(100)
                             catTarget = 1f
                         }
                         if (catTaps >= 7) {

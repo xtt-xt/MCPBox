@@ -8,6 +8,7 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -467,8 +469,12 @@ private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAct
                         maxLines = 1,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { path = s }
-                            .padding(vertical = 5.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = ripple(color = MaterialTheme.colorScheme.primary)
+                            ) { path = s }
+                            .padding(horizontal = 6.dp, vertical = 5.dp)
                     )
                 }
             }
@@ -571,7 +577,11 @@ fun ChoiceChip(text: String, active: Boolean, color: Color, onClick: () -> Unit)
                 RoundedCornerShape(50)
             )
             .clip(RoundedCornerShape(50))
-            .clickable { onClick() }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = MaterialTheme.colorScheme.primary),
+                onClick = onClick
+            )
             .padding(horizontal = 14.dp, vertical = 8.dp)
     )
 }

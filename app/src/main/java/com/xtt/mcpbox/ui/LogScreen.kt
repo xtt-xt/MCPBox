@@ -5,8 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,11 +43,14 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
         if (filter == null) logs else logs.filter { it.kind == filter }
     }
     val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val scroll = rememberScrollState()
+    // 日志最多 400 条，一次全渲染会卡首帧：先渲染 60 条，快滑到底之前自动补下一批
+    val shownCount = rememberPagedCount(shown.size, scroll, resetKey = filter)
 
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(bottom = 20.dp)
     ) {
         PageHeader(
@@ -80,12 +79,13 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
                 if (shown.isEmpty()) {
                     EmptyHint("还没有记录。\nAI 连上之后，每一次调用和审批都会留在这里。")
                 } else {
-                    shown.forEachIndexed { index, entry ->
+                    shown.take(shownCount).forEachIndexed { index, entry ->
                         if (index > 0) InnerDivider()
                         LogRow(entry, fmt)
                     }
                 }
             }
+            PagedHint(shownCount, shown.size)
             if (shown.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PillButton(
