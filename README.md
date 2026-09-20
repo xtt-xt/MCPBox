@@ -7,7 +7,7 @@
 
 - 单 APK，无外部依赖：HTTP/MCP 服务器、自带浏览器控制台、常驻终端全部在这一个进程里
 - 三档 shell 身份：**应用沙箱** / **Root** / **Shizuku（ADB shell）**
-- 权限不是"一次性全允许"，而是 **6 个开关 × 三态 + 路径/命令级规则**，审批弹窗浮在所有 App 之上
+- 权限不是"一次性全允许"，而是 **8 个开关 × 三态 + 路径/命令级规则**，审批弹窗浮在所有 App 之上
 
 ```
 AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统 / shell
@@ -19,15 +19,16 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 | | |
 |---|---|
-| **44 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库、工具包… |
-| **工具包（省 token）** | 工具分 6 个包，默认只带 22 个（≈4100 token，比全量省 43%）；包由你在 App 里配置，AI 无感 |
+| **52 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库、工具包、UI 自动化… |
+| **工具包（省 token）** | 工具分 7 个包，默认只带 22 个（≈4100 token，比全量省 52%）；包由你在 App 里配置，AI 无感 |
 | **会话隔离** | 客户端地址填 `/mcp/p/<名字>` 就是独立会话，各有各的激活状态，可持久化 / 重置 |
 | **逐次审批** | 顶层悬浮窗 + 通知栏兜底，支持「允许一次 / 始终允许 / 拒绝 / 始终拒绝」 |
-| **权限矩阵** | 7 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
+| **权限矩阵** | 8 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
 | **工具级权限四态** | 单个工具可单独设「跟随 / 允许 / 询问 / 拒绝」，其中「询问」无视全局矩阵、每次都弹窗 |
 | **记忆库** | 给 AI 的长期记忆：实体 + 观察 + 关系（知识图谱），能在 App 里浏览和编辑 |
 | **文件网关** | `POST /upload`、`GET /download`，外加手机浏览器直接可用的上传网页 |
 | **应用私有目录** | 可读可写 `/data/data/<包名>`，三档（禁止 / 只读 / 可读写），经 root 转发 |
+| **UI 自动化** | 截屏 + 读界面结构（控件树/坐标）+ 点击 / 滑动 / 输入（含中文）/ 按键 / 启应用 / 等元素，需要 Shizuku 或 Root |
 | **内置终端** | 常驻 shell，`cd`/`export` 状态保留、命令历史、Ctrl-C 中断、清屏 |
 | **自定义工具** | 用命令模板给自己造新 MCP 工具，支持参数占位与 JSON 导入导出 |
 | **网页控制台** | 浏览器里试工具、看日志、处理审批；支持**仅本机访问**与**密码保护** |
@@ -53,6 +54,10 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 **Shell / 扩展（8）**：`run_shell` `shell_info` `create_custom_tool` `update_custom_tool` `delete_custom_tool` `list_custom_tools` `export_custom_tools` `import_custom_tools`
 
+**UI 自动化（8）**：`ui_screenshot` `ui_dump` `ui_tap` `ui_swipe` `ui_input` `ui_key` `ui_launch` `ui_wait`
+（需要 Root 或 Shizuku：截屏、读控件树、注入点击都是系统权限，应用自身 UID 做不到。
+`ui_input` 输中文时自动走「写剪贴板 → 模拟粘贴」）
+
 **令牌（1）**：`get_token`（调用它自己不需要令牌，用于解开「AI 要先拿到 token 才能传文件」的死循环）
 
 **工具包（5）**：`list_packs` `activate_pack` `deactivate_pack` `reset_packs`（免审批，只影响可见性）、`manage_pack`（建/改/删自定义包，走「自定义工具」权限）
@@ -68,6 +73,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | `fs.delete` | 询问 | 删除（默认还会先进回收站） |
 | `shell.exec` | 询问 | 执行命令（用户自己在终端敲的不算） |
 | `tools.manage` | 询问 | 新建/修改/删除自定义工具 |
+| `ui.control` | 询问 | 控制屏幕：截屏、读界面结构、点击、滑动、输入（需要 Root / Shizuku） |
 | `system.info` | 允许 | 设备信息、存储信息、获取令牌 |
 | `memory` | 允许 | 记忆库的读写（关掉总开关后记忆工具直接从 `tools/list` 消失） |
 
@@ -111,7 +117,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 ## 工具包（省 token）
 
-工具定义要在**每一轮请求**里重复带给模型。全部 44 个工具大约 7200 token，
+工具定义要在**每一轮请求**里重复带给模型。全部 52 个工具大约 8600 token，
 聊 20 轮就是 15 万——而且大部分轮次根本用不到那么多工具。
 
 所以把工具分包，`tools/list` 只返回**基础包 + 已激活包**里的工具：
@@ -123,9 +129,10 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | `memory` 记忆库 | 10 | 开 |
 | `file.write` 文件写入 | 9 | 关 |
 | `shell` 命令与自定义工具 | 8 | 关 |
+| `ui` UI 自动化 | 8 | 关 |
 | `my.tools` 我的工具 | 动态 | 关 |
 
-默认 22 个工具 ≈ 4100 token，**比全带上省 43%**。
+默认 22 个工具 ≈ 4100 token，**比全带上省 52%**。
 
 包是**你自己的长期设置**：在「权限 → 工具包」里勾好，AI 看到什么就用什么，
 完全不知道有包这回事 —— 零摩擦，也不浪费对话轮次。也可以自己建包
@@ -268,6 +275,7 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   WebConsole.kt / Config.kt / CustomTools.kt / EventLog.kt
   Memory.kt                   记忆库：实体 + 观察 + 关系，原子写入 graph.json
   ToolPack.kt                 工具包：内置包定义 + 自定义包存储
+  ToolsUi.kt                  UI 自动化：截屏 / 控件树 / 点击 / 滑动 / 输入
   ProfileStore.kt             会话（URL profile）：激活状态 + TTL，原子写盘
   ToolsPacks.kt / ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
 harness/                      端到端测试

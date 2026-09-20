@@ -117,7 +117,21 @@ object BuiltinPacks {
         defaultActive = false
     )
 
-    val ALL: List<ToolPack> = listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL)
+    val UI = ToolPack(
+        id = "ui",
+        title = "UI 自动化",
+        description = "把手机屏幕当接口：截屏看画面、读界面结构（控件树 + 坐标）、" +
+            "模拟点击 / 滑动 / 输入文字 / 按键、启动应用与等待元素出现。" +
+            "要操作手机上的界面（不是改文件、也不是跑命令）时激活它。**需要 Root 或 Shizuku**。",
+        tools = listOf(
+            "ui_screenshot", "ui_dump", "ui_tap", "ui_swipe",
+            "ui_input", "ui_key", "ui_launch", "ui_wait"
+        ),
+        builtin = true,
+        defaultActive = false
+    )
+
+    val ALL: List<ToolPack> = listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL, UI)
 
     fun byId(id: String): ToolPack? = ALL.firstOrNull { it.id == id }
 

@@ -28,6 +28,11 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
         "终端 / Shell 命令、自定义工具",
         PermAction.ASK
     ),
+    UI(
+        "ui.control", "控制屏幕",
+        "截屏、读界面结构、点击、滑动、输入文字（需要 Root 或 Shizuku）",
+        PermAction.ASK
+    ),
     TOOLS(
         "tools.manage", "自定义工具",
         "创建、修改、删除自定义工具",

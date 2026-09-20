@@ -4,12 +4,16 @@
 package com.xtt.mcpbox
 
 import android.app.NotificationManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.StatFs
 import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.HostInfo
@@ -45,6 +49,28 @@ class AndroidHost(private val context: Context, private val config: Config) : Ho
         } catch (e: Exception) {
             false
         }
+    }
+
+    /**
+     * 写系统剪贴板。UI 自动化输入中文时用：`input text` 只认 ASCII，
+     * 非 ASCII 走「写剪贴板 → input keyevent 279（粘贴）」。
+     * 写剪贴板不受 Android 10+ 的后台读取限制，粘贴由前台应用执行。
+     */
+    override fun setClipboard(text: String): Boolean {
+        var ok = false
+        val job = {
+            ok = runCatching {
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                cm.setPrimaryClip(ClipData.newPlainText("mcpbox-ui", text))
+                true
+            }.getOrDefault(false)
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) job() else {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            Handler(Looper.getMainLooper()).post { job(); latch.countDown() }
+            latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        return ok
     }
 
     fun appVersion(): String = runCatching {

@@ -127,4 +127,11 @@ interface HostInfo {
     fun deviceInfo(): Map<String, Any?>
     fun notify(title: String, message: String): Boolean
     fun clientName(): String? = null
+
+    /**
+     * 写系统剪贴板（UI 自动化输入中文时要用：`input text` 只认 ASCII，
+     * 非 ASCII 一律走「写剪贴板 → 模拟粘贴」这条路）。
+     * 返回 false 表示这端没有剪贴板能力。
+     */
+    fun setClipboard(text: String): Boolean = false
 }

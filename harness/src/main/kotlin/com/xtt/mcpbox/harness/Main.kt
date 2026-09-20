@@ -856,7 +856,14 @@ fun main() {
 
         println("\n[36] 工具包：模型与存储")
         val ps = PackStore(settings)
-        check("内置包有 5 个", BuiltinPacks.ALL.size == 5)
+        check("内置包有 6 个", BuiltinPacks.ALL.size == 6)
+        check("UI 自动化包存在且默认关", BuiltinPacks.UI.id == "ui" && !BuiltinPacks.UI.defaultActive &&
+            BuiltinPacks.UI.tools.size == 8)
+        check("UI 包的 8 个工具都在内置工具表里",
+            BuiltinPacks.UI.tools.all { n -> server.tools.any { it.name == n } },
+            BuiltinPacks.UI.tools.filterNot { n -> server.tools.any { it.name == n } }.toString())
+        check("控制屏幕是独立权限且默认询问",
+            PermKey.of("ui.control") == PermKey.UI && PermKey.UI.default == PermAction.ASK)
         check("core 是常驻包", BuiltinPacks.CORE.core)
         check("出厂默认 3 个包", BuiltinPacks.defaults() == setOf("core", "file.read", "memory"))
         check("my.tools 是内置 id", ps.isBuiltin("my.tools"))
@@ -1117,6 +1124,44 @@ fun main() {
         check("命令被镜像（带 [AI] 前缀）", mirrored.contains("[AI]"), mirrored.toString().take(120))
         check("输出被镜像", mirrored.contains("hello_from_ai"), mirrored.toString().take(200))
         ShellMirror.detach()
+
+        // ---------------------------------------------------------- UI 自动化
+        println("\n[42] UI 自动化工具包")
+
+        val uiNames = setOf(
+            "ui_screenshot", "ui_dump", "ui_tap", "ui_swipe",
+            "ui_input", "ui_key", "ui_launch", "ui_wait"
+        )
+        check("8 个 UI 工具都注册了", uiNames.all { n -> server.tools.any { it.name == n } },
+            uiNames.filterNot { n -> server.tools.any { it.name == n } }.toString())
+
+        check("UI 工具挂在「控制屏幕」权限下",
+            server.tools.filter { it.name in uiNames }.all { it.perm == PermKey.UI })
+        check("「控制屏幕」是一个独立开关", permissions.snapshot().containsKey("ui.control"),
+            permissions.snapshot().keys.toString())
+
+        // 这个 JVM 环境里只有「应用沙箱」后端，也就是真机上没开 Shizuku/Root 的情况
+        val (uiOk, uiText) = call("ui_dump", "{}")
+        check("没有特权后端时 ui_dump 会明确报错", !uiOk && uiText.contains("需要 Root 或 Shizuku"), uiText.take(160))
+        check("报错里说明了怎么办", uiText.contains("Shizuku"), uiText.take(200))
+
+        val (shotOk, shotText) = call("ui_screenshot", "{}")
+        check("ui_screenshot 同样拦住了", !shotOk && shotText.contains("Shizuku"), shotText.take(160))
+
+        val (tapOk, tapText) = call("ui_tap", """{"x":10,"y":10}""")
+        check("ui_tap 同样拦住了", !tapOk && tapText.contains("Shizuku"), tapText.take(160))
+
+        // 「控制屏幕 = 拒绝」时，连后台检查都不该做
+        permissions.setSwitch(PermKey.UI, PermAction.DENY)
+        check("控制屏幕可以单独设成拒绝",
+            permissions.switchOf(PermKey.UI) == PermAction.DENY)
+        permissions.setSwitch(PermKey.UI, PermAction.ASK)
+        check("控制屏幕可以设回询问",
+            permissions.switchOf(PermKey.UI) == PermAction.ASK)
+
+        check("UI 包的说明里写明了需要 Root / Shizuku",
+            BuiltinPacks.UI.description.contains("Root") || BuiltinPacks.UI.description.contains("Shizuku"))
+        check("UI 包不属于出厂默认（省 token）", "ui" !in BuiltinPacks.defaults())
     } finally {
         server.stop()
     }

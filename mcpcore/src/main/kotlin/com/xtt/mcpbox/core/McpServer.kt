@@ -72,7 +72,8 @@ class McpServer(
     /** 内置工具。 */
     val builtinTools: List<ToolSpec> =
         ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
-            ToolsToken.specs() + ToolsMemory.specs(memory) + ToolsPacks.specs(packs, profiles)
+            ToolsToken.specs() + ToolsMemory.specs(memory) + ToolsPacks.specs(packs, profiles) +
+            ToolsUi.specs()
 
     /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
     val tools: List<ToolSpec>
