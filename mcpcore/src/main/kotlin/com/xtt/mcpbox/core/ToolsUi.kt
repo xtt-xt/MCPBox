@@ -28,7 +28,12 @@ object ToolsUi {
     /** 临时目录名（跟回收站 .MCPBox/trash 放在一起）。 */
     private const val TMP_DIR = ".MCPBox/ui"
     private const val SHOT = "screen.png"
-    private const val DUMP = "window.xml"
+
+    /** 控件树落在 /data/local/tmp：shell / root 都好写，也不占用户存储。 */
+    private const val DUMP_REMOTE = "/data/local/tmp/mcpbox_ui.xml"
+
+    /** dump 要重试几次（uiautomator 会间歇性拿不到 idle state）。 */
+    private const val DUMP_RETRY = 3
 
     // ------------------------------------------------------------ 屏幕结构模型
 
@@ -262,26 +267,38 @@ object ToolsUi {
     /** 能接收文字的控件类型。 */
     private val EDITABLE_HINT = Regex("""(EditText|AutoCompleteTextView|SearchView|MultiAutoCompleteTextView)""")
 
-    /** 抓一次屏幕结构（自动挑 dump 参数、读文件、解析）。 */
+    /** 抓一次屏幕结构（自动挑 dump 参数、重试、读回 XML、解析）。 */
     private fun snapshot(ctx: CallContext, launcher: CommandLauncher): Snapshot {
-        val file = tmpFile(ctx, DUMP)
-        val path = FileBridge.shellQuote(file.path)
-        var lastError = ""
-        for (cmd in listOf("uiautomator dump --compressed $path", "uiautomator dump $path")) {
-            val res = runner.run(launcher, cmd, null, 30_000)
-            val text = ctx.bridge.readText(file, 16L * 1024 * 1024)
-            if (!text.isNullOrBlank() && text.contains("<hierarchy")) {
-                val (w, h) = screenSize(launcher)
-                return parseSnapshot(text, w, h)
+        val xml = dumpXml(ctx, launcher)
+            ?: ctx.fail(
+                "读取界面结构失败：uiautomator 没有产出内容。\n" +
+                    "常见原因：\n" +
+                    "  · 界面正在播放动画（uiautomator 要等界面静止，等一下再试即可）\n" +
+                    "  · 刚刚连续 dump 过（uiautomator 不能短时间并发，隔几秒再试）\n" +
+                    "  · 当前是自绘界面（游戏、视频、部分系统页面），根本没有控件树 —— " +
+                    "这种情况请改用 ui_screenshot 看一眼 + ui_tap 传坐标点。"
+            )
+        val (w, h) = screenSize(launcher)
+        return parseSnapshot(xml, w, h)
+    }
+
+    /** dump 落文件再 cat 回来（一条命令往返，避免依赖 App 自身读权限）。失败会重试。 */
+    private fun dumpXml(ctx: CallContext, launcher: CommandLauncher): String? {
+        val lastError = StringBuilder()
+        repeat(DUMP_RETRY) { round ->
+            // 先不带 --compressed：实测在某些 ROM 上 --compressed 会直接 "could not get idle state"
+            for (flag in listOf("", "--compressed ")) {
+                val cmd = "uiautomator dump $flag$DUMP_REMOTE >/dev/null 2>&1; cat $DUMP_REMOTE 2>/dev/null"
+                val res = runner.run(launcher, cmd, null, 30_000, maxOutput = 16 * 1024 * 1024)
+                val text = res.stdout
+                if (text.contains("<hierarchy")) return text
+                val err = (res.stderr + res.stdout).trim()
+                if (err.isNotEmpty()) lastError.clear().append(err.take(400))
             }
-            lastError = res.stdout + res.stderr
+            if (round < DUMP_RETRY - 1) Thread.sleep(500)
         }
-        ctx.fail(
-            "读取界面结构失败：\n" + lastError.trim().take(600) +
-                "\n\n常见原因：屏幕正在播放动画（uiautomator 会等界面静止），" +
-                "稍等重试；或者当前页面是自绘界面（如游戏、视频播放器），没有可读的控件树，" +
-                "这种情况请改用 ui_screenshot + ui_tap 的坐标方式。"
-        )
+        if (lastError.isNotEmpty()) ShellMirror.emit("\n[UI] dump 失败：$lastError\n")
+        return null
     }
 
     /** 过滤出要展示的节点。 */
@@ -436,7 +453,7 @@ object ToolsUi {
         ctx.guard(PermKey.UI, null, "读取界面结构", "后端：${launcher.label}")
 
         if (ctx.args.boolOr("raw", false)) {
-            val xml = ctx.bridge.readText(tmpFile(ctx, DUMP), 4L * 1024 * 1024).orEmpty()
+            val xml = dumpXml(ctx, launcher) ?: ctx.fail("读取界面结构失败（uiautomator 没有产出内容），详见 ui_dump 的说明。")
             return@ToolSpec ToolResult("原始 XML（${xml.length} 字符，已截断到 20000）\n----\n" + xml.take(20_000))
         }
 
