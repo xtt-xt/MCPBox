@@ -3,21 +3,18 @@
 
 package com.xtt.mcpbox.ui
 
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.unit.DpOffset
 import com.xtt.mcpbox.i18n.L
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,7 +25,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -69,24 +65,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
-import kotlinx.coroutines.delay
 
 /* ------------------------------------------------------------------ 小工具 */
 
@@ -513,19 +500,11 @@ fun PillDropdown(
     val chevron by animateFloatAsState(
         targetValue = if (open) 180f else 0f, animationSpec = tween(190), label = "chevron"
     )
-    var anchorWidth by remember { mutableStateOf(0) }
-
     Box {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHighest,
             shape = RoundedCornerShape(50),
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .onGloballyPositioned { anchorWidth = it.size.width }
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(color = MaterialTheme.colorScheme.primary)
-                ) { setOpen(true) }
+            modifier = Modifier.clip(RoundedCornerShape(50)).clickable { setOpen(true) }
         ) {
             Row(
                 Modifier.padding(start = 14.dp, end = 9.dp, top = 8.dp, bottom = 8.dp),
@@ -544,16 +523,40 @@ fun PillDropdown(
             }
         }
 
-        M3DropdownMenu(
+        DropdownMenu(
             expanded = open,
-            onDismiss = { setOpen(false) },
-            minWidthPx = anchorWidth
+            onDismissRequest = { setOpen(false) },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(20.dp),
+            offset = DpOffset(0.dp, 4.dp)
         ) {
             options.forEachIndexed { index, label ->
-                MenuRow(label, index == selected) {
-                    setOpen(false)
-                    onSelect(index)
-                }
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            label,
+                            fontSize = 14.5.sp,
+                            maxLines = 1,
+                            softWrap = false,
+                            color = if (index == selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    trailingIcon = {
+                        if (index == selected) {
+                            Icon(
+                                Icons.Filled.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    },
+                    onClick = {
+                        setOpen(false)
+                        onSelect(index)
+                    }
+                )
             }
         }
     }
@@ -588,22 +591,10 @@ fun ChoiceDialog(
                 }
                 options.forEachIndexed { index, label ->
                     val active = index == selected
-                    val interaction = remember { MutableInteractionSource() }
-                    val pressed by interaction.collectIsPressedAsState()
-                    val rowBg by animateColorAsState(
-                        targetValue = if (pressed) MaterialTheme.colorScheme.surfaceContainerHighest
-                        else Color.Transparent,
-                        animationSpec = tween(160), label = "menuItemBg"
-                    )
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .background(rowBg)
-                            .clickable(
-                                interactionSource = interaction,
-                                indication = ripple(color = MaterialTheme.colorScheme.primary),
-                                onClick = { onSelect(index) }
-                            )
+                            .clickable { onSelect(index) }
                             .padding(horizontal = 22.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -956,217 +947,6 @@ fun MaxTvScrollView(
             .heightIn(max = (screenH * fraction).dp)
             .verticalScroll(rememberScrollState())
     ) { content() }
-}
-
-/* ------------------------------------------------------------ 弹窗 / 浮层 */
-
-/**
- * 统一弹窗容器：28dp 圆角 + 屏高 78% 限高，
- * 进入 300ms 减速（alpha + scale 0.90→1 + 下移 12dp），退出 150ms 加速。
- *
- * 退出是「先播动画再卸载」，所以不会闪；content 拿到的是 `close()`，
- * 确认 / 取消 / 点外部都走它，两条路径的观感一致。
- */
-@Composable
-fun AppDialog(
-    onDismiss: () -> Unit,
-    horizontalPadding: Int = 12,
-    content: @Composable (close: () -> Unit) -> Unit
-) {
-    var shown by remember { mutableStateOf(false) }
-    val density = LocalDensity.current
-    LaunchedEffect(Unit) { shown = true }
-
-    Dialog(onDismissRequest = { shown = false }) {
-        LaunchedEffect(shown) {
-            if (!shown) {
-                delay(150)                 // 等退出动画播完再让外面卸载
-                onDismiss()
-            }
-        }
-        AnimatedVisibility(
-            visible = shown,
-            enter = fadeIn(tween(300)) +
-                scaleIn(tween(300), initialScale = 0.90f) +
-                slideInVertically(tween(300)) { with(density) { 12.dp.roundToPx() } },
-            exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.98f)
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(28.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding.dp)
-            ) {
-                content { shown = false }
-            }
-        }
-    }
-}
-
-/**
- * 下拉菜单：200ms 减速淡入 + 下移 4dp，退出 150ms。
- *
- * 为什么要自己写：M3 的 `DropdownMenu` 时长不可配，而规范里下拉菜单是明确的一档
- * （进入 200 / 退出 150、位移 4dp）。定位逻辑照抄系统菜单：优先贴锚点下方，
- * 放不下就翻到上方，左右夹在屏幕内。
- */
-@Composable
-fun M3DropdownMenu(
-    expanded: Boolean,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier,
-    minWidthPx: Int = 0,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    var mounted by remember { mutableStateOf(expanded) }
-    var shown by remember { mutableStateOf(false) }
-    LaunchedEffect(expanded) {
-        if (expanded) {
-            mounted = true
-            withFrameNanos { }             // 先挂上去，下一帧再播进入动画
-            shown = true
-        } else if (mounted) {
-            shown = false
-            delay(150)
-            mounted = false
-        }
-    }
-    if (!mounted) return
-
-    val density = LocalDensity.current
-    val gap = with(density) { 6.dp.roundToPx() }
-    val minWidth = with(density) { minWidthPx.toDp() }
-
-    Popup(
-        popupPositionProvider = remember(gap) { MenuPositionProvider(gap) },
-        onDismissRequest = onDismiss,
-        properties = PopupProperties(focusable = true)
-    ) {
-        AnimatedVisibility(
-            visible = shown,
-            enter = fadeIn(tween(200)) +
-                slideInVertically(tween(200)) { with(density) { 4.dp.roundToPx() } },
-            exit = fadeOut(tween(150))
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(20.dp),
-                modifier = modifier
-                    .clip(RoundedCornerShape(20.dp))
-            ) {
-                Column(
-                    Modifier
-                        .width(IntrinsicSize.Max)
-                        .padding(vertical = 6.dp)
-                ) {
-                    // 撑一下最小宽度，让菜单不比它挂着的胶囊还窄
-                    Spacer(Modifier.width(minWidth))
-                    content()
-                }
-            }
-        }
-    }
-}
-
-/** 菜单项：高 44，左右 padding 16 / 12，选中项用 primary 色（不画勾，宽度才齐）。 */
-@Composable
-fun MenuRow(text: String, active: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(color = MaterialTheme.colorScheme.primary),
-                onClick = onClick
-            )
-            .padding(horizontal = 16.dp)
-            .height(44.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text,
-            color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            fontSize = 15.5.sp,
-            fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
-            maxLines = 1,
-            softWrap = false
-        )
-    }
-}
-
-private class MenuPositionProvider(private val gap: Int) : PopupPositionProvider {
-    override fun calculatePosition(
-        anchorBounds: IntRect,
-        windowSize: IntSize,
-        layoutDirection: LayoutDirection,
-        popupContentSize: IntSize
-    ): IntOffset {
-        val maxX = (windowSize.width - popupContentSize.width - gap).coerceAtLeast(gap)
-        val x = anchorBounds.left.coerceIn(gap, maxX)
-        val below = anchorBounds.bottom + gap
-        val above = anchorBounds.top - popupContentSize.height - gap
-        val maxY = (windowSize.height - popupContentSize.height - gap).coerceAtLeast(gap)
-        val y = when {
-            below <= maxY -> below
-            above >= gap -> above
-            else -> maxY
-        }
-        return IntOffset(x, y)
-    }
-}
-
-/**
- * 和系统 `AlertDialog` 长得一样，但进出场按规范来：进入 300ms 减速、退出 150ms 加速。
- * 内容多的时候正文区可以滚（限高 78%），按钮永远在限高区外 —— 不会被顶出屏幕。
- */
-@Composable
-fun AppAlertDialog(
-    title: String,
-    text: String,
-    confirmText: String,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-    confirmColor: Color = MaterialTheme.colorScheme.primary,
-    dismissText: String = L("取消"),
-    mono: Boolean = false
-) {
-    AppDialog(onDismiss = onDismiss) { close ->
-        MaxTvScrollView(fraction = 0.78f) {
-            Column(Modifier.padding(22.dp)) {
-                Text(
-                    title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontFamily = if (mono) FontFamily.Monospace else FontFamily.Default
-                )
-            }
-        }
-        Column(Modifier.padding(start = 22.dp, end = 22.dp, bottom = 18.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton(
-                    dismissText, Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
-                ) { close() }
-                PillButton(
-                    confirmText, Modifier.weight(1f),
-                    color = confirmColor, compact = true
-                ) {
-                    close()
-                    onConfirm()
-                }
-            }
-        }
-    }
 }
 
 /* -------------------------------------------------------------- 可按的卡 */

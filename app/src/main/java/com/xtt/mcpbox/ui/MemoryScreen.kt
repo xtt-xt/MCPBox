@@ -34,10 +34,12 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -440,42 +442,85 @@ private fun MemoryDetailPage(
     }
 
     if (confirmDelete) {
-        AppAlertDialog(
-            title = L("删除实体"),
-            text = L("确定删除「%s」吗？它的观察和 %s 条关系都会一起删掉。")
-                .format(entity.name, relations.size),
-            confirmText = L("删除"),
-            confirmColor = MaterialTheme.colorScheme.error,
-            onDismiss = { confirmDelete = false },
-            onConfirm = {
-                AppCore.memory.deleteEntities(listOf(name))
-                toast(ctx, L("已删除「%s」").format(name))
-                onChanged()
-                onBack()
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text(L("删除实体"), fontSize = 20.sp) },
+            text = {
+                Text(
+                    L("确定删除「%s」吗？它的观察和 %s 条关系都会一起删掉。").format(entity.name, relations.size),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.memory.deleteEntities(listOf(name))
+                    confirmDelete = false
+                    toast(ctx, L("已删除「%s」").format(name))
+                    onChanged()
+                    onBack()
+                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         )
     }
 
     deleteObs?.let { obs ->
-        AppAlertDialog(
-            title = L("删除这条观察"),
-            text = obs,
-            confirmText = L("删除"),
-            confirmColor = MaterialTheme.colorScheme.error,
-            onDismiss = { deleteObs = null },
-            onConfirm = { AppCore.memory.deleteObservations(name, listOf(obs)) ; onChanged() }
+        AlertDialog(
+            onDismissRequest = { deleteObs = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text(L("删除这条观察"), fontSize = 19.sp) },
+            text = {
+                Text(obs, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.memory.deleteObservations(name, listOf(obs))
+                    deleteObs = null
+                    onChanged()
+                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteObs = null }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         )
     }
 
     deleteRel?.let { rel ->
-        AppAlertDialog(
-            title = L("删除这条关系"),
-            text = "${rel.from} ──${rel.type}──▸ ${rel.to}",
-            confirmText = L("删除"),
-            confirmColor = MaterialTheme.colorScheme.error,
-            mono = true,
-            onDismiss = { deleteRel = null },
-            onConfirm = { AppCore.memory.deleteRelations(listOf(Triple(rel.from, rel.to, rel.type))) ; onChanged() }
+        AlertDialog(
+            onDismissRequest = { deleteRel = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text(L("删除这条关系"), fontSize = 19.sp) },
+            text = {
+                Text(
+                    "${rel.from} ──${rel.type}──▸ ${rel.to}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.memory.deleteRelations(listOf(Triple(rel.from, rel.to, rel.type)))
+                    deleteRel = null
+                    onChanged()
+                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteRel = null }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         )
     }
 
@@ -626,9 +671,8 @@ private fun MemoryDetailPage(
 private data class InputField(val key: String, val label: String, val hint: String)
 
 /**
- * 通用文本输入弹窗。多字段时纵向排列。
- * 正文区单独限高（屏高 62%）+ 可滚动，**按钮固定在限高区外** —— 字段再多也顶不掉按钮。
- * 进出场走 AppDialog：进入 300ms 减速 / 退出 150ms 加速。
+ * 通用文本输入弹窗。单字段时自动聚焦，多字段时纵向排列。
+ * 用系统 Dialog；内容多时整体限高 + 滚动，长内容也不会把按钮挤出屏幕。
  */
 @Composable
 private fun TextInputDialog(
@@ -643,9 +687,13 @@ private fun TextInputDialog(
         mutableStateOf(fields.associate { it.key to (initial[it.key] ?: "") })
     }
 
-    AppDialog(onDismiss = onDismiss) { close ->
-        Column {
-            MaxTvScrollView(fraction = 0.62f) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        ) {
+            MaxTvScrollView(fraction = 0.78f) {
                 Column(Modifier.padding(22.dp)) {
                     Text(
                         title,
@@ -668,20 +716,16 @@ private fun TextInputDialog(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                }
-            }
-            Column(Modifier.padding(start = 22.dp, end = 22.dp, bottom = 18.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton(
-                        L("取消"), Modifier.weight(1f), outlined = true,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
-                    ) { close() }
-                    PillButton(
-                        L("保存"), Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.primary, compact = true
-                    ) {
-                        close()
-                        onConfirm(values.value)
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PillButton(
+                            L("取消"), Modifier.weight(1f), outlined = true,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
+                        ) { onDismiss() }
+                        PillButton(
+                            L("保存"), Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.primary, compact = true
+                        ) { onConfirm(values.value) }
                     }
                 }
             }
