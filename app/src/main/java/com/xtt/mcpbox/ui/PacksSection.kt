@@ -55,6 +55,7 @@ fun PacksSection(
     var creatingProfile by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDelete by remember { mutableStateOf<ToolPack?>(null) }
+    var confirmDeleteProfile by remember { mutableStateOf<String?>(null) }
 
     fun selectProfile(id: String) {
         profile = id
@@ -83,6 +84,46 @@ fun PacksSection(
                 pickProfile = false
                 if (idx < profileIds.size) selectProfile(profileIds[idx])
                 else creatingProfile = true
+            },
+            // default 是兜底会话，不给删（删了就没人接住没写名字的请求了）。
+            deletable = { idx -> idx < profileIds.size && profileIds[idx] != "default" },
+            deleteLabel = L("删除会话"),
+            onDelete = { idx ->
+                val target = profileIds.getOrNull(idx)
+                pickProfile = false
+                if (target != null && target != "default") confirmDeleteProfile = target
+            }
+        )
+    }
+
+    confirmDeleteProfile?.let { target ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDeleteProfile = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text(L("删除会话"), fontSize = 20.sp) },
+            text = {
+                Text(
+                    L("确定删除会话「%s」吗？它保存的激活状态会一起清掉，用这个地址的 AI 下次请求会回到默认。")
+                        .format(target),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    AppCore.profiles.remove(target)
+                    if (profile == target) selectProfile("default")
+                    toast(ctx, L("已删除会话「%s」").format(target))
+                    confirmDeleteProfile = null
+                    onChanged()
+                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDeleteProfile = null }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         )
     }
@@ -106,7 +147,7 @@ fun PacksSection(
         )
     }
 
-    GroupLabel(L("工具包（省 token）"))
+    GroupLabel(L("工具包"))
 
     CardGroup(
         listOf(
@@ -121,13 +162,16 @@ fun PacksSection(
         )
     )
 
-    // 直接给出该填进客户端的地址，省得自己拼
+    // 直接给出该填进客户端的地址，省得自己拼。
+    // 复制出来的是**带令牌的完整地址**（?token=…），粘进客户端就能用，不用再配请求头。
     Spacer(Modifier.height(7.dp))
     val lanIp = remember { com.xtt.mcpbox.core.LocalNet.primary() ?: "127.0.0.1" }
     val port = AppCore.config.port
     val profilePath = if (profile == "default") "/mcp"
     else "/mcp/p/" + runCatching { java.net.URLEncoder.encode(profile, "UTF-8") }.getOrDefault(profile)
     val fullUrl = "http://$lanIp:$port$profilePath"
+    val token = if (AppCore.config.tokenEnabled) AppCore.config.token else ""
+    val copyableUrl = if (token.isNotBlank()) "$fullUrl?token=$token" else fullUrl
     CardColumn {
         CardBox {
             Text(
@@ -144,30 +188,17 @@ fun PacksSection(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                L("令牌别写在地址里，放到自定义请求头更干净：") + "\n" +
-                    "Authorization: Bearer " + (if (AppCore.config.tokenEnabled) AppCore.config.token else "…"),
+                if (token.isNotBlank()) L("复制出来的地址里已经带上令牌，直接粘进客户端就能用，不用再配请求头。")
+                else L("当前没开启访问令牌，复制地址即可；想更安全可以去设置里打开令牌。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.5.sp,
-                fontFamily = FontFamily.Monospace,
                 lineHeight = 16.sp
             )
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton(
-                    L("复制地址"), Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.primary, compact = true
-                ) { copyText(ctx, fullUrl, L("地址已复制")) }
-                PillButton(
-                    L("复制请求头"), Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.primary, compact = true
-                ) {
-                    copyText(
-                        ctx,
-                        "Authorization: Bearer ${AppCore.config.token}",
-                        L("请求头已复制")
-                    )
-                }
-            }
+            PillButton(
+                L("复制地址"), Modifier.fillMaxWidth(), outlined = true,
+                color = MaterialTheme.colorScheme.primary, compact = true
+            ) { copyText(ctx, copyableUrl, L("地址已复制")) }
         }
     }
 
@@ -241,8 +272,8 @@ fun PacksSection(
     Spacer(Modifier.height(10.dp))
     Column(Modifier.padding(horizontal = 14.dp)) {
         Text(
-            L("工具包决定「AI 的工具列表里出现哪些工具」，用来省 token；也不会绕过上面的权限。") +
-                L("默认只加载基础 + 文件读取 + 记忆库，能省约三分之一 token。"),
+            L("工具包决定「AI 的工具列表里出现哪些工具」，也不会绕过上面的权限。") +
+                L("默认只加载基础 + 文件读取 + 记忆库，工具列表更干净。"),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             lineHeight = 17.sp
@@ -282,7 +313,7 @@ fun PacksSection(
                 ) {
                     AppCore.profiles.remove(profile)
                     selectProfile("default")
-                    toast(ctx, L("已删除会话"))
+                    toast(ctx, L("已删除会话「%s」").format(profile))
                     onChanged()
                 }
             }

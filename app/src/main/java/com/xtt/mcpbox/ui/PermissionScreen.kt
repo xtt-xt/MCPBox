@@ -83,6 +83,42 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
             subtitle = L("选「询问」时，AI 每次调用都会弹出悬浮窗让你决定")
         )
 
+        // ---------------------------------------------------------- 预设会话
+        // 放在最上面：一键决定「AI 能自己动手到什么程度」，比逐个键去调快得多。
+        // 注意这里改的是**全局**权限开关，对所有会话都生效。
+        GroupLabel(L("预设会话"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("全部允许"),
+                    subtitle = L("AI 想做什么都不再询问"),
+                    icon = Icons.Filled.Check,
+                    onClick = {
+                        AppCore.permissions.setSwitchForAll(PermAction.ALLOW)
+                        onChanged()
+                    }
+                ),
+                RowSpec(
+                    title = L("全部拒绝"),
+                    subtitle = L("彻底锁死，AI 只能看服务器状态"),
+                    icon = Icons.Filled.Close,
+                    onClick = {
+                        AppCore.permissions.setSwitchForAll(PermAction.DENY)
+                        onChanged()
+                    }
+                ),
+                RowSpec(
+                    title = L("全部询问"),
+                    subtitle = L("每个写/删动作都弹窗确认（推荐）"),
+                    icon = Icons.Filled.Info,
+                    onClick = {
+                        AppCore.permissions.setSwitchForAll(PermAction.ASK)
+                        onChanged()
+                    }
+                )
+            )
+        )
+
         // ---------------------------------------------------------- 权限总开关
         CardGroup(
             rows = PermKey.entries.map { key ->
@@ -108,40 +144,6 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
 
         // ---------------------------------------------------------- 工具包
         PacksSection(ctx = ctx, revision = revision, onChanged = onChanged)
-
-        // ---------------------------------------------------------- 快捷操作
-        GroupLabel(L("快捷操作"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("全部允许"),
-                    subtitle = L("AI 想做什么都不再询问"),
-                    icon = Icons.Filled.Check,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.ALLOW)
-                        onChanged()
-                    }
-                ),
-                RowSpec(
-                    title = L("全部询问"),
-                    subtitle = L("每个写/删动作都弹窗确认（推荐）"),
-                    icon = Icons.Filled.Info,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.ASK)
-                        onChanged()
-                    }
-                ),
-                RowSpec(
-                    title = L("全部拒绝"),
-                    subtitle = L("彻底锁死，AI 只能看服务器状态"),
-                    icon = Icons.Filled.Close,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.DENY)
-                        onChanged()
-                    }
-                )
-            )
-        )
 
         // ---------------------------------------------------------- 路径规则
         GroupLabel(L("路径规则（%s）").format(rules.size))

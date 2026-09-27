@@ -32,9 +32,6 @@ object ToolsUi {
     /** 控件树落在 /data/local/tmp：shell / root 都好写，也不占用户存储。 */
     private const val DUMP_REMOTE = "/data/local/tmp/mcpbox_ui.xml"
 
-    /** dump 要重试几次（uiautomator 会间歇性拿不到 idle state）。 */
-    private const val DUMP_RETRY = 3
-
     // ------------------------------------------------------------ 屏幕结构模型
 
     /** uiautomator dump 出来的一个节点。 */
@@ -138,6 +135,10 @@ object ToolsUi {
     /**
      * 挑一个**特权**后端（Shizuku / Root）。
      * 应用沙箱后端做不了截屏和注入事件，所以这里不接受它。
+     *
+     * 默认顺序是 **root 优先**：实测 `uiautomator`（读界面结构）在 Shizuku 后端下会
+     * 静默失败（rc=0、无输出、无文件 —— app_process 在那个上下文里起不来），
+     * 只有 root 能稳定跑到。显式传 `backend` 参数时按用户说的来。
      */
     private fun pickLauncher(ctx: CallContext, pref: String): CommandLauncher {
         val avail = ShellBackends.available().filter { it.id != "app" }
@@ -148,7 +149,7 @@ object ToolsUi {
             )
         }
         if (pref != "auto") avail.firstOrNull { it.id == pref }?.let { return it }
-        // 按用户在设置里排的优先级挑
+        avail.firstOrNull { it.id == "root" }?.let { return it }
         ctx.config.shellPreference.split(',').forEach { id ->
             avail.firstOrNull { it.id == id.trim() }?.let { return it }
         }
@@ -295,26 +296,43 @@ object ToolsUi {
         }
     }
 
-    /** dump 落文件再读回来；失败会重试，最终失败则带着诊断信息抛错。 */
+    /**
+     * dump 落文件再读回来。
+     * 会在**所有可用的特权后端**上试（某个后端跑不动 uiautomator 时自动换一个），
+     * 界面停不下来（idle state）就直接放弃 —— 那种情况重试没有意义。
+     */
     private fun dumpXml(ctx: CallContext, launcher: CommandLauncher): String {
+        val others = ShellBackends.available().filter { it.id != "app" && it.id != launcher.id }
         var lastError = ""
-        repeat(DUMP_RETRY) { round ->
+        var sawIdle = false
+        outer@ for (l in listOf(launcher) + others) {
             // 先不带 --compressed：实测某些 ROM 上 --compressed 反而更容易失败
             for (flag in listOf("", "--compressed ")) {
                 val cmd = "uiautomator dump $flag$DUMP_REMOTE 2>&1; cat $DUMP_REMOTE 2>/dev/null"
-                val res = runner.run(launcher, cmd, null, 30_000, maxOutput = 16 * 1024 * 1024)
+                val res = runner.run(l, cmd, null, 25_000, maxOutput = 16 * 1024 * 1024)
                 val text = res.stdout
                 val idx = text.indexOf("<hierarchy")
                 if (idx >= 0) {
+                    if (l.id != launcher.id) {
+                        ShellMirror.emit("\n[UI] 换用「${l.label}」后端读到了界面结构\n")
+                        ctx.log.add(
+                            LogKind.SYSTEM, tool = ctx.tool, client = ctx.client,
+                            message = "UI 后端回退：${launcher.label} 跑不动 uiautomator，改用 ${l.label}"
+                        )
+                    }
                     val start = text.lastIndexOf("<?xml", idx).takeIf { it >= 0 } ?: idx
                     return text.substring(start)
                 }
                 val err = text.lineSequence()
                     .filter { it.isNotBlank() && !it.startsWith("UI hierchary") }
                     .joinToString(" ").trim().take(300)
-                if (err.isNotEmpty()) lastError = err
+                if (err.isNotEmpty()) {
+                    lastError = err
+                    if (err.contains("idle state", ignoreCase = true)) sawIdle = true
+                }
             }
-            if (round < DUMP_RETRY - 1) Thread.sleep(400)
+            if (sawIdle) break@outer
+            Thread.sleep(300)
         }
         if (lastError.isNotEmpty()) ShellMirror.emit("\n[UI] 读取界面结构失败：$lastError\n")
         ctx.fail(dumpFailureHelp(lastError))

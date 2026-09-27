@@ -191,7 +191,7 @@ fun AboutScreen(
                     icon = Icons.Filled.Star
                 ),
                 if (AppCore.prefs.catUnlocked) RowSpec(
-                    title = "喵",
+                    title = "喵喵喵",
                     subtitle = "猫娘语已解锁：设置 → 外观 → 语言",
                     icon = Icons.Filled.Star
                 ) else null

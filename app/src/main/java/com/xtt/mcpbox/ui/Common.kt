@@ -43,6 +43,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -564,12 +565,22 @@ fun PillDropdown(
 
 /** 居中的单选框（圆角大卡 + 勾）。 */
 @Composable
+/**
+ * 单选列表弹窗（原生 Dialog）。
+ *
+ * @param selected 当前选中项的下标。
+ * @param deletable 哪些行允许删除（默认都不允许）。给了 [onDelete] 才会出现垃圾桶。
+ * @param onDelete 点垃圾桶时回调（下标）。传 null 表示这个弹窗不支持删除。
+ */
 fun ChoiceDialog(
     title: String?,
     options: List<String>,
     selected: Int,
     onDismiss: () -> Unit,
-    onSelect: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    deletable: (Int) -> Boolean = { false },
+    deleteLabel: String = "删除",
+    onDelete: ((Int) -> Unit)? = null
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -595,7 +606,12 @@ fun ChoiceDialog(
                         Modifier
                             .fillMaxWidth()
                             .clickable { onSelect(index) }
-                            .padding(horizontal = 22.dp, vertical = 13.dp),
+                            .padding(
+                                start = 22.dp,
+                                end = if (onDelete != null) 14.dp else 22.dp,
+                                top = 13.dp,
+                                bottom = 13.dp
+                            ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -613,6 +629,15 @@ fun ChoiceDialog(
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
                             )
+                        }
+                        if (onDelete != null && deletable(index)) {
+                            Spacer(Modifier.width(10.dp))
+                            RoundIconButton(
+                                Icons.Filled.Delete,
+                                deleteLabel,
+                                tint = MaterialTheme.colorScheme.error,
+                                size = 34
+                            ) { onDelete(index) }
                         }
                     }
                 }
