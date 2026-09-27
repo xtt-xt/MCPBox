@@ -22,6 +22,90 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.1.0 · 2026-09-28 —— 第一个正式发行版 / First stable release
+
+<details open>
+<summary><b>中文</b></summary>
+
+上一个 Release 停在 `v1.0.0-22`（2026-09-12）。从那时到现在的主要变化：
+
+### 新增能力
+
+| 能力 | 说明 |
+|---|---|
+| **UI 自动化工具包** | 8 个工具（截屏 / 读控件树 / 点击 / 滑动 / 输入 / 按键 / 启应用 / 等元素），挂在独立的「控制屏幕」权限下，默认不激活。`ui_input` 输中文自动走剪贴板 |
+| **悬浮窗审批 + 通知栏兜底** | 审批弹窗浮在所有 App 之上，没有悬浮窗权限时自动改用通知栏按钮 |
+| **权限页「预设会话」** | 一键切换 全部允许 / 全部拒绝 / 全部询问 / 自定义；前三个会统一并锁定开关，切走时记住你的自定义设置，切回来原样恢复 |
+| **超时可「不限时」** | 审批弹窗不会自动消失、命令一直跑到自己结束（值存 0）；`run_shell` 的 `timeoutMs=0` 同理 |
+| **工具级权限四态** | 单个工具可单独设 跟随 / 允许 / 询问 / 拒绝 |
+| **多语言界面** | 中文 / English 内置，可导出模板翻译后导入 |
+| **记忆库** | 实体 + 观察 + 关系（知识图谱），App 内可浏览编辑 |
+| **工具包 / 会话隔离** | 52 个工具分 7 包按需激活（默认 22 个，省 52% token）；`/mcp/p/<名字>` 独立会话，可重置 / 删除 |
+
+### 体验修复（v1.0.0-39 ~ -46）
+
+- 读界面结构时在可用后端间自动回退（root 优先），`uiautomator` 静默失败不再无解
+- 「复制地址」直接给带令牌的完整 URL，粘进客户端即可用
+- 记忆库分批加载改为 20 条一批，进页面不再卡顿
+- 弹窗 / 下拉菜单一律用原生实现；点整行 = 展开右侧下拉，不再弹居中的大窗
+- 预设会话锁定态、超时开关与滑块连成一组、若干卡片间距修正
+- i18n 补漏 60 条（根因：一批界面文案定义在 `mcpcore` 里，词条表一直没覆盖到）
+- `server_info` / `get_device_info` 报完整版本号（`v1.1.0-47`）
+
+### 基线
+
+- 端到端测试 **336 项全绿**
+- release APK 2.3 MB，三模块（mcpcore + harness + app）
+- 文档：中文 [README.md](README.md) / [README.en.md](README.en.md)
+
+### 已知待办
+
+- 通知栏 / 终端回显 / Shizuku 提示 / 更新检查失败原因这一批文案还没 i18n（约 50 条，需要改字符串拼接）
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+The previous release was `v1.0.0-22` (2026-09-12). What changed since then:
+
+### New capabilities
+
+| Feature | Notes |
+|---|---|
+| **UI automation pack** | 8 tools (screenshot / read view tree / tap / swipe / type / key press / launch app / wait for element) behind its own "Control screen" permission, off by default. `ui_input` types CJK via the clipboard |
+| **Floating approvals with a notification fallback** | The approval popup floats above every app; without overlay permission it falls back to notification buttons |
+| **Presets** | One tap in the Permissions tab: all-allow / all-deny / all-ask / custom. The first three unify and lock the switches; your custom set is remembered when you switch away and restored exactly when you return |
+| **Optional no-timeout mode** | The approval popup never auto-dismisses and commands run to completion (stored as 0); `run_shell`'s `timeoutMs=0` behaves the same |
+| **Per-tool permissions** | Individual tools can be set to follow / allow / ask / deny |
+| **Multilingual UI** | Chinese and English built in; export a template, translate it and import any language |
+| **Memory** | Entities + observations + relations (a knowledge graph), browsable and editable in the app |
+| **Tool packs / session isolation** | 52 tools in 7 packs, activated on demand (22 by default — 52% fewer tokens); `/mcp/p/<name>` gives an independent session you can reset or delete |
+
+### Fixes and polish (v1.0.0-39 … -46)
+
+- Reading the view tree now falls back across available backends (root first), so a silent `uiautomator` failure is no longer a dead end
+- "Copy address" now hands you a full URL including the token — paste it into your client and go
+- Memory loads in batches of 20, so opening the tab no longer stutters
+- Dialogs and dropdowns use the native implementations throughout; tapping a row expands the dropdown on its right instead of opening a centred modal
+- Preset lock state, timeout switch grouped with its slider, and several card spacing fixes
+- 60 missing i18n entries added (root cause: a batch of UI strings is defined inside `mcpcore`, which the entry table never covered)
+- `server_info` / `get_device_info` now report the full version (`v1.1.0-47`)
+
+### Baseline
+
+- End-to-end tests: **336 assertions, all green**
+- Release APK 2.3 MB, three modules (mcpcore + harness + app)
+- Docs: [README.md](README.md) (Chinese) / [README.en.md](README.en.md)
+
+### Known issues
+
+- The notification, terminal echo, Shizuku hint and update-check messages are not translated yet (~50 strings; needs string-concatenation work)
+
+</details>
+
+---
+
 ## v1.0.0-46 · 2026-09-28
 
 **i18n 补漏（界面中文在英文下不再漏出来）· 去掉重复的「预设配色」**

@@ -96,10 +96,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: 提取发布说明（从 CHANGELOG 抓对应 tag 的段落，中英对照）
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # tag 形如 v1.1.0-47，而 CHANGELOG 标题可能只写到 v1.1.0；
+          # 先按完整 tag 找（v1.0.0-22 那种逐版条目的情况），找不到再去掉核心版本号再找。
+          extract() {
+            awk -v tag="$1" '
+              index($0, "## " tag) == 1 { found = 1 }
+              found && index($0, "## v") == 1 && index($0, "## " tag) != 1 { exit }
+              found { print }
+            ' CHANGELOG.md
+          }
+          extract "$TAG" > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            extract "${TAG%-*}" > release_notes.md
+          fi
+          if [ ! -s release_notes.md ]; then
+            printf '本次改动的详细说明见仓库的 [CHANGELOG.md](CHANGELOG.md)。\n\nSee [CHANGELOG.md](CHANGELOG.md) for the full notes.\n' > release_notes.md
+          fi
+          echo "---- 发布说明预览（tag=$TAG）----"
+          head -20 release_notes.md
+
       - name: 发布 Release（仅打 v* 标签时）
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: out/*
-          generate_release_notes: true
+          body_path: release_notes.md
           draft: false

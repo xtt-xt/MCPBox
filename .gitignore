@@ -19,3 +19,4 @@ keystore/
 .idea/
 *.iml
 .DS_Store
+release_notes.md
