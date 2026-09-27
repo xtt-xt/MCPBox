@@ -33,6 +33,9 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_FIRST_RUN = "first_run_done"
         /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
         const val KEY_PACK_PROFILE = "pack_profile_view"
+        /** 「不限时」开关打开前用的秒数（关掉开关时恢复回去）。 */
+        const val KEY_APPROVAL_TIMEOUT_LAST = "approval_timeout_last_sec"
+        const val KEY_SHELL_TIMEOUT_LAST = "shell_timeout_last_sec"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -119,6 +122,15 @@ class Prefs(context: Context) : SettingsSource {
     var packProfileView: String
         get() = getString(KEY_PACK_PROFILE, "default") ?: "default"
         set(value) = putString(KEY_PACK_PROFILE, value)
+
+    /** 最近一次有限超时的秒数（用来在关掉「不限时」时恢复）。 */
+    var approvalTimeoutLastSec: Long
+        get() = getLong(KEY_APPROVAL_TIMEOUT_LAST, 300L)
+        set(value) = putLong(KEY_APPROVAL_TIMEOUT_LAST, value)
+
+    var shellTimeoutLastSec: Long
+        get() = getLong(KEY_SHELL_TIMEOUT_LAST, 60L)
+        set(value) = putLong(KEY_SHELL_TIMEOUT_LAST, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     fun clearAll() = sp.edit().clear().apply()

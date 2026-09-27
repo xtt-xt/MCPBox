@@ -1248,6 +1248,54 @@ fun main() {
 
         ServerMeta.appVersion = savedAppVer
         ServerMeta.appVersionCode = savedAppCode
+
+        println("\n[45] 超时无限制（0 = 不限）")
+
+        val infSettings = MemorySettings().apply {
+            putLong(Config.Keys.APPROVAL_TIMEOUT, 0L)
+            putLong(Config.Keys.SHELL_TIMEOUT, 0L)
+        }
+        val infConfig = Config(infSettings)
+        check("审批超时 0 会被保留（= 不限制）", infConfig.approvalTimeoutMs == 0L, "${infConfig.approvalTimeoutMs}")
+        check("命令超时 0 会被保留（= 不限制）", infConfig.shellTimeoutMs == 0L, "${infConfig.shellTimeoutMs}")
+        check(
+            "正常范围的秒数照样读得出来",
+            Config(MemorySettings().apply { putLong(Config.Keys.APPROVAL_TIMEOUT, 900_000L) })
+                .approvalTimeoutMs == 900_000L
+        )
+
+        // 旧写法 deadline = started + 0 会把命令当场秒杀，这里专门盯这个
+        val shLauncher = ShellBackends.pick("auto", config)!!
+        val tInfinite = System.currentTimeMillis()
+        val infResult = ShellRunner().run(shLauncher, "sleep 0.6; echo done", null, 0)
+        val infElapsed = System.currentTimeMillis() - tInfinite
+        check("超时=0 时命令能跑完（没被立刻掐断）", !infResult.timedOut, infResult.toText().take(160))
+        check("确实拿到了命令自己的输出", infResult.stdout.contains("done"), infResult.stdout.take(120))
+        check("真的等满了 0.6 秒", infElapsed >= 550, "${infElapsed}ms")
+
+        answer("sleep", ApprovalDecision.ALLOW_ONCE)
+        permissions.setSwitch(PermKey.SHELL, PermAction.ASK)
+        val (infOk, infText) = call("run_shell", """{"command":"sleep 0.6; echo done","timeoutMs":0}""")
+        check("run_shell 的 timeoutMs=0 能透传（不被夹成 1000）", infOk && infText.contains("done"), infText.take(200))
+
+        // 审批：0 = 一直等。用「拖 1.2 秒才放行」的应答者来证明不会被判超时
+        val savedApprovalTimeout = config.approvalTimeoutMs
+        val savedResolver = approval.headlessResolver
+        config.approvalTimeoutMs = 0L
+        approval.headlessResolver = { _: ApprovalRequest ->
+            runCatching { Thread.sleep(1200) }
+            ApprovalDecision.ALLOW_ONCE
+        }
+        val (waitOk, waitText) = call("write_file", """{"path":"docs/infinite_wait.txt","content":"等了 1.2 秒"}""")
+        check("审批不限时时，1.2 秒后才来的答复仍然生效", waitOk, waitText.take(200))
+        check("文件确实写出来了", File(root, "docs/infinite_wait.txt").isFile)
+        config.approvalTimeoutMs = savedApprovalTimeout
+        approval.headlessResolver = savedResolver
+
+        config.shellTimeoutMs = 0L
+        val (infInfoOk, infInfoText) = call("shell_info", "{}")
+        check("shell_info 显示「不限制」", infInfoOk && infInfoText.contains("不限制"), infInfoText.take(200))
+        config.shellTimeoutMs = 60_000L
     } finally {
         server.stop()
     }

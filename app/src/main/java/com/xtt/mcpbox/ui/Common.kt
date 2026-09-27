@@ -119,7 +119,9 @@ fun rememberPagedCount(
     scroll: ScrollState,
     resetKey: Any? = null,
     initial: Int = PageFirst,
-    step: Int = PageStep
+    step: Int = PageStep,
+    /** 离底部还有几屏时补下一批。越小越晚补，首帧越轻。 */
+    preloadScreens: Float = 1.2f
 ): Int {
     var shown by remember(resetKey) { mutableStateOf(initial.coerceAtMost(total)) }
     // 数据变少（清空日志 / 换筛选）时夹回范围内
@@ -127,7 +129,7 @@ fun rememberPagedCount(
 
     val density = LocalDensity.current
     val screenH = LocalConfiguration.current.screenHeightDp
-    val preload = with(density) { (screenH * 1.2f).dp.roundToPx() }
+    val preload = with(density) { (screenH * preloadScreens).dp.roundToPx() }
 
     LaunchedEffect(total, resetKey, preload) {
         snapshotFlow { scroll.value to scroll.maxValue }

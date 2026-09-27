@@ -88,10 +88,12 @@ class Config(private val src: SettingsSource) {
     @Volatile var fullAccess: Boolean = false
     @Volatile var readOnly: Boolean = false
     @Volatile var responseMode: String = Modes.AUTO
+    /** 审批超时（毫秒）。**0 = 不限制**：弹窗不会自动消失，AI 一直等你答复。 */
     @Volatile var approvalTimeoutMs: Long = 120_000L
     @Volatile var trashEnabled: Boolean = true
     @Volatile var logEnabled: Boolean = true
     /** Shell / 命令执行 */
+    /** 命令默认超时（毫秒）。**0 = 不限制**：命令会一直跑到自己结束。 */
     @Volatile var shellTimeoutMs: Long = 60_000L
     /** auto 模式下后端的优先顺序 */
     @Volatile var shellPreference: String = "shizuku,root,app"
@@ -166,10 +168,10 @@ class Config(private val src: SettingsSource) {
         fullAccess = src.getBoolean(Keys.FULL_ACCESS, false)
         readOnly = src.getBoolean(Keys.READ_ONLY, false)
         responseMode = src.getString(Keys.RESPONSE_MODE, Modes.AUTO) ?: Modes.AUTO
-        approvalTimeoutMs = src.getLong(Keys.APPROVAL_TIMEOUT, 120_000L).coerceIn(5_000L, 3_600_000L)
+        approvalTimeoutMs = src.getLong(Keys.APPROVAL_TIMEOUT, 120_000L).coerceIn(0L, 3_600_000L)
         trashEnabled = src.getBoolean(Keys.TRASH, true)
         logEnabled = src.getBoolean(Keys.LOG_ENABLED, true)
-        shellTimeoutMs = src.getLong(Keys.SHELL_TIMEOUT, 60_000L).coerceIn(3_000L, 3_600_000L)
+        shellTimeoutMs = src.getLong(Keys.SHELL_TIMEOUT, 60_000L).coerceIn(0L, 3_600_000L)
         shellPreference = src.getString(Keys.SHELL_PREFERENCE, "shizuku,root,app") ?: "shizuku,root,app"
         terminalBackend = src.getString(Keys.TERMINAL_BACKEND, "auto") ?: "auto"
         terminalCwd = src.getString(Keys.TERMINAL_CWD, "") ?: ""

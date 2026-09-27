@@ -247,7 +247,8 @@ class ShellRunner {
         // 它的默认实现只捕获 IllegalThreadStateException，而 Shizuku 的远端进程
         // 在还没结束时抛的是 IllegalArgumentException("process hasn't exited")，
         // 会把异常直接漏出整个调用（表现为 run_shell 报 "process hasn't exited"）。
-        val deadline = started + timeoutMs
+        // timeoutMs <= 0 表示「不限制」：命令一直跑到自己结束（deadline 相当于无穷大）
+        val deadline = if (timeoutMs <= 0L) Long.MAX_VALUE else started + timeoutMs
         var code = -1
         var finished = false
         while (System.currentTimeMillis() < deadline) {

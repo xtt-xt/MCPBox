@@ -58,6 +58,9 @@ import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.core.MemoryEntity
 import com.xtt.mcpbox.core.MemoryRelation
 
+/** 记忆库列表 / 观察列表一次渲染多少条（实体卡比较重，比日志少很多）。 */
+private const val MEMORY_PAGE = 20
+
 /**
  * 记忆库：给 AI 用的长期记忆（知识图谱）。
  *
@@ -137,8 +140,15 @@ private fun MemoryListPage(
         }.sortedBy { it.name.lowercase() }
     }
     val scroll = rememberScrollState()
-    // 实体卡比日志行高，一次全渲染同样会卡首帧：先渲染 60 张，快滑到底之前自动补
-    val shownCount = rememberPagedCount(list.size, scroll, resetKey = query to folder)
+    // 实体卡比日志行重（一张卡要渲染观察 + 关系），一次渲染太多会卡首帧：
+    // 首批 20 张，离底半屏再补 20 张。
+    val shownCount = rememberPagedCount(
+        list.size, scroll,
+        resetKey = query to folder,
+        initial = MEMORY_PAGE,
+        step = MEMORY_PAGE,
+        preloadScreens = 0.5f
+    )
     // 关系按实体名索引，避免每张卡都把整张关系表扫一遍
     val relOf = remember(graph) {
         val map = mutableMapOf<String, MutableList<MemoryRelation>>()
@@ -361,7 +371,13 @@ private fun MemoryDetailPage(
     val allNames = remember(revision) { AppCore.memory.graph.entities.map { it.name }.filter { it != name } }
     val scroll = rememberScrollState()
     // 观察可能有上百条，和日志一样分批渲染
-    val obsShown = rememberPagedCount(entity.observations.size, scroll, resetKey = name)
+    val obsShown = rememberPagedCount(
+        entity.observations.size, scroll,
+        resetKey = name,
+        initial = MEMORY_PAGE,
+        step = MEMORY_PAGE,
+        preloadScreens = 0.5f
+    )
 
     var editMeta by remember { mutableStateOf<String?>(null) }        // "name"/"type"/"folder"
     var addObs by remember { mutableStateOf(false) }

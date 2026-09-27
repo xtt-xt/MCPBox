@@ -91,7 +91,7 @@ object ToolsShell {
             mapOf(
                 "command" to Schema.str("要执行的命令，例如 ls -la /sdcard/Download 或 pm list packages"),
                 "cwd" to Schema.str("工作目录（可选），必须在你允许的目录里"),
-                "timeoutMs" to Schema.int("超时毫秒数，默认 60000", 60_000, 1_000, 1_800_000),
+                "timeoutMs" to Schema.int("超时毫秒数，默认用设置里的值；0 表示不限制（命令会一直跑）", 60_000, 0, 1_800_000),
                 "backend" to Schema.str("执行后端", "auto", listOf("auto", "shizuku", "root", "app"))
             ),
             listOf("command")
@@ -100,7 +100,7 @@ object ToolsShell {
         val command = ctx.args.str("command")?.trim().orEmpty()
         if (command.isBlank()) ctx.fail("命令不能为空")
         val timeout = ctx.args.longOr("timeoutMs", ctx.config.shellTimeoutMs)
-            .coerceIn(1_000L, 1_800_000L)
+            .let { if (it <= 0L) 0L else it.coerceIn(1_000L, 1_800_000L) }
         val result = execute(
             ctx = ctx,
             toolLabel = "执行命令",
@@ -136,7 +136,10 @@ object ToolsShell {
         sb.append("优先级设置：").append(ctx.config.shellPreference).append('\n')
         sb.append("\n环境\n")
         ShellEnv.build().forEach { (k, v) -> sb.append("  ").append(k).append('=').append(v).append('\n') }
-        sb.append("  默认超时=").append(ctx.config.shellTimeoutMs / 1000).append(" 秒\n")
+        sb.append("  默认超时=").append(
+            if (ctx.config.shellTimeoutMs <= 0L) "不限制（命令一直跑到自己结束）"
+            else "${ctx.config.shellTimeoutMs / 1000} 秒"
+        ).append('\n')
         sb.append("\n命令规则（按顺序匹配，第一条命中生效）\n")
         val rules = ctx.permissions.commandRules()
         if (rules.isEmpty()) {

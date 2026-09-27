@@ -103,9 +103,20 @@ fun SettingsScreen(
         }
     }
     var shellTimeoutState by remember(revision) {
-        mutableStateOf(AppCore.config.shellTimeoutMs / 1000)
+        mutableStateOf(
+            (AppCore.config.shellTimeoutMs / 1000).takeIf { it > 0L }
+                ?: AppCore.prefs.shellTimeoutLastSec
+        )
     }
-    var timeoutState by remember(revision) { mutableStateOf(AppCore.config.approvalTimeoutMs / 1000) }
+    // 「不限时」时 timeoutMs = 0，滑块要拿上次的有限值来显示，否则滑块会落到范围外面
+    var timeoutState by remember(revision) {
+        mutableStateOf(
+            (AppCore.config.approvalTimeoutMs / 1000).takeIf { it > 0L }
+                ?: AppCore.prefs.approvalTimeoutLastSec
+        )
+    }
+    val approvalUnlimited = AppCore.config.approvalTimeoutMs <= 0L
+    val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
     var ttlMinutesState by remember(revision) { mutableStateOf(AppCore.config.profileTtlMinutes) }
 
     Column(
@@ -371,8 +382,9 @@ fun SettingsScreen(
             CardBox {
                 Text(L("审批超时"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
                 Text(
-                    L("%s 秒 · 超时自动拒绝").format(timeoutState),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (approvalUnlimited) L("不限制 · 弹窗不会自动消失，AI 一直等你")
+                    else L("%s 秒 · 超时自动拒绝").format(timeoutState),
+                    color = if (approvalUnlimited) Sem.warn else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.5.sp,
                     modifier = Modifier.padding(top = 3.dp)
                 )
@@ -381,14 +393,41 @@ fun SettingsScreen(
                     onValueChange = { timeoutState = it.toLong() },
                     onValueChangeFinished = {
                         AppCore.config.approvalTimeoutMs = timeoutState * 1000
+                        AppCore.prefs.approvalTimeoutLastSec = timeoutState
                         AppCore.saveConfig()
                         onChanged()
                     },
                     valueRange = 15f..600f,
-                    steps = 38
+                    steps = 38,
+                    // 不限时时滑块变灰：值仍然显示着上次的秒数，但说了不算
+                    enabled = !approvalUnlimited
                 )
             }
         }
+        Spacer(Modifier.height(7.dp))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("审批不限时"),
+                    subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复（上面的秒数失效）"),
+                    icon = Icons.Filled.Warning,
+                    checked = approvalUnlimited
+                ) { on ->
+                    if (on) {
+                        if (AppCore.config.approvalTimeoutMs > 0L) {
+                            AppCore.prefs.approvalTimeoutLastSec =
+                                AppCore.config.approvalTimeoutMs / 1000
+                        }
+                        AppCore.config.approvalTimeoutMs = 0L
+                    } else {
+                        timeoutState = AppCore.prefs.approvalTimeoutLastSec.coerceIn(15L, 600L)
+                        AppCore.config.approvalTimeoutMs = timeoutState * 1000
+                    }
+                    AppCore.saveConfig()
+                    onChanged()
+                }
+            )
+        )
 
         // ---------------------------------------------------------- 终端与命令
         GroupLabel(L("终端与命令"))
@@ -419,8 +458,9 @@ fun SettingsScreen(
             CardBox {
                 Text(L("命令默认超时"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
                 Text(
-                    L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (shellUnlimited) L("不限制 · 命令一直跑到自己结束")
+                    else L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
+                    color = if (shellUnlimited) Sem.warn else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.5.sp,
                     modifier = Modifier.padding(top = 3.dp)
                 )
@@ -429,14 +469,40 @@ fun SettingsScreen(
                     onValueChange = { shellTimeoutState = it.toLong() },
                     onValueChangeFinished = {
                         AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
+                        AppCore.prefs.shellTimeoutLastSec = shellTimeoutState
                         AppCore.saveConfig()
                         onChanged()
                     },
                     valueRange = 10f..300f,
-                    steps = 28
+                    steps = 28,
+                    enabled = !shellUnlimited
                 )
             }
         }
+        Spacer(Modifier.height(7.dp))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("命令不限时"),
+                    subtitle = L("打开后 AI 执行的命令会一直跑到自己结束，不会中途被掐断（上面的秒数失效）"),
+                    subtitleMaxLines = 3,
+                    icon = Icons.Filled.Warning,
+                    checked = shellUnlimited
+                ) { on ->
+                    if (on) {
+                        if (AppCore.config.shellTimeoutMs > 0L) {
+                            AppCore.prefs.shellTimeoutLastSec = AppCore.config.shellTimeoutMs / 1000
+                        }
+                        AppCore.config.shellTimeoutMs = 0L
+                    } else {
+                        shellTimeoutState = AppCore.prefs.shellTimeoutLastSec.coerceIn(10L, 300L)
+                        AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
+                    }
+                    AppCore.saveConfig()
+                    onChanged()
+                }
+            )
+        )
 
         // ---------------------------------------------------------- AI 工具
         GroupLabel(L("AI 工具"))
@@ -541,6 +607,7 @@ fun SettingsScreen(
             )
         )
 
+        Spacer(Modifier.height(7.dp))
         CardGroup(
             listOf(
                 RowSpec(

@@ -218,7 +218,9 @@ class ApprovalCenter(
         }
 
         try {
-            decision = future.get(req.timeoutMs, TimeUnit.MILLISECONDS)
+            // timeoutMs <= 0 表示「不限制」：一直等用户答复，弹窗不会自动消失
+            decision = if (req.timeoutMs <= 0L) future.get()
+            else future.get(req.timeoutMs, TimeUnit.MILLISECONDS)
         } catch (t: TimeoutException) {
             decision = ApprovalDecision.TIMEOUT
             pending.remove(req.id)

@@ -67,7 +67,10 @@ import com.xtt.mcpbox.core.Rule
 fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
     var showAddCommand by remember { mutableStateOf(false) }
-    var pickPerm by remember { mutableStateOf<PermKey?>(null) }
+    // 预设那一行的下拉展开了没
+    var presetOpen by remember { mutableStateOf(false) }
+    // 权限开关里哪一行的下拉展开了（点整行 = 点它右边那个胶囊）
+    var openPerm by remember { mutableStateOf<PermKey?>(null) }
 
     Column(
         Modifier
@@ -98,11 +101,16 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     else L("选一个预设会统一下面所有权限并锁定；想单独调就保持「自定义」。"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Star,
+                    // 点整行也能展开右边那个下拉（保持和权限开关一致）
+                    onClick = { presetOpen = true },
                     trailing = {
                         PillDropdown(
                             value = L(preset.label),
-                            options = PermPreset.entries.map { L(it.label) }
+                            options = PermPreset.entries.map { L(it.label) },
+                            expanded = presetOpen,
+                            onExpandedChange = { presetOpen = it }
                         ) { index ->
+                            presetOpen = false
                             AppCore.permissions.setPreset(PermPreset.entries[index])
                             onChanged()
                         }
@@ -123,7 +131,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     subtitleMaxLines = 1,
                     icon = permIcon(key),
                     // 预设锁定时整行也不可点：点了会被随后的下拉值弄得前后不一致。
-                    onClick = if (preset.locked) null else ({ pickPerm = key }),
+                    // 没锁时点整行 = 展开右侧那个胶囊下拉（不再弹居中的大窗）。
+                    onClick = if (preset.locked) null else ({ openPerm = key }),
                     trailing = {
                         if (preset.locked) {
                             // 锁定态只报值、不给改（要改先去上面切「自定义」）
@@ -131,8 +140,11 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                         } else {
                             PillDropdown(
                                 value = L(current.label),
-                                options = PermAction.entries.map { L(it.label) }
+                                options = PermAction.entries.map { L(it.label) },
+                                expanded = openPerm == key,
+                                onExpandedChange = { open -> if (!open) openPerm = null }
                             ) { index ->
+                                openPerm = null
                                 AppCore.permissions.setSwitch(key, PermAction.entries[index])
                                 onChanged()
                             }
@@ -357,22 +369,6 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
         )
 
         Spacer(Modifier.height(24.dp))
-    }
-
-    // 整行点开也能选模式
-    pickPerm?.let { key ->
-        val current = AppCore.permissions.switchOf(key)
-        ChoiceDialog(
-            title = L("「%s」怎么处理").format(L(key.title)),
-            options = PermAction.entries.map { L(it.label) },
-            selected = PermAction.entries.indexOf(current),
-            onDismiss = { pickPerm = null },
-            onSelect = { index ->
-                AppCore.permissions.setSwitch(key, PermAction.entries[index])
-                pickPerm = null
-                onChanged()
-            }
-        )
     }
 
     if (showAdd) {
