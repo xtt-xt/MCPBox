@@ -212,10 +212,18 @@ data class RowSpec(
     val title: String,
     val subtitle: String? = null,
     val subtitleMaxLines: Int = 2,
+    /** 副标题颜色；null = 用默认的 onSurfaceVariant（警示态可以传 Sem.warn）。 */
+    val subtitleColor: Color? = null,
     val icon: ImageVector? = null,
     val iconTint: Color? = null,
     val onClick: (() -> Unit)? = null,
-    val trailing: (@Composable () -> Unit)? = null
+    val trailing: (@Composable () -> Unit)? = null,
+    /**
+     * 附加在标题/副标题**下面**的自定义内容（例如滑块）。
+     * 有了它，带滑块的行也能塞进同一个 [CardGroup]，和后面的开关连成一体 ——
+     * 而不用拆成两张独立卡片（那会破坏「一组卡片首尾圆角、中间直角」的规范）。
+     */
+    val content: (@Composable ColumnScope.() -> Unit)? = null
 )
 
 /**
@@ -285,39 +293,49 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
                     enabled = clickable
                 ) { spec.onClick?.invoke() }
         ) {
-            Row(
-                Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val tint = spec.iconTint ?: MaterialTheme.colorScheme.primary
-                if (spec.icon != null) {
-                    Icon(spec.icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
-                    Spacer(Modifier.width(16.dp))
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        spec.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 15.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    spec.subtitle?.let {
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val tint = spec.iconTint ?: MaterialTheme.colorScheme.primary
+                    if (spec.icon != null) {
+                        Icon(spec.icon, contentDescription = null, tint = tint, modifier = Modifier.size(21.dp))
+                        Spacer(Modifier.width(16.dp))
+                    }
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            it,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.5.sp,
-                            lineHeight = 17.sp,
-                            maxLines = spec.subtitleMaxLines,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 3.dp)
+                            spec.title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 15.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                        spec.subtitle?.let {
+                            Text(
+                                it,
+                                color = spec.subtitleColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.5.sp,
+                                lineHeight = 17.sp,
+                                maxLines = spec.subtitleMaxLines,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 3.dp)
+                            )
+                        }
+                    }
+                    spec.trailing?.let {
+                        Spacer(Modifier.width(10.dp))
+                        it()
                     }
                 }
-                spec.trailing?.let {
-                    Spacer(Modifier.width(10.dp))
-                    it()
+                // 附加内容（例如滑块）：跟在标题下面，和本行同属一张卡片
+                spec.content?.let { block ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 18.dp, end = 18.dp, bottom = 14.dp)
+                    ) { block() }
                 }
             }
         }
@@ -342,7 +360,10 @@ fun CardRow(
 ) {
     if (card) {
         GroupRowItem(
-            spec = RowSpec(title, subtitle, subtitleMaxLines, icon, iconTint, onClick, trailing),
+            spec = RowSpec(
+                title = title, subtitle = subtitle, subtitleMaxLines = subtitleMaxLines,
+                icon = icon, iconTint = iconTint, onClick = onClick, trailing = trailing
+            ),
             isFirst = true, isLast = true
         )
     } else {

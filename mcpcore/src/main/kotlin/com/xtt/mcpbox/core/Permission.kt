@@ -158,6 +158,14 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
      */
     @Volatile private var preset: PermPreset = PermPreset.CUSTOM
 
+    /**
+     * 「自定义」模式下最后一份开关。
+     *
+     * 切到固定预设（允许 / 拒绝 / 询问）之前先把这份存下来，之后切回「自定义」时原样恢复 ——
+     * 不然用户精心调过的 8 个开关会被一次「全部允许」永久抹掉。
+     */
+    @Volatile private var customSwitches: Map<String, PermAction>? = null
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     init { load() }
@@ -187,6 +195,13 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
                     runCatching { JSON_DEC.decodeFromJsonElement(Rule.serializer(), el) }.getOrNull()
                 } ?: emptyList()
                 preset = PermPreset.of(root.str("preset")) ?: PermPreset.CUSTOM
+                customSwitches = (root["customSwitches"] as? kotlinx.serialization.json.JsonObject)?.let { o ->
+                    LinkedHashMap<String, PermAction>().apply {
+                        PermKey.entries.forEach { key ->
+                            PermAction.of(o.str(key.id))?.let { put(key.id, it) }
+                        }
+                    }.takeIf { it.isNotEmpty() }
+                }
             }
         }.onFailure {
             switches = defaultSwitches()
@@ -201,6 +216,7 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
             // 统一写小写 id（老数据可能是大写，load 时大小写都能认）
             "switches" to switches.mapValues { it.value.id },
             "preset" to preset.id,
+            "customSwitches" to customSwitches?.mapValues { it.value.id },
             "rules" to rules.map { JSON_DEC.encodeToJsonElement(Rule.serializer(), it) }
         )
         src.putString(Config.Keys.PERMISSIONS, obj.toString())
@@ -213,7 +229,10 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
     fun switchOf(key: PermKey): PermAction = switches[key.id] ?: key.default
 
     fun setSwitch(key: PermKey, action: PermAction) {
-        switches = switches.toMutableMap().apply { put(key.id, action) }
+        val next = switches.toMutableMap().apply { put(key.id, action) }
+        switches = next
+        // 自定义模式下的改动要同步进快照，否则切走再切回来会丢掉刚才的调整
+        if (preset == PermPreset.CUSTOM) customSwitches = next
         persist()
         notifyChanged()
     }
@@ -221,23 +240,34 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
     /** 当前预设。前三个会锁住开关（见 [PermPreset.locked]）。 */
     fun preset(): PermPreset = preset
 
+    /** 「自定义」模式记下来的那份开关（没切过固定预设就是 null）。 */
+    fun customSwitches(): Map<String, PermAction>? = customSwitches
+
     /**
      * 切换预设。
      *
-     * 前三个（允许 / 拒绝 / 询问）会**立即把所有权限开关统一成同一个值**；
-     * [PermPreset.CUSTOM] 只解锁，不动现有值 —— 用户接着自己逐个调。
+     * - 从「自定义」切到固定预设：先把当前这份开关**存进快照**，再把所有开关统一成该预设的值；
+     * - 从固定预设切回「自定义」：恢复快照（没存过就保持现状），所以调过的设置不会丢。
      */
     fun setPreset(p: PermPreset) {
+        if (p == preset) return
+        if (p == PermPreset.CUSTOM) {
+            customSwitches?.let { switches = it }
+        } else {
+            if (preset == PermPreset.CUSTOM) customSwitches = switches
+            p.action?.let { a -> switches = PermKey.entries.associate { it.id to a } }
+        }
         preset = p
-        p.action?.let { a -> switches = PermKey.entries.associate { it.id to a } }
         persist()
         notifyChanged()
     }
 
     /** 把所有开关统一设成同一个值（预设内部用，也会把预设标成对应项）。 */
     fun setSwitchForAll(action: PermAction) {
-        PermPreset.entries.firstOrNull { it.action == action }?.let { preset = it }
+        val target = PermPreset.entries.firstOrNull { it.action == action }
+        if (preset == PermPreset.CUSTOM) customSwitches = switches
         switches = PermKey.entries.associate { it.id to action }
+        if (target != null) preset = target
         persist()
         notifyChanged()
     }

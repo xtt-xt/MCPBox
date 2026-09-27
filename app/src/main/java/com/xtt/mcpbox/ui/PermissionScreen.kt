@@ -97,8 +97,8 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                 RowSpec(
                     title = L("预设会话"),
                     subtitle = if (preset.locked)
-                        L("下面的权限已按这个预设统一并锁定；要单独调就选「自定义」。")
-                    else L("选一个预设会统一下面所有权限并锁定；想单独调就保持「自定义」。"),
+                        L("下面的权限已按这个预设统一并锁定；选「自定义」会恢复你之前调好的那份。")
+                    else L("选固定预设会记住你现在的设置，切回「自定义」时自动恢复。"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Star,
                     // 点整行也能展开右边那个下拉（保持和权限开关一致）

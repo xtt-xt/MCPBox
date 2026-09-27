@@ -1197,10 +1197,56 @@ fun main() {
             PermKey.entries.all { permissions.switchOf(it) == PermAction.ASK }
         )
 
-        val beforeCustom = permissions.snapshot()
+        // 「没有快照时保持现状」只可能出现在升级场景：配置里有 preset 但没有 customSwitches
+        val legacyPresetSettings = MemorySettings().apply {
+            putString(
+                Config.Keys.PERMISSIONS,
+                """{"switches":{"fs.read":"deny","fs.write":"allow"},"preset":"ask"}"""
+            )
+        }
+        val legacyPreset = PermissionStore(Config(legacyPresetSettings), legacyPresetSettings)
+        val legacyBefore = legacyPreset.snapshot()
+        legacyPreset.setPreset(PermPreset.CUSTOM)
+        check(
+            "老配置（有预设但没快照）切到「自定义」保持现状",
+            legacyPreset.snapshot() == legacyBefore, legacyPreset.snapshot().toString()
+        )
+
         permissions.setPreset(PermPreset.CUSTOM)
-        check("切到「自定义」不会改动现有的开关值", permissions.snapshot() == beforeCustom)
+        check("重复选同一个预设是空操作", permissions.preset() == PermPreset.CUSTOM)
         check("「自定义」是解锁态", !permissions.preset().locked)
+
+        // ---- 自定义快照：切走再切回来，调过的东西不能丢
+        permissions.setSwitch(PermKey.READ, PermAction.ALLOW)
+        permissions.setSwitch(PermKey.WRITE, PermAction.DENY)
+        permissions.setSwitch(PermKey.DELETE, PermAction.DENY)
+        permissions.setSwitch(PermKey.SHELL, PermAction.ALLOW)
+        val tuned = permissions.snapshot()
+
+        permissions.setPreset(PermPreset.ALLOW)
+        check("切到「全部允许」后开关被统一", PermKey.entries.all { permissions.switchOf(it) == PermAction.ALLOW })
+        check("切走时存了自定义快照", permissions.customSwitches() == tuned, permissions.customSwitches().toString())
+
+        permissions.setPreset(PermPreset.DENY)
+        check(
+            "在固定预设之间切换不会污染快照",
+            permissions.customSwitches() == tuned, permissions.customSwitches().toString()
+        )
+
+        permissions.setPreset(PermPreset.CUSTOM)
+        check("切回「自定义」恢复了之前调好的那份", permissions.snapshot() == tuned, permissions.snapshot().toString())
+        check("恢复后预设是自定义", permissions.preset() == PermPreset.CUSTOM && !permissions.preset().locked)
+
+        // 自定义模式下的改动要同步进快照（不然切走再回来还是旧的）
+        permissions.setSwitch(PermKey.MEMORY, PermAction.DENY)
+        val tuned2 = permissions.snapshot()
+        permissions.setPreset(PermPreset.ASK)
+        permissions.setPreset(PermPreset.CUSTOM)
+        check("自定义模式下新改的也会被记住", permissions.snapshot() == tuned2, permissions.snapshot().toString())
+
+        val reopened2 = PermissionStore(config, settings)
+        check("自定义快照会一起持久化", reopened2.customSwitches() == tuned2, reopened2.customSwitches().toString())
+        check("重开之后预设仍是自定义", reopened2.preset() == PermPreset.CUSTOM)
 
         // 锁定只是 UI 层的约束：内部调用（审批弹窗的「始终允许」等）照样能改
         permissions.setSwitch(PermKey.WRITE, PermAction.ALLOW)
