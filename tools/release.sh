@@ -64,8 +64,9 @@ git add -A
 git commit -m "$MSG" || echo "（没有需要提交的改动）"
 
 if [ -n "$NEW_NAME" ]; then
-    git tag -a "$FULL" -m "$FULL"
-    echo "▶ 已打 tag $FULL（推送后 CI 会自动建 Release）"
+    # 发行版的 tag 用干净版本号（v1.1.0），日常构建才带核心版本（v1.0.0-47）
+    git tag -a "v$NEW_NAME" -m "v$NEW_NAME（核心版本 $CODE）"
+    echo "▶ 已打 tag v$NEW_NAME（推送后 CI 会自动建 Release）"
 fi
 
 # 用户在网页上改过 README 之类的话，remote 可能领先
