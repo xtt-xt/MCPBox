@@ -72,21 +72,6 @@ enum class DarkMode(val id: String, val label: String) {
     }
 }
 
-/** 预设种子色（懒得调的时候点一个）。 */
-enum class ThemeChoice(val id: String, val label: String, val seed: Long) {
-    BLUE("blue", "经典蓝", 0xFF4C8DF6),
-    GREEN("green", "森林绿", 0xFF3FA860),
-    PURPLE("purple", "紫罗兰", 0xFF8B6CEF),
-    ORANGE("orange", "暖橙", 0xFFE8843C),
-    ROSE("rose", "玫瑰粉", 0xFFE86A9B),
-    CYAN("cyan", "青碧", 0xFF2FA8B8),
-    YELLOW("yellow", "琥珀金", 0xFFD9A521);
-
-    companion object {
-        fun of(id: String?): ThemeChoice? = entries.firstOrNull { it.id == id }
-    }
-}
-
 /** 种子色选择器里的常用色板。 */
 val SEED_PRESETS: List<Long> = listOf(
     0xFF4C8DF6, 0xFF2FA8B8, 0xFF3FA860, 0xFF7CB342, 0xFFD9A521, 0xFFE8843C,

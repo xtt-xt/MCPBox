@@ -84,7 +84,7 @@ fun HomeScreen(
                 add(
                     RowSpec(
                         title = if (status.running) L("服务运行中") else L("服务已停止"),
-                        subtitle = if (status.running) L("已运行 %s · %s 个会话").format(status.uptimeText, status.sessions)
+                        subtitle = if (status.running) L("已运行 %s · %s 个会话").format(uptimeLabel(status.uptimeMs), status.sessions)
                         else L("打开后同一 Wi-Fi 都能连"),
                         icon = Icons.Filled.PlayArrow,
                         onClick = { onToggleService(!status.running) },

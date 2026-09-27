@@ -70,7 +70,7 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
             }
             true
         }.getOrDefault(false)
-        toast(ctx, if (ok) L("已导出 %s 个工具").format(count) else "导出失败")
+        toast(ctx, if (ok) L("已导出 %s 个工具").format(count) else L("导出失败"))
     }
 
     val importLauncher = rememberLauncherForActivityResult(

@@ -181,31 +181,6 @@ fun SettingsScreen(
                     AppCore.prefs.darkMode = DarkMode.entries[index].id
                     onThemeChanged()
                 },
-                RowSpec(
-                    title = L("预设配色"),
-                    subtitle = L("点一下直接换种子色"),
-                    icon = Icons.Filled.Star,
-                    trailing = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            ThemeChoice.entries.take(4).forEach { c ->
-                                Box(
-                                    Modifier
-                                        .size(22.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(c.seed))
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = ripple(color = MaterialTheme.colorScheme.primary)
-                                        ) {
-                                            AppCore.prefs.seedColor = c.seed.toInt()
-                                            AppCore.prefs.dynamicColor = false
-                                            onThemeChanged()
-                                        }
-                                )
-                            }
-                        }
-                    }
-                ),
                 dropdownSpec(
                     title = L("语言"),
                     subtitle = L("中文 / English，也可以导入别人做的语言包"),
@@ -712,9 +687,10 @@ fun SettingsScreen(
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text(
-                        "当前语言：${com.xtt.mcpbox.i18n.Lang.packDisplayName(cur)}\n" +
-                            "内置英文词条：$builtinCount 条\n已导入语言包：" +
-                            com.xtt.mcpbox.i18n.Lang.packLanguages().joinToString("、").ifBlank { "无" },
+                        L("当前语言：%s\n内置英文词条：%s 条\n已导入语言包：").format(
+                            com.xtt.mcpbox.i18n.Lang.packDisplayName(cur),
+                            builtinCount
+                        ) + com.xtt.mcpbox.i18n.Lang.packLanguages().joinToString("、").ifBlank { L("无") },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.5.sp,
                         lineHeight = 18.sp
@@ -746,7 +722,9 @@ fun SettingsScreen(
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        "$id · ${com.xtt.mcpbox.i18n.Lang.entryCount(id)} 条译文",
+                                        L("%s · %s 条译文").format(
+                                            id, com.xtt.mcpbox.i18n.Lang.entryCount(id)
+                                        ),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp
                                     )

@@ -77,7 +77,7 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
         CardColumn {
             CardBox {
                 if (shown.isEmpty()) {
-                    EmptyHint("还没有记录。\nAI 连上之后，每一次调用和审批都会留在这里。")
+                    EmptyHint(L("还没有记录。\nAI 连上之后，每一次调用和审批都会留在这里。"))
                 } else {
                     shown.take(shownCount).forEachIndexed { index, entry ->
                         if (index > 0) InnerDivider()

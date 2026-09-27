@@ -78,6 +78,24 @@ import androidx.compose.ui.window.Dialog
 
 /* ------------------------------------------------------------------ 小工具 */
 
+/**
+ * 运行时长文案（可翻译）。
+ *
+ * 不用 `ServerMeta.uptimeText()` —— 那个在 core 里拼死了中文单位（"2 分 17 秒"），
+ * 英文界面下会变成 "Up 2 分 17 秒" 这种中英混排。
+ */
+fun uptimeLabel(ms: Long): String {
+    val sec = ms / 1000
+    val h = sec / 3600
+    val m = (sec % 3600) / 60
+    val s = sec % 60
+    return when {
+        h > 0 -> L("%s 小时 %s 分").format(h, m)
+        m > 0 -> L("%s 分 %s 秒").format(m, s)
+        else -> L("%s 秒").format(s)
+    }
+}
+
 fun copyText(context: Context, text: String, label: String = L("已复制")) {
     runCatching {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

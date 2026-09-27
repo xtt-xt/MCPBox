@@ -174,7 +174,7 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     rules.forEach { rule ->
                         add(
                             RowSpec(
-                                title = if (rule.perm == "*") "全部权限" else L(PermKey.of(rule.perm)?.title ?: rule.perm),
+                                title = if (rule.perm == "*") L("全部权限") else L(PermKey.of(rule.perm)?.title ?: rule.perm),
                                 subtitle = rule.target.ifBlank { L("（未填写路径）") },
                                 icon = Icons.Filled.Place,
                                 trailing = {

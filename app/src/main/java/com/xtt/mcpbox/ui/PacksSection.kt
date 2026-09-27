@@ -208,12 +208,12 @@ fun PacksSection(
             val isOn = pack.core || pack.id in active
             val count = pack.tools.size
             RowSpec(
-                title = pack.title,
+                title = L(pack.title),
                 subtitle = buildString {
                     append(L("%s 个工具").format(count))
                     if (pack.core) append(" · ").append(L("常驻"))
                     else if (isOn) append(" · ").append(L("已激活"))
-                    if (!pack.description.isBlank()) append(" · ").append(pack.description)
+                    if (!pack.description.isBlank()) append(" · ").append(L(pack.description))
                 },
                 subtitleMaxLines = 2,
                 icon = Icons.Filled.Build,
