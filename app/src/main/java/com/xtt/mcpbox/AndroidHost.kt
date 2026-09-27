@@ -17,6 +17,7 @@ import android.os.Looper
 import android.os.StatFs
 import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.HostInfo
+import com.xtt.mcpbox.core.ServerMeta
 import java.io.File
 
 /** 给工具用的设备信息 / 通知能力。 */
@@ -33,7 +34,8 @@ class AndroidHost(private val context: Context, private val config: Config) : Ho
             "Android 版本" to Build.VERSION.RELEASE,
             "SDK" to Build.VERSION.SDK_INT,
             "ABI" to Build.SUPPORTED_ABIS.firstOrNull(),
-            "App 版本" to appVersion(),
+            // 完整版本号 v1.0.0-42（versionName + versionCode），只给 1.0.0 看不出是第几版
+            "App 版本" to ServerMeta.fullVersion,
             "主根目录" to config.primaryRoot(),
             "根目录可用" to human(free),
             "根目录总计" to human(total),
@@ -72,10 +74,6 @@ class AndroidHost(private val context: Context, private val config: Config) : Ho
         }
         return ok
     }
-
-    fun appVersion(): String = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
-    }.getOrDefault("?")
 
     private fun batteryPercent(): String {
         return runCatching {

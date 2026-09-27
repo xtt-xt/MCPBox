@@ -1162,6 +1162,92 @@ fun main() {
         check("UI 包的说明里写明了需要 Root / Shizuku",
             BuiltinPacks.UI.description.contains("Root") || BuiltinPacks.UI.description.contains("Shizuku"))
         check("UI 包不属于出厂默认（省 token）", "ui" !in BuiltinPacks.defaults())
+
+        println("\n[43] 预设会话（4 个预设 + 锁定）")
+
+        check("一共 4 个预设", PermPreset.entries.size == 4,
+            PermPreset.entries.map { it.id }.toString())
+        check("下拉顺序是 全部允许 / 全部拒绝 / 全部询问 / 自定义",
+            PermPreset.entries.map { it.id } == listOf("allow", "deny", "ask", "custom"),
+            PermPreset.entries.map { it.id }.toString())
+        check("前三个各绑一种动作", PermPreset.entries.take(3).all { it.action != null })
+        check("只有「自定义」不锁开关",
+            PermPreset.entries.filter { !it.locked }.map { it.id } == listOf("custom"))
+
+        permissions.setPreset(PermPreset.ALLOW)
+        check(
+            "选「全部允许」→ 所有开关都变成允许",
+            PermKey.entries.all { permissions.switchOf(it) == PermAction.ALLOW },
+            permissions.snapshot().toString()
+        )
+        check(
+            "「全部允许」进锁定态（下面的开关变灰）",
+            permissions.preset() == PermPreset.ALLOW && permissions.preset().locked
+        )
+
+        permissions.setPreset(PermPreset.DENY)
+        check(
+            "选「全部拒绝」→ 所有开关都变成拒绝",
+            PermKey.entries.all { permissions.switchOf(it) == PermAction.DENY }
+        )
+
+        permissions.setPreset(PermPreset.ASK)
+        check(
+            "选「全部询问」→ 所有开关都变成询问",
+            PermKey.entries.all { permissions.switchOf(it) == PermAction.ASK }
+        )
+
+        val beforeCustom = permissions.snapshot()
+        permissions.setPreset(PermPreset.CUSTOM)
+        check("切到「自定义」不会改动现有的开关值", permissions.snapshot() == beforeCustom)
+        check("「自定义」是解锁态", !permissions.preset().locked)
+
+        // 锁定只是 UI 层的约束：内部调用（审批弹窗的「始终允许」等）照样能改
+        permissions.setSwitch(PermKey.WRITE, PermAction.ALLOW)
+        check("内部 setSwitch 不受预设锁定影响",
+            permissions.switchOf(PermKey.WRITE) == PermAction.ALLOW)
+
+        permissions.setSwitchForAll(PermAction.ASK)
+        check(
+            "setSwitchForAll 会把预设一起更新成「全部询问」",
+            permissions.preset() == PermPreset.ASK, permissions.preset().id
+        )
+
+        val reopened = PermissionStore(config, settings)
+        check("预设会被持久化", reopened.preset() == PermPreset.ASK, reopened.preset().id)
+        check("持久化后开关和预设仍然一致",
+            PermKey.entries.all { reopened.switchOf(it) == PermAction.ASK })
+
+        val noPresetSettings = MemorySettings().apply {
+            putString(Config.Keys.PERMISSIONS, """{"switches":{"fs.read":"allow"}}""")
+        }
+        val noPreset = PermissionStore(Config(noPresetSettings), noPresetSettings)
+        check(
+            "老配置没有 preset 字段 → 回落到「自定义」（不会被莫名锁住）",
+            noPreset.preset() == PermPreset.CUSTOM, noPreset.preset().id
+        )
+
+        println("\n[44] 版本号：工具里能看到完整版本")
+
+        val savedAppVer = ServerMeta.appVersion
+        val savedAppCode = ServerMeta.appVersionCode
+        ServerMeta.appVersion = "1.0.0"
+        ServerMeta.appVersionCode = 42
+        check("fullVersion 拼成 v1.0.0-42", ServerMeta.fullVersion == "v1.0.0-42", ServerMeta.fullVersion)
+
+        permissions.setSwitch(PermKey.SYSTEM, PermAction.ALLOW)
+        val (siOk, siText) = call("server_info", "{}")
+        check("server_info 给的是完整版本号", siOk && siText.contains("v1.0.0-42"), siText.take(200))
+
+        val (dvOk, dvText) = call("get_device_info", "{}")
+        check(
+            "JVM 环境没有设备信息源，get_device_info 会说明原因（真机上返回型号 / App 版本等）",
+            !dvOk && dvText.contains("拿不到设备信息"),
+            dvText.take(120)
+        )
+
+        ServerMeta.appVersion = savedAppVer
+        ServerMeta.appVersionCode = savedAppCode
     } finally {
         server.stop()
     }

@@ -461,7 +461,7 @@ object ToolsRead {
         ctx.guard(PermKey.SYSTEM, null, "查看服务器信息")
         val sb = StringBuilder()
         sb.append("MCP 手机文件服务器\n")
-        sb.append("版本：").append(ServerMeta.version).append('\n')
+        sb.append("版本：").append(ServerMeta.fullVersion).append('（').append(ServerMeta.NAME).append('）').append('\n')
         sb.append("设备：").append(ServerMeta.deviceLabel).append('\n')
         sb.append("端口：").append(ctx.config.port).append('\n')
         sb.append("运行时间：").append(ServerMeta.uptimeText()).append('\n')

@@ -72,6 +72,30 @@ enum class PermAction(val id: String, val label: String) {
 }
 
 /**
+ * 「预设会话」：一键决定 AI 能自己动手到什么程度。
+ *
+ * 前三个是**固定预设** —— 选中后会把所有权限开关统一成同一个值，并且**锁住**它们，
+ * 想单独调必须先切到 [CUSTOM]。这样预设显示的值永远和开关的实际值一致，
+ * 不会出现「写着全部允许、其实写删是询问」这种看不懂的状态。
+ *
+ * 判定顺序：预设只管「所有开关的统一值」，路径规则 / 命令规则不受影响。
+ */
+enum class PermPreset(val id: String, val label: String, val action: PermAction?) {
+    ALLOW("allow", "全部允许", PermAction.ALLOW),
+    DENY("deny", "全部拒绝", PermAction.DENY),
+    ASK("ask", "全部询问", PermAction.ASK),
+    CUSTOM("custom", "自定义", null);
+
+    /** 前三个预设会锁住下面的开关，只有 [CUSTOM] 允许逐个改。 */
+    val locked: Boolean get() = this != CUSTOM
+
+    companion object {
+        fun of(id: String?): PermPreset? =
+            entries.firstOrNull { it.id.equals(id?.trim(), ignoreCase = true) }
+    }
+}
+
+/**
  * 一条规则，两种类型：
  *  - path    ：按路径前缀匹配（`fs.read` @ /sdcard/DCIM）
  *  - command ：按命令匹配（`shell.exec` @ pm，prefix / exact / regex）
@@ -128,6 +152,12 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
     @Volatile private var switches: Map<String, PermAction> = defaultSwitches()
     @Volatile private var rules: List<Rule> = emptyList()
 
+    /**
+     * 当前预设。老配置里没有这个字段 → [PermPreset.CUSTOM]：
+     * 这样升级上来的用户不会被莫名锁住开关。
+     */
+    @Volatile private var preset: PermPreset = PermPreset.CUSTOM
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
     init { load() }
@@ -140,6 +170,7 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
         if (raw.isNullOrBlank()) {
             switches = defaultSwitches()
             rules = emptyList()
+            preset = PermPreset.CUSTOM
             return
         }
         runCatching {
@@ -155,10 +186,12 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
                 rules = ruleArr?.mapNotNull { el ->
                     runCatching { JSON_DEC.decodeFromJsonElement(Rule.serializer(), el) }.getOrNull()
                 } ?: emptyList()
+                preset = PermPreset.of(root.str("preset")) ?: PermPreset.CUSTOM
             }
         }.onFailure {
             switches = defaultSwitches()
             rules = emptyList()
+            preset = PermPreset.CUSTOM
         }
         notifyChanged()
     }
@@ -167,6 +200,7 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
         val obj = jo(
             // 统一写小写 id（老数据可能是大写，load 时大小写都能认）
             "switches" to switches.mapValues { it.value.id },
+            "preset" to preset.id,
             "rules" to rules.map { JSON_DEC.encodeToJsonElement(Rule.serializer(), it) }
         )
         src.putString(Config.Keys.PERMISSIONS, obj.toString())
@@ -184,7 +218,25 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
         notifyChanged()
     }
 
+    /** 当前预设。前三个会锁住开关（见 [PermPreset.locked]）。 */
+    fun preset(): PermPreset = preset
+
+    /**
+     * 切换预设。
+     *
+     * 前三个（允许 / 拒绝 / 询问）会**立即把所有权限开关统一成同一个值**；
+     * [PermPreset.CUSTOM] 只解锁，不动现有值 —— 用户接着自己逐个调。
+     */
+    fun setPreset(p: PermPreset) {
+        preset = p
+        p.action?.let { a -> switches = PermKey.entries.associate { it.id to a } }
+        persist()
+        notifyChanged()
+    }
+
+    /** 把所有开关统一设成同一个值（预设内部用，也会把预设标成对应项）。 */
     fun setSwitchForAll(action: PermAction) {
+        PermPreset.entries.firstOrNull { it.action == action }?.let { preset = it }
         switches = PermKey.entries.associate { it.id to action }
         persist()
         notifyChanged()

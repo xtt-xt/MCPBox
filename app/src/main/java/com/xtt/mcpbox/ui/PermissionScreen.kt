@@ -60,6 +60,7 @@ import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.DefaultRootsHolder
 import com.xtt.mcpbox.core.PermAction
 import com.xtt.mcpbox.core.PermKey
+import com.xtt.mcpbox.core.PermPreset
 import com.xtt.mcpbox.core.Rule
 
 @Composable
@@ -85,41 +86,34 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
 
         // ---------------------------------------------------------- 预设会话
         // 放在最上面：一键决定「AI 能自己动手到什么程度」，比逐个键去调快得多。
+        // 选前三个会把下面的开关统一成同一个值并**锁住**，想单独调必须先切到「自定义」。
         // 注意这里改的是**全局**权限开关，对所有会话都生效。
-        GroupLabel(L("预设会话"))
+        val preset = remember(revision) { AppCore.permissions.preset() }
         CardGroup(
             listOf(
                 RowSpec(
-                    title = L("全部允许"),
-                    subtitle = L("AI 想做什么都不再询问"),
-                    icon = Icons.Filled.Check,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.ALLOW)
-                        onChanged()
-                    }
-                ),
-                RowSpec(
-                    title = L("全部拒绝"),
-                    subtitle = L("彻底锁死，AI 只能看服务器状态"),
-                    icon = Icons.Filled.Close,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.DENY)
-                        onChanged()
-                    }
-                ),
-                RowSpec(
-                    title = L("全部询问"),
-                    subtitle = L("每个写/删动作都弹窗确认（推荐）"),
-                    icon = Icons.Filled.Info,
-                    onClick = {
-                        AppCore.permissions.setSwitchForAll(PermAction.ASK)
-                        onChanged()
+                    title = L("预设会话"),
+                    subtitle = if (preset.locked)
+                        L("下面的权限已按这个预设统一并锁定；要单独调就选「自定义」。")
+                    else L("选一个预设会统一下面所有权限并锁定；想单独调就保持「自定义」。"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    trailing = {
+                        PillDropdown(
+                            value = L(preset.label),
+                            options = PermPreset.entries.map { L(it.label) }
+                        ) { index ->
+                            AppCore.permissions.setPreset(PermPreset.entries[index])
+                            onChanged()
+                        }
                     }
                 )
             )
         )
 
-        // ---------------------------------------------------------- 权限总开关
+        // ---------------------------------------------------------- 权限开关
+        // 单独给一组标签：预设会话是「总控」，这里是「逐个开关」，视觉上分开才看得出层次。
+        GroupLabel(L("权限开关"))
         CardGroup(
             rows = PermKey.entries.map { key ->
                 val current = switches[key.id] ?: key.default
@@ -128,14 +122,20 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                     subtitle = L(key.desc),
                     subtitleMaxLines = 1,
                     icon = permIcon(key),
-                    onClick = { pickPerm = key },
+                    // 预设锁定时整行也不可点：点了会被随后的下拉值弄得前后不一致。
+                    onClick = if (preset.locked) null else ({ pickPerm = key }),
                     trailing = {
-                        PillDropdown(
-                            value = L(current.label),
-                            options = PermAction.entries.map { L(it.label) }
-                        ) { index ->
-                            AppCore.permissions.setSwitch(key, PermAction.entries[index])
-                            onChanged()
+                        if (preset.locked) {
+                            // 锁定态只报值、不给改（要改先去上面切「自定义」）
+                            OutlineTag(L(current.label), actionColor(current))
+                        } else {
+                            PillDropdown(
+                                value = L(current.label),
+                                options = PermAction.entries.map { L(it.label) }
+                            ) { index ->
+                                AppCore.permissions.setSwitch(key, PermAction.entries[index])
+                                onChanged()
+                            }
                         }
                     }
                 )
