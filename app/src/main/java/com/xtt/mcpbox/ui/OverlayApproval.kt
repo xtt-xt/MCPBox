@@ -222,7 +222,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
         card.addView(header)
 
         card.addView(
-            textView(request.summary, 16f, p.text, bold = true)
+            textView(L(request.summary), 16f, p.text, bold = true)
                 .apply { setPadding(0, dp(14), 0, 0) }
         )
 
@@ -257,7 +257,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             val lines = detail.lines().filter { it.isNotBlank() }.take(2)
             lines.forEach { line ->
                 val shown = if (line.length > 68) line.take(68) + "…" else line
-                card.addView(textView(shown, 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
+                card.addView(textView(L(shown), 12f, p.textDim).apply { setPadding(0, dp(6), 0, 0) })
             }
         }
 

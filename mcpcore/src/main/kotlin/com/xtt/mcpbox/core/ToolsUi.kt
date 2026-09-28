@@ -170,7 +170,7 @@ object ToolsUi {
             path = null,
             summary = summary,
             detail = buildString {
-                append("后端：").append(launcher.label).append("（").append(launcher.uidLabel).append("）")
+                append(L("后端：%s（%s）").format(L(launcher.label), launcher.uidLabel))
                 if (!detail.isNullOrBlank()) append('\n').append(detail)
             },
             command = command,
@@ -487,7 +487,7 @@ object ToolsUi {
     ) { ctx ->
         val launcher = pickLauncher(ctx, ctx.args.strOr("backend", "auto"))
         val snap = snapshot(ctx, launcher)
-        ctx.guard(PermKey.UI, null, "读取界面结构", "后端：${launcher.label}")
+        ctx.guard(PermKey.UI, null, L("读取界面结构"), L("后端：%s").format(L(launcher.label)))
 
         if (ctx.args.boolOr("raw", false)) {
             val xml = dumpXml(ctx, launcher)
@@ -809,7 +809,7 @@ object ToolsUi {
             }
 
             "current" -> {
-                ctx.guard(PermKey.UI, null, "查看前台应用", "后端：${launcher.label}")
+                ctx.guard(PermKey.UI, null, L("查看前台应用"), L("后端：%s").format(L(launcher.label)))
                 val fg = foreground(launcher)
                 val act = runner.run(
                     launcher,
@@ -820,7 +820,7 @@ object ToolsUi {
             }
 
             "list" -> {
-                ctx.guard(PermKey.UI, null, "列出第三方应用", "后端：${launcher.label}")
+                ctx.guard(PermKey.UI, null, L("列出第三方应用"), L("后端：%s").format(L(launcher.label)))
                 val out = runner.run(launcher, "pm list packages -3", null, 30_000).stdout
                 val pkgs = out.lineSequence().map { it.removePrefix("package:").trim() }
                     .filter { it.isNotBlank() }.sorted().toList()
@@ -885,7 +885,11 @@ object ToolsUi {
         val timeout = ctx.args.longOr("timeoutMs", 8_000).coerceIn(500L, 120_000L)
         val interval = ctx.args.longOr("intervalMs", 500).coerceIn(200L, 5_000L)
         val what = text ?: desc ?: id!!
-        ctx.guard(PermKey.UI, null, "等待「$what」${if (disappear) "消失" else "出现"}", "后端：${launcher.label}")
+        ctx.guard(
+            PermKey.UI, null,
+            L("等待「%s」%s").format(what, if (disappear) L("消失") else L("出现")),
+            L("后端：%s").format(L(launcher.label))
+        )
 
         val started = System.currentTimeMillis()
         var rounds = 0

@@ -113,17 +113,17 @@ class ApprovalCenter(
             ToolPolicy.DENY -> {
                 log.add(
                     LogKind.APPROVAL, tool, path, client, ok = false,
-                    message = "工具「$tool」已被单独设为禁止"
+                    message = L("工具「%s」已被单独设为禁止").format(tool)
                 )
                 throw PermissionDeniedException(
-                    "工具「$tool」已被单独设为「禁止」（可在 App 的「工具管理」里改回来）"
+                    L("工具「%s」已被单独设为「禁止」（可在 App 的「工具管理」里改回来）").format(tool)
                 )
             }
             ToolPolicy.ASK -> {
                 // 单独设成「询问」= 无视全局矩阵，每次都弹窗
                 ask(
                     perm, tool, path, summary, detail, client,
-                    "工具「$tool」被单独设为「询问」", mediaType, byteSize, command, backend,
+                    L("工具「%s」被单独设为「询问」").format(tool), mediaType, byteSize, command, backend,
                     toolScoped = true
                 )
                 return
@@ -136,9 +136,9 @@ class ApprovalCenter(
             PermAction.DENY -> {
                 log.add(
                     LogKind.APPROVAL, tool, path, client, ok = false,
-                    message = "已拒绝（${decision.source}）" + (command?.let { "：$it" } ?: "")
+                    message = L("已拒绝（%s）").format(decision.source) + (command?.let { "：$it" } ?: "")
                 )
-                throw PermissionDeniedException("权限「${perm.title}」被拒绝（${decision.source}）")
+                throw PermissionDeniedException(L("权限「%s」被拒绝（%s）").format(L(perm.title), decision.source))
             }
             PermAction.ASK -> ask(
                 perm, tool, path, summary, detail, client, decision.source, mediaType, byteSize, command, backend
@@ -164,12 +164,11 @@ class ApprovalCenter(
         val prefix = if (toolScoped) null else command?.let { commandPrefix(it) }
         val fullDetail = buildString {
             if (!detail.isNullOrBlank()) append(detail).append('\n')
-            append("来源：").append(source)
+            append(L("来源：%s").format(source))
             if (toolScoped) {
-                append("\n选「始终允许 / 始终拒绝」会把「").append(tool).append("」这个工具本身设为允许 / 拒绝。")
+                append(L("\n选「始终允许 / 始终拒绝」会把「%s」这个工具本身设为允许 / 拒绝。").format(tool))
             } else if (prefix != null) {
-                append("\n选「始终允许 / 始终拒绝」会记住这条规则：以 ")
-                append('`').append(prefix).append("` 开头的命令")
+                append(L("\n选「始终允许 / 始终拒绝」会记住这条规则：以 `%s` 开头的命令").format(prefix))
             }
         }.trim().ifBlank { null }
 
@@ -193,7 +192,7 @@ class ApprovalCenter(
         pending[req.id] = Pending(req, future)
         log.add(
             LogKind.APPROVAL, tool, path, client, ok = true,
-            message = "等待用户审批：$summary"
+            message = L("等待用户审批：%s").format(summary)
         )
         notifyPending()
 

@@ -90,10 +90,10 @@ class FileGateway(
                 perm = PermKey.WRITE,
                 tool = "http_upload",
                 path = file.path,
-                summary = "网页 / HTTP 上传：${file.name}（${sandbox.humanSize(payload.size.toLong())}）",
-                detail = "写入位置：${file.path}" +
-                    if (append) "\n（追加模式）" else "" +
-                    if (sandbox.isPrivatePath(file)) "\n（应用私有目录，经 ${bridge.privilegedLabel} 写入）" else "",
+                summary = L("网页 / HTTP 上传：%s（%s）").format(file.name, sandbox.humanSize(payload.size.toLong())),
+                detail = L("写入位置：%s").format(file.path) +
+                    if (append) L("\n（追加模式）") else "" +
+                    if (sandbox.isPrivatePath(file)) L("\n（应用私有目录，经 %s 写入）").format(bridge.privilegedLabel) else "",
                 client = req.remote,
                 mediaType = req.header("content-type"),
                 byteSize = payload.size.toLong()
@@ -147,7 +147,7 @@ class FileGateway(
                 perm = PermKey.READ,
                 tool = "http_download",
                 path = file.path,
-                summary = "网页 / HTTP 下载：${file.name}",
+                summary = L("网页 / HTTP 下载：%s").format(file.name),
                 detail = file.path,
                 client = req.remote
             )

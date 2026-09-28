@@ -24,7 +24,7 @@ object ToolsToken {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "获取访问令牌")
+        ctx.guard(PermKey.SYSTEM, null, L("获取访问令牌"))
 
         val port = ctx.config.port
         val token = ctx.config.token

@@ -50,8 +50,8 @@ object ToolsWrite {
         }
         ctx.guard(
             PermKey.WRITE, f,
-            "$verb 文件 ${f.name}（${ctx.sandbox.humanSize(bytes.size.toLong())}）",
-            "目标：${f.path}\n内容预览：${preview(content)}",
+            L("%s 文件 %s（%s）").format(verb, f.name, ctx.sandbox.humanSize(bytes.size.toLong())),
+            L("目标：%s\n内容预览：%s").format(f.path, preview(content)),
             bytes.size.toLong()
         )
         try {
@@ -126,8 +126,8 @@ object ToolsWrite {
         val willReplace = if (replaceAll) occurrences else 1
         ctx.guard(
             PermKey.WRITE, f,
-            "修改文件 ${f.name}（替换 $willReplace 处）",
-            "文件：${f.path}\n匹配到 $occurrences 处，将替换 $willReplace 处",
+            L("修改文件 %s（替换 %s 处）").format(f.name, willReplace),
+            L("文件：%s\n匹配到 %s 处，将替换 %s 处").format(f.path, occurrences, willReplace),
             result.length.toLong()
         )
         try {
@@ -172,7 +172,7 @@ object ToolsWrite {
             return@ToolSpec if (it.dir) ToolResult("目录已存在：${f.path}")
             else ctx.fail("同名文件已存在：${f.path}")
         }
-        ctx.guard(PermKey.WRITE, f, "新建目录 ${f.path}")
+        ctx.guard(PermKey.WRITE, f, L("新建目录 %s").format(f.path))
         try {
             ctx.sandbox.assertWritable(f)
         } catch (e: Exception) {
@@ -220,8 +220,8 @@ object ToolsWrite {
         val size = srcStat.size
         ctx.guard(
             PermKey.WRITE, dst,
-            "复制 ${src.name} → ${dst.path}",
-            "源：${src.path}\n目标：${dst.path}\n大小：${ctx.sandbox.humanSize(size)}",
+            L("复制 %s → %s").format(src.name, dst.path),
+            L("源：%s\n目标：%s\n大小：%s").format(src.path, dst.path, ctx.sandbox.humanSize(size)),
             size
         )
         try {
@@ -269,8 +269,8 @@ object ToolsWrite {
         }
         ctx.guard(
             PermKey.WRITE, dst,
-            "移动 ${src.name} → ${dst.path}",
-            "源：${src.path}\n目标：${dst.path}",
+            L("移动 %s → %s").format(src.name, dst.path),
+            L("源：%s\n目标：%s").format(src.path, dst.path),
             srcStat.size
         )
         try {
@@ -319,13 +319,16 @@ object ToolsWrite {
         val size = st.size
         ctx.guard(
             PermKey.DELETE, f,
-            "删除 ${if (st.dir) "目录" else "文件"} ${f.name}",
-            "路径：${f.path}\n大小：${ctx.sandbox.humanSize(size)}\n方式：" +
+            L("删除 %s %s").format(if (st.dir) L("目录") else L("文件"), f.name),
+            L("路径：%s\n大小：%s\n方式：%s").format(
+                f.path,
+                ctx.sandbox.humanSize(size),
                 if (permanent) {
-                    "彻底删除" + if (isPrivate) "（私有目录不进回收站）" else ""
+                    L("彻底删除") + if (isPrivate) L("（私有目录不进回收站）") else ""
                 } else {
-                    "移动到回收站"
-                },
+                    L("移动到回收站")
+                }
+            ),
             size
         )
         if (permanent) {
@@ -393,8 +396,8 @@ object ToolsWrite {
         val dst = ctx.optionalPath("destination")
         ctx.guard(
             PermKey.WRITE, dst ?: File(entry.originalPath),
-            "还原回收站条目 ${entry.name}",
-            "原位置：${entry.originalPath}\n还原到：${dst?.path ?: entry.originalPath}",
+            L("还原回收站条目 %s").format(entry.name),
+            L("原位置：%s\n还原到：%s").format(entry.originalPath, dst?.path ?: entry.originalPath),
             entry.size
         )
         val restored = ctx.trash.restore(entry, dst, ctx.args.boolOr("overwrite", false))
@@ -415,8 +418,8 @@ object ToolsWrite {
         val size = entries.sumOf { it.size }
         ctx.guard(
             PermKey.DELETE, ctx.sandbox.trashDir(),
-            "清空回收站（${entries.size} 项，${ctx.sandbox.humanSize(size)}）",
-            "将彻底删除，无法恢复",
+            L("清空回收站（%s 项，%s）").format(entries.size, ctx.sandbox.humanSize(size)),
+            L("将彻底删除，无法恢复"),
             size
         )
         val (n, bytes) = ctx.trash.emptyAll()
@@ -439,7 +442,7 @@ object ToolsWrite {
     ) { ctx ->
         val message = ctx.args.str("message") ?: ctx.fail("缺少 message")
         val title = ctx.args.str("title") ?: "MCP 文件盒"
-        ctx.guard(PermKey.SYSTEM, null, "发送通知给用户")
+        ctx.guard(PermKey.SYSTEM, null, L("发送通知给用户"))
         val ok = ctx.host?.notify(title, message) ?: false
         ToolResult(if (ok) "已发送通知：$title - $message" else "通知发送失败（可能缺少通知权限）")
     }

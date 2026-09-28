@@ -56,7 +56,7 @@ object ToolsMemory {
             required = listOf("entities")
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, "记忆：新建实体")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：新建实体"))
         val items = ctx.args.arr("entities")?.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val name = o.str("name")?.trim().orEmpty()
@@ -119,7 +119,7 @@ object ToolsMemory {
             required = listOf("relations")
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, "记忆：建立关系")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：建立关系"))
         val items = ctx.args.arr("relations")?.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val from = o.str("from")?.trim().orEmpty()
@@ -169,7 +169,7 @@ object ToolsMemory {
             required = listOf("observations")
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, "记忆：追加观察")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：追加观察"))
         val items = ctx.args.arr("observations")?.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val name = o.str("entityName")?.trim().orEmpty()
@@ -210,7 +210,7 @@ object ToolsMemory {
             )
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, "记忆：读取记忆库")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：读取记忆库"))
         val g = store.snapshot(
             folder = ctx.args.str("folder"),
             type = ctx.args.str("type"),
@@ -241,7 +241,7 @@ object ToolsMemory {
     ) { ctx ->
         val query = ctx.args.str("query")?.trim().orEmpty()
         if (query.isEmpty()) ctx.fail("query 不能为空")
-        ctx.guard(PermKey.MEMORY, null, "记忆：搜索「$query」")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：搜索「%s」").format(query))
         val g = store.search(query, ctx.args.intOr("limit", 20))
         if (g.entities.isEmpty()) {
             ToolResult("没有找到和「$query」相关的记忆。")
@@ -266,7 +266,7 @@ object ToolsMemory {
     ) { ctx ->
         val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
         if (names.isEmpty()) ctx.fail("names 不能为空")
-        ctx.guard(PermKey.MEMORY, null, "记忆：读取 ${names.size} 个实体")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：读取 %s 个实体").format(names.size))
         val found = names.mapNotNull { store.entity(it) }
         val missing = names.filterNot { store.hasEntity(it) }
         if (found.isEmpty()) {
@@ -287,7 +287,7 @@ object ToolsMemory {
         perm = PermKey.MEMORY,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, "查看记忆库统计")
+        ctx.guard(PermKey.MEMORY, null, L("查看记忆库统计"))
         ToolResult(store.statsText())
     }
 
@@ -305,7 +305,7 @@ object ToolsMemory {
     ) { ctx ->
         val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
         if (names.isEmpty()) ctx.fail("names 不能为空")
-        ctx.guard(PermKey.MEMORY, null, "记忆：删除实体 " + names.joinToString("、"))
+        ctx.guard(PermKey.MEMORY, null, L("记忆：删除实体 %s").format(names.joinToString(L("、"))))
         val n = store.deleteEntities(names)
         ToolResult("已删除 $n 个实体（连带的关系也一起删了）。\n剩余：${store.graph.entities.size} 个实体、${store.graph.relations.size} 条关系。")
     }
@@ -342,7 +342,7 @@ object ToolsMemory {
             Triple(from, to, o.str("relationType") ?: o.str("type"))
         }.orEmpty()
         if (items.isEmpty()) ctx.fail("relations 不能为空")
-        ctx.guard(PermKey.MEMORY, null, "记忆：删除 ${items.size} 条关系")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：删除 %s 条关系").format(items.size))
         val n = store.deleteRelations(items)
         ToolResult("已删除 $n 条关系。剩余 ${store.graph.relations.size} 条。")
     }
@@ -378,7 +378,7 @@ object ToolsMemory {
             name to texts
         }.orEmpty()
         if (items.isEmpty()) ctx.fail("deletions 不能为空")
-        ctx.guard(PermKey.MEMORY, null, "记忆：删除观察")
+        ctx.guard(PermKey.MEMORY, null, L("记忆：删除观察"))
         var total = 0
         val sb = StringBuilder()
         items.forEach { (name, texts) ->

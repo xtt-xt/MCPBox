@@ -31,7 +31,7 @@ object ToolsRead {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "查看设备信息")
+        ctx.guard(PermKey.SYSTEM, null, L("查看设备信息"))
         val info = ctx.host?.deviceInfo()
             ?: ctx.fail("当前运行环境拿不到设备信息（桌面端测试模式）")
         val sb = StringBuilder()
@@ -62,7 +62,7 @@ object ToolsRead {
         val showHidden = ctx.args.boolOr("showHidden", false)
         val limit = ctx.args.intOr("limit", 500).coerceIn(1, 5000)
         val sort = ctx.args.strOr("sort", "name")
-        ctx.guard(PermKey.READ, dir, "列出目录 ${dir.path}")
+        ctx.guard(PermKey.READ, dir, L("列出目录 %s").format(dir.path))
         val children = ctx.bridge.listDir(dir).orEmpty()
             .filter { showHidden || !isHidden(it.name) }
             .let {
@@ -114,7 +114,7 @@ object ToolsRead {
     ) { ctx ->
         val root = ctx.path(mustExist = true)
         if (!root.isDirectory) ctx.fail("不是目录：${root.path}")
-        ctx.guard(PermKey.READ, root, "查看目录树 ${root.path}")
+        ctx.guard(PermKey.READ, root, L("查看目录树 %s").format(root.path))
         val depth = ctx.args.intOr("depth", 3).coerceIn(1, 12)
         val maxEntries = ctx.args.intOr("maxEntries", 400).coerceIn(1, 5000)
         val showHidden = ctx.args.boolOr("showHidden", false)
@@ -153,7 +153,7 @@ object ToolsRead {
         val f = ctx.path(mustExist = false)
         val st = ctx.bridge.stat(f)
             ?: ctx.fail("路径不存在，或者读不到：${f.path}")
-        ctx.guard(PermKey.READ, f, "查看信息 ${f.path}")
+        ctx.guard(PermKey.READ, f, L("查看信息 %s").format(f.path))
         val sb = StringBuilder()
         sb.append("路径：").append(f.path).append('\n')
         sb.append("名称：").append(f.name).append('\n')
@@ -203,8 +203,8 @@ object ToolsRead {
             ?: ctx.fail("文件不存在，或者读不到：${f.path}\n（私有目录要在 设置 → 权限 → 应用私有目录 里开放，并且需要 root 或 Shizuku）")
         if (fStat.dir) ctx.fail("这是目录，请用 list_dir：${f.path}")
         ctx.guard(
-            PermKey.READ, f, "读取文件 ${f.name}",
-            "大小 " + ctx.sandbox.humanSize(fStat.size), fStat.size
+            PermKey.READ, f, L("读取文件 %s").format(f.name),
+            L("大小 %s").format(ctx.sandbox.humanSize(fStat.size)), fStat.size
         )
         val maxBytes = ctx.args.intOr("maxBytes", 2_000_000).coerceIn(1024, 16_000_000)
         val bytes = ctx.bridge.readBytes(f, maxBytes.toLong())
@@ -268,7 +268,7 @@ object ToolsRead {
         val mime = IMAGE_EXT[ext] ?: ctx.fail("不支持的图片格式：.${f.extension}（支持 png/jpg/jpeg/gif/webp/bmp）")
         val maxBytes = ctx.args.intOr("maxBytes", 8_000_000)
         if (st.size > maxBytes) ctx.fail("图片过大：${ctx.sandbox.humanSize(st.size)}，超过上限")
-        ctx.guard(PermKey.READ, f, "查看图片 ${f.name}", ctx.sandbox.humanSize(st.size), st.size, mime)
+        ctx.guard(PermKey.READ, f, L("查看图片 %s").format(f.name), ctx.sandbox.humanSize(st.size), st.size, mime)
         val raw = ctx.bridge.readBytes(f, maxBytes.toLong())
             ?: ctx.fail("读不出来：应用自己没权限，而且没有可用的 root / Shizuku")
         val b64 = java.util.Base64.getEncoder().encodeToString(raw)
@@ -301,7 +301,7 @@ object ToolsRead {
     ) { ctx ->
         val root = ctx.path(mustExist = true)
         if (!root.isDirectory) ctx.fail("搜索起点必须是目录：${root.path}")
-        ctx.guard(PermKey.READ, root, "搜索目录 ${root.path}")
+        ctx.guard(PermKey.READ, root, L("搜索目录 %s").format(root.path))
         val namePattern = ctx.args.str("name")
         val contentPattern = ctx.args.str("content")
         if (namePattern == null && contentPattern == null) ctx.fail("至少要提供 name 或 content 之一")
@@ -403,7 +403,7 @@ object ToolsRead {
     ) { ctx ->
         val f = ctx.path(mustExist = true)
         if (f.isDirectory) ctx.fail("目录不支持计算校验值：${f.path}")
-        ctx.guard(PermKey.READ, f, "计算校验值 ${f.name}")
+        ctx.guard(PermKey.READ, f, L("计算校验值 %s").format(f.name))
         val algo = ctx.args.strOr("algorithm", "sha256")
         val md = MessageDigest.getInstance(algo)
         f.inputStream().use { ins ->
@@ -426,7 +426,7 @@ object ToolsRead {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "查看存储空间")
+        ctx.guard(PermKey.SYSTEM, null, L("查看存储空间"))
         val sb = StringBuilder()
         sb.append("允许访问的根目录（").append(ctx.config.roots.size).append(" 个）：\n")
         ctx.config.roots.forEachIndexed { i, r ->
@@ -458,7 +458,7 @@ object ToolsRead {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "查看服务器信息")
+        ctx.guard(PermKey.SYSTEM, null, L("查看服务器信息"))
         val sb = StringBuilder()
         sb.append("MCP 手机文件服务器\n")
         sb.append("版本：").append(ServerMeta.fullVersion).append('（').append(ServerMeta.NAME).append('）').append('\n')

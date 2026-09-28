@@ -50,11 +50,11 @@ object ToolsShell {
         ctx.guard(
             perm = PermKey.SHELL,
             path = workdir?.let { File(it) },
-            summary = if (forCustom) "$toolLabel：$command" else "执行命令：$command",
+            summary = if (forCustom) L("%s：%s").format(toolLabel, command) else L("执行命令：%s").format(command),
             detail = buildString {
-                append("后端：").append(launcher.label).append("（").append(launcher.uidLabel).append("）")
-                if (workdir != null) append("\n工作目录：").append(workdir)
-                append("\n超时：").append(timeoutMs / 1000).append(" 秒")
+                append(L("后端：%s（%s）").format(L(launcher.label), launcher.uidLabel))
+                if (workdir != null) append(L("\n工作目录：%s").format(workdir))
+                append(L("\n超时：%s 秒").format(timeoutMs / 1000))
             },
             command = command,
             backend = launcher.id
@@ -122,7 +122,7 @@ object ToolsShell {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "查看 Shell 环境")
+        ctx.guard(PermKey.SYSTEM, null, L("查看 Shell 环境"))
         val sb = StringBuilder()
         sb.append("Shell 后端\n")
         ShellBackends.all().forEach { l ->
@@ -223,7 +223,7 @@ object ToolsShell {
             listOf("name", "command")
         )
     ) { ctx ->
-        ctx.guard(PermKey.TOOLS, null, "创建自定义工具 ${ctx.args.str("name") ?: "?"}")
+        ctx.guard(PermKey.TOOLS, null, L("创建自定义工具 %s").format(ctx.args.str("name") ?: "?"))
         val tool = buildTool(ctx, null)
         val created = store.add(tool)
         ToolResult(
@@ -255,7 +255,7 @@ object ToolsShell {
     ) { ctx ->
         val name = ctx.args.str("name") ?: ctx.fail("缺少 name")
         val existing = store.byName(name) ?: ctx.fail("找不到工具：$name")
-        ctx.guard(PermKey.TOOLS, null, "修改自定义工具 $name")
+        ctx.guard(PermKey.TOOLS, null, L("修改自定义工具 %s").format(name))
         val updated = store.update(buildTool(ctx, existing))
         ToolResult("已更新 ${updated.name}\n命令模板：${updated.command}")
     }
@@ -268,7 +268,7 @@ object ToolsShell {
         schema = Schema.obj(mapOf("name" to Schema.str("工具名")), listOf("name"))
     ) { ctx ->
         val name = ctx.args.str("name") ?: ctx.fail("缺少 name")
-        ctx.guard(PermKey.TOOLS, null, "删除自定义工具 $name")
+        ctx.guard(PermKey.TOOLS, null, L("删除自定义工具 %s").format(name))
         if (!store.remove(name)) ctx.fail("找不到工具：$name")
         ToolResult("已删除自定义工具：$name")
     }
@@ -280,7 +280,7 @@ object ToolsShell {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "查看自定义工具")
+        ctx.guard(PermKey.SYSTEM, null, L("查看自定义工具"))
         val list = store.tools
         if (list.isEmpty()) {
             return@ToolSpec ToolResult("还没有自定义工具。可以用 create_custom_tool 造一个。")
@@ -323,7 +323,7 @@ object ToolsShell {
         val json = store.exportJson()
         ctx.guard(
             PermKey.WRITE, file,
-            "导出自定义工具（${store.tools.size} 个）到 ${file.name}",
+            L("导出自定义工具（%s 个）到 %s").format(store.tools.size, file.name),
             file.path,
             json.length.toLong()
         )
@@ -354,8 +354,8 @@ object ToolsShell {
         if (file.length() > 8L * 1024 * 1024) ctx.fail("文件太大（${ctx.sandbox.humanSize(file.length())}）")
         ctx.guard(
             PermKey.TOOLS, file,
-            "导入自定义工具（${file.name}）",
-            "文件：${file.path}\n大小：${ctx.sandbox.humanSize(file.length())}",
+            L("导入自定义工具（%s）").format(file.name),
+            L("文件：%s\n大小：%s").format(file.path, ctx.sandbox.humanSize(file.length())),
             file.length()
         )
         val result = store.importJson(file.readText(), ctx.args.boolOr("replace", false))

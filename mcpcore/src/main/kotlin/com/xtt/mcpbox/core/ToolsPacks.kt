@@ -40,7 +40,7 @@ object ToolsPacks {
             )
         )
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "列出工具包")
+        ctx.guard(PermKey.SYSTEM, null, L("列出工具包"))
         ToolResult(renderPacks(ctx, ctx.profiles, showTools = ctx.args.boolOr("showTools", true)))
     }
 
@@ -59,7 +59,7 @@ object ToolsPacks {
     ) { ctx ->
         val id = ctx.args.str("pack")?.trim().orEmpty()
         if (id.isEmpty()) ctx.fail("pack 不能为空")
-        ctx.guard(PermKey.SYSTEM, null, "激活工具包 $id")
+        ctx.guard(PermKey.SYSTEM, null, L("激活工具包 %s").format(id))
 
         val pack = ctx.packs.byId(id, ctx.customTools.tools.map { it.name })
             ?: ctx.fail("没有叫「$id」的包。用 list_packs 看看有哪些。")
@@ -99,7 +99,7 @@ object ToolsPacks {
         val id = ctx.args.str("pack")?.trim().orEmpty()
         if (id.isEmpty()) ctx.fail("pack 不能为空")
         if (id == ToolPack.CORE_ID) ctx.fail("基础包不能停用（工具包管理本身就在它里面）")
-        ctx.guard(PermKey.SYSTEM, null, "停用工具包 $id")
+        ctx.guard(PermKey.SYSTEM, null, L("停用工具包 %s").format(id))
 
         val pack = ctx.packs.byId(id, ctx.customTools.tools.map { it.name })
             ?: ctx.fail("没有叫「$id」的包。用 list_packs 看看有哪些。")
@@ -120,7 +120,7 @@ object ToolsPacks {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
-        ctx.guard(PermKey.SYSTEM, null, "重置工具包")
+        ctx.guard(PermKey.SYSTEM, null, L("重置工具包"))
         ctx.profiles.reset(ctx.profile)
         ToolResult(renderPacks(ctx, ctx.profiles, showTools = false, header = "已重置回默认"))
     }
@@ -152,7 +152,7 @@ object ToolsPacks {
     ) { ctx ->
         val action = ctx.args.str("action")?.trim()?.lowercase().orEmpty()
         val id = ctx.args.str("id")?.trim().orEmpty()
-        ctx.guard(PermKey.TOOLS, null, ("管理工具包：$action $id").trim())
+        ctx.guard(PermKey.TOOLS, null, L("管理工具包：%s %s").format(action, id).trim())
 
         when (action) {
             "create", "update" -> {
