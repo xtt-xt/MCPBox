@@ -42,9 +42,9 @@ object ServerMeta {
         val m = (sec % 3600) / 60
         val s = sec % 60
         return when {
-            h > 0 -> "${h} 小时 ${m} 分"
-            m > 0 -> "${m} 分 ${s} 秒"
-            else -> "${s} 秒"
+            h > 0 -> L("%s 小时 %s 分").format(h, m)
+            m > 0 -> L("%s 分 %s 秒").format(m, s)
+            else -> L("%s 秒").format(s)
         }
     }
 }

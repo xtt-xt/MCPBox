@@ -124,36 +124,39 @@ object ToolsShell {
     ) { ctx ->
         ctx.guard(PermKey.SYSTEM, null, L("查看 Shell 环境"))
         val sb = StringBuilder()
-        sb.append("Shell 后端\n")
+        sb.append(L("Shell 后端\n"))
         ShellBackends.all().forEach { l ->
             val ok = runCatching { l.isAvailable() }.getOrDefault(false)
-            sb.append("  ").append(if (ok) "[可用] " else "[不可用] ")
-                .append(l.label).append("（").append(l.id).append("） · ").append(l.uidLabel).append('\n')
-            if (!ok) sb.append("         ").append(l.hint).append('\n')
+            sb.append("  ").append(if (ok) L("[可用] ") else L("[不可用] "))
+                .append(L(l.label)).append("（").append(l.id).append("） · ").append(l.uidLabel).append('\n')
+            if (!ok) sb.append("         ").append(L(l.hint)).append('\n')
         }
         val picked = ShellBackends.pick("auto", ctx.config)
-        sb.append("当前 auto 会选中：").append(picked?.label ?: "无（只能做文件操作）").append('\n')
-        sb.append("优先级设置：").append(ctx.config.shellPreference).append('\n')
-        sb.append("\n环境\n")
+        sb.append(L("当前 auto 会选中："))
+            .append(picked?.let { L(it.label) } ?: L("无（只能做文件操作）")).append('\n')
+        sb.append(L("优先级设置：")).append(ctx.config.shellPreference).append('\n')
+        sb.append(L("\n环境\n"))
         ShellEnv.build().forEach { (k, v) -> sb.append("  ").append(k).append('=').append(v).append('\n') }
-        sb.append("  默认超时=").append(
-            if (ctx.config.shellTimeoutMs <= 0L) "不限制（命令一直跑到自己结束）"
-            else "${ctx.config.shellTimeoutMs / 1000} 秒"
+        sb.append(L("  默认超时=")).append(
+            if (ctx.config.shellTimeoutMs <= 0L) L("不限制（命令一直跑到自己结束）")
+            else L("%s 秒").format(ctx.config.shellTimeoutMs / 1000)
         ).append('\n')
-        sb.append("\n命令规则（按顺序匹配，第一条命中生效）\n")
+        sb.append(L("\n命令规则（按顺序匹配，第一条命中生效）\n"))
         val rules = ctx.permissions.commandRules()
         if (rules.isEmpty()) {
-            sb.append("  （无，所有命令都走「执行命令」权限开关：")
-                .append(ctx.permissions.switchOf(PermKey.SHELL).label).append("）\n")
+            sb.append(L("  （无，所有命令都走「执行命令」权限开关："))
+                .append(L(ctx.permissions.switchOf(PermKey.SHELL).label)).append(L("）\n"))
         } else {
             rules.forEach {
                 sb.append("  ").append(it.target)
-                    .append("  [").append(it.match).append("] → ").append(it.actionEnum.label).append('\n')
+                    .append("  [").append(it.match).append("] → ").append(L(it.actionEnum.label)).append('\n')
             }
         }
         val custom = ctx.customTools.tools
-        sb.append("\n自定义工具：").append(custom.size).append(" 个")
-        if (custom.isNotEmpty()) sb.append("（").append(custom.joinToString("、") { it.name }).append("）")
+        sb.append(L("\n自定义工具：")).append(custom.size).append(L(" 个"))
+        if (custom.isNotEmpty()) {
+            sb.append("（").append(custom.joinToString(L("、")) { it.name }).append("）")
+        }
         ToolResult(sb.toString().trimEnd())
     }
 
@@ -227,9 +230,10 @@ object ToolsShell {
         val tool = buildTool(ctx, null)
         val created = store.add(tool)
         ToolResult(
-            "已创建自定义工具：${created.name}\n" +
-                "标题：${created.title}\n参数：${created.params.size} 个\n命令模板：${created.command}\n" +
-                "现在开始，客户端 tools/list 里就会出现它。"
+            L("已创建自定义工具：%s\n").format(created.name) +
+                L("标题：%s\n参数：%s 个\n命令模板：%s\n")
+                    .format(created.title, created.params.size, created.command) +
+                L("现在开始，客户端 tools/list 里就会出现它。")
         )
     }
 
@@ -253,11 +257,11 @@ object ToolsShell {
             listOf("name")
         )
     ) { ctx ->
-        val name = ctx.args.str("name") ?: ctx.fail("缺少 name")
-        val existing = store.byName(name) ?: ctx.fail("找不到工具：$name")
+        val name = ctx.args.str("name") ?: ctx.fail(L("缺少 name"))
+        val existing = store.byName(name) ?: ctx.fail(L("找不到工具：%s").format(name))
         ctx.guard(PermKey.TOOLS, null, L("修改自定义工具 %s").format(name))
         val updated = store.update(buildTool(ctx, existing))
-        ToolResult("已更新 ${updated.name}\n命令模板：${updated.command}")
+        ToolResult(L("已更新 %s\n命令模板：%s").format(updated.name, updated.command))
     }
 
     private fun deleteTool(store: CustomToolStore) = ToolSpec(
@@ -267,10 +271,10 @@ object ToolsShell {
         perm = PermKey.TOOLS,
         schema = Schema.obj(mapOf("name" to Schema.str("工具名")), listOf("name"))
     ) { ctx ->
-        val name = ctx.args.str("name") ?: ctx.fail("缺少 name")
+        val name = ctx.args.str("name") ?: ctx.fail(L("缺少 name"))
         ctx.guard(PermKey.TOOLS, null, L("删除自定义工具 %s").format(name))
-        if (!store.remove(name)) ctx.fail("找不到工具：$name")
-        ToolResult("已删除自定义工具：$name")
+        if (!store.remove(name)) ctx.fail(L("找不到工具：%s").format(name))
+        ToolResult(L("已删除自定义工具：%s").format(name))
     }
 
     private fun listTools(store: CustomToolStore) = ToolSpec(
@@ -283,24 +287,25 @@ object ToolsShell {
         ctx.guard(PermKey.SYSTEM, null, L("查看自定义工具"))
         val list = store.tools
         if (list.isEmpty()) {
-            return@ToolSpec ToolResult("还没有自定义工具。可以用 create_custom_tool 造一个。")
+            return@ToolSpec ToolResult(L("还没有自定义工具。可以用 create_custom_tool 造一个。"))
         }
-        val sb = StringBuilder("自定义工具（${list.size} 个）\n")
+        val sb = StringBuilder(L("自定义工具（%s 个）\n").format(list.size))
         list.forEach { t ->
-            sb.append("\n● ").append(t.name).append(if (t.enabled) "" else "（已停用）").append('\n')
-            sb.append("  标题：").append(t.title).append('\n')
-            if (t.description.isNotBlank()) sb.append("  说明：").append(t.description).append('\n')
-            sb.append("  命令：").append(t.command).append('\n')
+            sb.append("\n● ").append(t.name).append(if (t.enabled) "" else L("（已停用）")).append('\n')
+            sb.append(L("  标题：")).append(t.title).append('\n')
+            if (t.description.isNotBlank()) sb.append(L("  说明：")).append(t.description).append('\n')
+            sb.append(L("  命令：")).append(t.command).append('\n')
             if (t.params.isNotEmpty()) {
-                sb.append("  参数：").append(
-                    t.params.joinToString("、") { p ->
-                        p.name + ":" + p.type + if (p.required) "(必填)" else ""
+                sb.append(L("  参数：")).append(
+                    t.params.joinToString(L("、")) { p ->
+                        p.name + ":" + p.type + if (p.required) L("(必填)") else ""
                     }
                 ).append('\n')
             }
-            if (t.cwd.isNotBlank()) sb.append("  工作目录：").append(t.cwd).append('\n')
-            sb.append("  后端：").append(t.backend).append("　超时：").append(t.timeoutMs / 1000).append(" 秒")
-            sb.append("　运行次数：").append(t.runCount).append('\n')
+            if (t.cwd.isNotBlank()) sb.append(L("  工作目录：")).append(t.cwd).append('\n')
+            sb.append(L("  后端：")).append(t.backend)
+                .append(L("　超时：%s 秒").format(t.timeoutMs / 1000))
+            sb.append(L("　运行次数：")).append(t.runCount).append('\n')
         }
         ToolResult(sb.toString().trimEnd())
     }
@@ -319,7 +324,7 @@ object ToolsShell {
     ) { ctx ->
         val defaultPath = File(ctx.sandbox.primaryRoot(), "xtt/mcp-tools.json").path
         val file = ctx.path("path", default = defaultPath)
-        if (file.isDirectory) ctx.fail("目标是一个目录：${file.path}")
+        if (file.isDirectory) ctx.fail(L("目标是一个目录：%s").format(file.path))
         val json = store.exportJson()
         ctx.guard(
             PermKey.WRITE, file,
@@ -330,8 +335,8 @@ object ToolsShell {
         file.parentFile?.mkdirs()
         file.writeText(json)
         ToolResult(
-            "已导出 ${store.tools.size} 个自定义工具\n文件：${file.path}\n" +
-                "大小：${ctx.sandbox.humanSize(file.length())}"
+            L("已导出 %s 个自定义工具\n文件：%s\n").format(store.tools.size, file.path) +
+                L("大小：%s").format(ctx.sandbox.humanSize(file.length()))
         )
     }
 
@@ -350,8 +355,10 @@ object ToolsShell {
         )
     ) { ctx ->
         val file = ctx.path(mustExist = true)
-        if (file.isDirectory) ctx.fail("这是一个目录：${file.path}")
-        if (file.length() > 8L * 1024 * 1024) ctx.fail("文件太大（${ctx.sandbox.humanSize(file.length())}）")
+        if (file.isDirectory) ctx.fail(L("这是一个目录：%s").format(file.path))
+        if (file.length() > 8L * 1024 * 1024) {
+            ctx.fail(L("文件太大（%s）").format(ctx.sandbox.humanSize(file.length())))
+        }
         ctx.guard(
             PermKey.TOOLS, file,
             L("导入自定义工具（%s）").format(file.name),
@@ -359,7 +366,7 @@ object ToolsShell {
             file.length()
         )
         val result = store.importJson(file.readText(), ctx.args.boolOr("replace", false))
-        ToolResult(result.message + "\n当前共 ${store.tools.size} 个自定义工具")
+        ToolResult(result.message + L("\n当前共 %s 个自定义工具").format(store.tools.size))
     }
 
     // ------------------------------------------------------------- 自定义工具执行
@@ -368,10 +375,10 @@ object ToolsShell {
         name = tool.name,
         title = tool.title.ifBlank { tool.name },
         description = buildString {
-            append(tool.description.ifBlank { "自定义工具" })
-            append("\n（这是用户自定义的工具，实际执行命令：")
+            append(tool.description.ifBlank { L("自定义工具") })
+            append(L("\n（这是用户自定义的工具，实际执行命令："))
             append(tool.command)
-            append("）")
+            append(L("）"))
         },
         perm = PermKey.SHELL,
         schema = ToolTemplate.schemaOf(tool),
@@ -379,7 +386,7 @@ object ToolsShell {
             val rendered = ToolTemplate.render(tool.command, ctx.args, tool.params)
             val result = execute(
                 ctx = ctx,
-                toolLabel = "自定义工具「${tool.title.ifBlank { tool.name }}」",
+                toolLabel = L("自定义工具「%s」").format(tool.title.ifBlank { tool.name }),
                 command = rendered,
                 backendPref = tool.backend,
                 cwd = tool.cwd.takeIf { it.isNotBlank() },

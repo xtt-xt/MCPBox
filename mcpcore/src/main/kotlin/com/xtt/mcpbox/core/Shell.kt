@@ -202,17 +202,17 @@ data class ShellResult(
 
     fun toText(maxChars: Int = 120_000): String {
         val sb = StringBuilder()
-        sb.append("退出码：").append(exitCode)
-        if (timedOut) sb.append("（超时，已强制结束）")
-        sb.append("　耗时：").append(durationMs).append(" ms")
-        sb.append("　后端：").append(backend).append('\n')
-        sb.append("命令：").append(command).append("\n----\n")
+        sb.append(L("退出码：")).append(exitCode)
+        if (timedOut) sb.append(L("（超时，已强制结束）"))
+        sb.append(L("　耗时：")).append(durationMs).append(" ms")
+        sb.append(L("　后端：")).append(backend).append('\n')
+        sb.append(L("命令：")).append(command).append("\n----\n")
         if (stdout.isNotBlank()) sb.append(stdout.trimEnd()).append('\n')
         if (stderr.isNotBlank()) {
             sb.append("[stderr]\n").append(stderr.trimEnd()).append('\n')
         }
-        if (stdout.isBlank() && stderr.isBlank()) sb.append("（无输出）\n")
-        if (truncated) sb.append("（输出过长，已截断）\n")
+        if (stdout.isBlank() && stderr.isBlank()) sb.append(L("（无输出）\n"))
+        if (truncated) sb.append(L("（输出过长，已截断）\n"))
         val text = sb.toString()
         return if (text.length > maxChars) text.take(maxChars) + "\n...（已截断）" else text
     }

@@ -57,7 +57,7 @@ class TrashManager(private val sandbox: PathSandbox) {
         val ok = file.renameTo(target) || runCatching {
             copyRecursive(file, target); deleteRecursive(file); true
         }.getOrDefault(false)
-        if (!ok) throw SandboxException("移动到回收站失败：${file.path}")
+        if (!ok) throw SandboxException(L("移动到回收站失败：%s").format(file.path))
         val entry = TrashEntry(
             id = id,
             name = safeName,
@@ -73,17 +73,17 @@ class TrashManager(private val sandbox: PathSandbox) {
 
     fun restore(entry: TrashEntry, destination: File? = null, overwrite: Boolean = false): File {
         val src = File(entry.storedPath)
-        if (!src.exists()) throw SandboxException("回收站里的文件已不存在：${entry.storedPath}")
+        if (!src.exists()) throw SandboxException(L("回收站里的文件已不存在：%s").format(entry.storedPath))
         val dst = destination ?: File(entry.originalPath)
         if (dst.exists()) {
-            if (!overwrite) throw SandboxException("目标已存在，无法还原：${dst.path}")
+            if (!overwrite) throw SandboxException(L("目标已存在，无法还原：%s").format(dst.path))
             deleteRecursive(dst)
         }
         dst.parentFile?.mkdirs()
         val ok = src.renameTo(dst) || runCatching {
             copyRecursive(src, dst); deleteRecursive(src); true
         }.getOrDefault(false)
-        if (!ok) throw SandboxException("还原失败：${entry.originalPath}")
+        if (!ok) throw SandboxException(L("还原失败：%s").format(entry.originalPath))
         save(entries().filterNot { it.id == entry.id })
         return dst
     }
@@ -115,12 +115,12 @@ class TrashManager(private val sandbox: PathSandbox) {
     fun deleteRecursive(f: File) {
         if (!f.exists()) return
         if (f.isDirectory) f.listFiles()?.forEach { deleteRecursive(it) }
-        if (!f.delete()) throw SandboxException("删除失败：${f.path}")
+        if (!f.delete()) throw SandboxException(L("删除失败：%s").format(f.path))
     }
 
     fun copyRecursive(src: File, dst: File) {
         if (src.isDirectory) {
-            if (!dst.exists() && !dst.mkdirs()) throw SandboxException("无法创建目录：${dst.path}")
+            if (!dst.exists() && !dst.mkdirs()) throw SandboxException(L("无法创建目录：%s").format(dst.path))
             src.listFiles()?.forEach { copyRecursive(it, File(dst, it.name)) }
         } else {
             dst.parentFile?.mkdirs()

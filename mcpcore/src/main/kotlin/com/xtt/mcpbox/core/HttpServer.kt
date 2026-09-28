@@ -145,7 +145,7 @@ class HttpServer(
     val activeConnections: Long get() = connCount.get()
 
     fun start(port: Int, bindAll: Boolean) {
-        if (running.get()) throw IllegalStateException("服务已在运行")
+        if (running.get()) throw IllegalStateException(L("服务已在运行"))
         val address = if (bindAll) InetSocketAddress(port) else InetSocketAddress("127.0.0.1", port)
         val ss = ServerSocket()
         ss.reuseAddress = true
@@ -162,9 +162,9 @@ class HttpServer(
                 try {
                     val socket = ss.accept()
                     pool?.execute { serveConnection(socket) }
-                } catch (e: IOException) {                    if (running.get()) onError?.invoke("accept 失败：${e.message}")
+                } catch (e: IOException) {                    if (running.get()) onError?.invoke(L("accept 失败：%s").format(e.message))
                 } catch (e: Exception) {
-                    if (running.get()) onError?.invoke("连接处理异常：${e.message}")
+                    if (running.get()) onError?.invoke(L("连接处理异常：%s").format(e.message))
                 }
             }
         }, "mcp-accept").apply { isDaemon = true; start() }

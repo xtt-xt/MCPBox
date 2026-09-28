@@ -36,12 +36,12 @@ class FileGateway(
             return Result(200, "text/html; charset=utf-8", uploadPage().toByteArray(Charsets.UTF_8))
         }
         if (req.method != "POST" && req.method != "PUT") {
-            return json(405, false, "只支持 POST / PUT（GET 会给你一个上传网页）")
+            return json(405, false, L("只支持 POST / PUT（GET 会给你一个上传网页）"))
         }
 
         val rawPath = (req.query["path"] ?: req.header("x-file-path") ?: "").trim()
         if (rawPath.isBlank()) {
-            return json(400, false, "缺少 path 参数：要写到手机上的哪个位置")
+            return json(400, false, L("缺少 path 参数：要写到手机上的哪个位置"))
         }
         val nameHint = (req.header("x-file-name") ?: req.query["name"])?.trim()
 
@@ -61,21 +61,24 @@ class FileGateway(
         val file = try {
             sandbox.resolve(target)
         } catch (e: Exception) {
-            return json(400, false, e.message ?: "路径不合法")
+            return json(400, false, e.message ?: L("路径不合法"))
         }
         try {
             sandbox.assertWritable(file)
         } catch (e: Exception) {
-            return json(403, false, e.message ?: "当前模式下不允许写入")
+            return json(403, false, e.message ?: L("当前模式下不允许写入"))
         }
 
         val bytes = req.body
         if (bytes.isEmpty()) {
-            return json(400, false, "请求体是空的（把文件内容放在 body 里发过来）")
+            return json(400, false, L("请求体是空的（把文件内容放在 body 里发过来）"))
         }
         val limit = config.maxUploadMb * 1024L * 1024L
         if (bytes.size > limit) {
-            return json(413, false, "文件太大：${sandbox.humanSize(bytes.size.toLong())}，上限 ${config.maxUploadMb} MB")
+            return json(
+                413, false,
+                L("文件太大：%s，上限 %s MB").format(sandbox.humanSize(bytes.size.toLong()), config.maxUploadMb)
+            )
         }
 
         val append = req.query["append"]?.let { it == "1" || it.equals("true", true) } ?: false
@@ -100,15 +103,15 @@ class FileGateway(
             )
             val ok = bridge.writeBytes(file, payload)
             if (!ok) {
-                json(500, false, "写入失败：应用和 root / Shizuku 都没能写入 ${file.path}")
+                json(500, false, L("写入失败：应用和 root / Shizuku 都没能写入 %s").format(file.path))
             } else {
                 val md5 = md5Hex(payload)
                 log.add(
                     LogKind.REQUEST, tool = "http_upload", path = file.path, client = req.remote,
-                    ok = true, message = "上传 ${payload.size} 字节 → ${file.path}"
+                    ok = true, message = L("上传 %s 字节 → %s").format(payload.size, file.path)
                 )
                 json(
-                    200, true, "已写入 ${file.path}",
+                    200, true, L("已写入 %s").format(file.path),
                     extra = mapOf(
                         "path" to file.path,
                         "bytes" to payload.size,
@@ -126,20 +129,20 @@ class FileGateway(
 
     fun handleDownload(req: HttpRequest): Result {
         if (req.method != "GET" && req.method != "HEAD") {
-            return json(405, false, "只支持 GET")
+            return json(405, false, L("只支持 GET"))
         }
         val raw = (req.query["path"] ?: req.header("x-file-path") ?: "").trim()
-        if (raw.isBlank()) return json(400, false, "缺少 path 参数")
+        if (raw.isBlank()) return json(400, false, L("缺少 path 参数"))
 
         val file = try {
             sandbox.resolve(raw)
         } catch (e: Exception) {
-            return json(400, false, e.message ?: "路径不合法")
+            return json(400, false, e.message ?: L("路径不合法"))
         }
-        if (!bridge.exists(file)) return json(404, false, "文件不存在：${file.path}")
+        if (!bridge.exists(file)) return json(404, false, L("文件不存在：%s").format(file.path))
         val stat = bridge.stat(file)
         if (stat?.dir == true) {
-            return json(400, false, "这是一个目录，不能直接下载：${file.path}")
+            return json(400, false, L("这是一个目录，不能直接下载：%s").format(file.path))
         }
 
         return try {
@@ -153,10 +156,10 @@ class FileGateway(
             )
             val max = config.maxUploadMb * 1024L * 1024L
             val bytes = bridge.readBytes(file, max)
-                ?: return json(500, false, "读不出来：应用没权限，且 root / Shizuku 不可用")
+                ?: return json(500, false, L("读不出来：应用没权限，且 root / Shizuku 不可用"))
             log.add(
                 LogKind.REQUEST, tool = "http_download", path = file.path, client = req.remote,
-                ok = true, message = "下载 ${bytes.size} 字节 ← ${file.path}"
+                ok = true, message = L("下载 %s 字节 ← %s").format(bytes.size, file.path)
             )
             Result(
                 status = 200,
@@ -169,7 +172,7 @@ class FileGateway(
                 )
             )
         } catch (e: PermissionDeniedException) {
-            json(403, false, e.message ?: "没有获得读取许可")
+            json(403, false, e.message ?: L("没有获得读取许可"))
         }
     }
 

@@ -172,8 +172,8 @@ class FileBridge(
             }
             true
         }.getOrDefault(false)
-        if (local) return true to "本地"
-        val l = launcher() ?: return false to "应用自己没有权限，而且没有可用的 root / Shizuku"
+        if (local) return true to L("本地")
+        val l = launcher() ?: return false to L("应用自己没有权限，而且没有可用的 root / Shizuku")
         val res = runner.run(
             l,
             "mkdir -p ${shellQuote(parentOf(dst))} && cp -r ${shellQuote(src.path)} ${shellQuote(dst.path)}",
@@ -191,8 +191,8 @@ class FileBridge(
                 true
             }
         }.getOrDefault(false)
-        if (local) return true to "本地"
-        val l = launcher() ?: return false to "应用自己没有权限，而且没有可用的 root / Shizuku"
+        if (local) return true to L("本地")
+        val l = launcher() ?: return false to L("应用自己没有权限，而且没有可用的 root / Shizuku")
         val res = runner.run(
             l,
             "mkdir -p ${shellQuote(parentOf(dst))} && mv ${shellQuote(src.path)} ${shellQuote(dst.path)}",

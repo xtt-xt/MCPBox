@@ -304,7 +304,7 @@ fun AboutScreen(
                 KeyValue(L("MCP 协议"), ServerMeta.PROTOCOL)
                 KeyValue(
                     L("Shell 后端"),
-                    ShellBackends.available().joinToString("、") { it.label }.ifBlank { L("仅文件操作") }
+                    ShellBackends.available().joinToString(L("、")) { L(it.label) }.ifBlank { L("仅文件操作") }
                 )
                 KeyValue(L("服务状态"), if (status.running) L("运行中（端口 %s）").format(status.port) else L("已停止"))
                 KeyValue(L("允许目录"), status.roots.joinToString("、"))

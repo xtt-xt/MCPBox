@@ -374,24 +374,24 @@ class MemoryStore(private val file: File? = null) {
         .sortedByDescending { e -> e.second }
 
     fun statsText(): String = buildString {
-        append("记忆库\n")
-        append("  实体：").append(graph.entities.size).append('\n')
-        append("  关系：").append(graph.relations.size).append('\n')
+        append(L("记忆库")).append('\n')
+        append(L("  实体：")).append(graph.entities.size).append('\n')
+        append(L("  关系：")).append(graph.relations.size).append('\n')
         val obs = graph.entities.sumOf { it.observations.size }
-        append("  观察：").append(obs).append(" 条\n")
+        append(L("  观察：")).append(obs).append(L(" 条\n"))
         val f = folders()
         if (f.isNotEmpty()) {
-            append("\n分区：\n")
+            append(L("\n分区：\n"))
             f.forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
         }
         val t = types()
         if (t.isNotEmpty()) {
-            append("\n实体类型：\n")
+            append(L("\n实体类型：\n"))
             t.take(20).forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
         }
         val r = relationTypes()
         if (r.isNotEmpty()) {
-            append("\n关系类型：\n")
+            append(L("\n关系类型：\n"))
             r.take(20).forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
         }
     }.trimEnd()

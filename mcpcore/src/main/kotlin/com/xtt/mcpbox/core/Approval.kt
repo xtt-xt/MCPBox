@@ -201,7 +201,7 @@ class ApprovalCenter(
         if (p == null && resolver == null) {
             pending.remove(req.id)
             notifyPending()
-            throw PermissionDeniedException("没有可用的审批界面，「${perm.title}」被自动拒绝")
+            throw PermissionDeniedException(L("没有可用的审批界面，「%s」被自动拒绝").format(L(perm.title)))
         }
 
         var decision: ApprovalDecision? = null
@@ -238,19 +238,19 @@ class ApprovalCenter(
                     config.save()
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = true,
-                        message = "用户选择「始终允许」→ 工具「$tool」已单独设为允许"
+                        message = L("用户选择「始终允许」→ 工具「%s」已单独设为允许").format(tool)
                     )
                 } else if (prefix != null) {
-                    permissions.addCommandRule(prefix, PermAction.ALLOW, note = "来自审批弹窗")
+                    permissions.addCommandRule(prefix, PermAction.ALLOW, note = L("来自审批弹窗"))
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = true,
-                        message = "用户选择「始终允许」→ 已添加命令规则：$prefix 开头的命令"
+                        message = L("用户选择「始终允许」→ 已添加命令规则：%s 开头的命令").format(prefix)
                     )
                 } else {
                     permissions.setSwitch(perm, PermAction.ALLOW)
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = true,
-                        message = "用户选择「始终允许」→ 权限「${perm.title}」已设为允许"
+                        message = L("用户选择「始终允许」→ 权限「%s」已设为允许").format(L(perm.title))
                     )
                 }
             }
@@ -260,37 +260,39 @@ class ApprovalCenter(
                     config.save()
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = false,
-                        message = "用户选择「始终拒绝」→ 工具「$tool」已单独设为拒绝"
+                        message = L("用户选择「始终拒绝」→ 工具「%s」已单独设为拒绝").format(tool)
                     )
                 } else if (prefix != null) {
-                    permissions.addCommandRule(prefix, PermAction.DENY, note = "来自审批弹窗")
+                    permissions.addCommandRule(prefix, PermAction.DENY, note = L("来自审批弹窗"))
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = false,
-                        message = "用户选择「始终拒绝」→ 已添加命令规则：$prefix 开头的命令被拒绝"
+                        message = L("用户选择「始终拒绝」→ 已添加命令规则：%s 开头的命令被拒绝").format(prefix)
                     )
                 } else {
                     permissions.setSwitch(perm, PermAction.DENY)
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = false,
-                        message = "用户选择「始终拒绝」→ 权限「${perm.title}」已设为拒绝"
+                        message = L("用户选择「始终拒绝」→ 权限「%s」已设为拒绝").format(L(perm.title))
                     )
                 }
             }
             ApprovalDecision.ALLOW_ONCE ->
-                log.add(LogKind.APPROVAL, tool, path, client, ok = true, message = "用户允许一次")
+                log.add(LogKind.APPROVAL, tool, path, client, ok = true, message = L("用户允许一次"))
             ApprovalDecision.DENY_ONCE ->
-                log.add(LogKind.APPROVAL, tool, path, client, ok = false, message = "用户拒绝（一次）")
+                log.add(LogKind.APPROVAL, tool, path, client, ok = false, message = L("用户拒绝（一次）"))
             ApprovalDecision.TIMEOUT ->
                 log.add(
                     LogKind.APPROVAL, tool, path, client, ok = false,
-                    message = "审批超时（${req.timeoutMs / 1000} 秒无响应），已自动拒绝"
+                    message = L("审批超时（%s 秒无响应），已自动拒绝").format(req.timeoutMs / 1000)
                 )
             ApprovalDecision.CANCELLED ->
-                log.add(LogKind.APPROVAL, tool, path, client, ok = false, message = "服务已停止，审批取消")
+                log.add(LogKind.APPROVAL, tool, path, client, ok = false, message = L("服务已停止，审批取消"))
         }
 
         if (!finalDecision.approved) {
-            throw PermissionDeniedException("用户未批准「${perm.title}」（${finalDecision.label}）")
+            throw PermissionDeniedException(
+                L("用户未批准「%s」（%s）").format(L(perm.title), L(finalDecision.label))
+            )
         }
     }
 }

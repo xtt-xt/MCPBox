@@ -47,7 +47,7 @@ class PathSandbox(private val config: Config) {
         val resolved = canonical(base)
         checkBounds(resolved, raw)
         if (mustExist && !resolved.exists()) {
-            throw SandboxException("路径不存在：${resolved.path}")
+            throw SandboxException(L("路径不存在：%s").format(resolved.path))
         }
         return resolved
     }
@@ -83,20 +83,20 @@ class PathSandbox(private val config: Config) {
     fun assertWritable(file: File) {
         if (config.privateAccess == Config.PRIVATE_READ && isPrivatePath(file)) {
             throw SandboxException(
-                "应用私有目录当前是「只读」模式，不能修改：${file.path}\n" +
-                    "（要写入请到 设置 → 权限 → 应用私有目录 改成「可读写」）"
+                L("应用私有目录当前是「只读」模式，不能修改：%s\n").format(file.path) +
+                    L("（要写入请到 设置 → 权限 → 应用私有目录 改成「可读写」）")
             )
         }
     }
 
     private fun checkBounds(path: File, raw: String) {
-        if (isProtected(path)) throw SandboxException("系统目录受保护，禁止访问：${path.path}")
+        if (isProtected(path)) throw SandboxException(L("系统目录受保护，禁止访问：%s").format(path.path))
         if (config.fullAccess) return
         if (isPrivatePath(path)) {
             if (config.privateAccess == Config.PRIVATE_OFF) {
                 throw SandboxException(
-                    "应用私有目录没有开放：${path.path}\n" +
-                        "（到 设置 → 权限 → 应用私有目录 里选「只读」或「可读写」；需要 root 或 Shizuku）"
+                    L("应用私有目录没有开放：%s\n").format(path.path) +
+                        L("（到 设置 → 权限 → 应用私有目录 里选「只读」或「可读写」；需要 root 或 Shizuku）")
                 )
             }
             return
@@ -106,8 +106,8 @@ class PathSandbox(private val config: Config) {
         if (!inside) {
             val allowed = roots.joinToString("、") { it.path }
             throw SandboxException(
-                "路径超出允许范围：${path.path}\n当前允许的根目录只有：$allowed\n" +
-                    "（需要在 App 的「设置 → 允许访问的目录」里添加，或把「不限制目录」打开）"
+                L("路径超出允许范围：%s\n当前允许的根目录只有：%s\n").format(path.path, allowed) +
+                    L("（需要在 App 的「设置 → 允许访问的目录」里添加，或把「不限制目录」打开）")
             )
         }
     }
