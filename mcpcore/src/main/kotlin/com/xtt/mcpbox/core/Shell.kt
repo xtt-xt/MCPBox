@@ -214,7 +214,7 @@ data class ShellResult(
         if (stdout.isBlank() && stderr.isBlank()) sb.append(L("（无输出）\n"))
         if (truncated) sb.append(L("（输出过长，已截断）\n"))
         val text = sb.toString()
-        return if (text.length > maxChars) text.take(maxChars) + "\n...（已截断）" else text
+        return if (text.length > maxChars) text.take(maxChars) + L("\n...（已截断）") else text
     }
 }
 

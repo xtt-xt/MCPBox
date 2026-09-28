@@ -33,9 +33,9 @@ object ToolsRead {
     ) { ctx ->
         ctx.guard(PermKey.SYSTEM, null, L("查看设备信息"))
         val info = ctx.host?.deviceInfo()
-            ?: ctx.fail("当前运行环境拿不到设备信息（桌面端测试模式）")
+            ?: ctx.fail(L("当前运行环境拿不到设备信息（桌面端测试模式）"))
         val sb = StringBuilder()
-        sb.append("设备信息\n")
+        sb.append(L("设备信息\n"))
         info.forEach { (k, v) -> sb.append("  ").append(k).append("：").append(v).append('\n') }
         ToolResult(sb.toString().trimEnd())
     }
@@ -57,8 +57,8 @@ object ToolsRead {
     ) { ctx ->
         val dir = ctx.path(mustExist = false)
         val dirStat = ctx.bridge.stat(dir)
-        if (dirStat != null && !dirStat.dir) ctx.fail("不是目录：${dir.path}")
-        if (dirStat == null) ctx.fail("目录不存在，或者读不到：${dir.path}")
+        if (dirStat != null && !dirStat.dir) ctx.fail(L("不是目录：%s").format(dir.path))
+        if (dirStat == null) ctx.fail(L("目录不存在，或者读不到：%s").format(dir.path))
         val showHidden = ctx.args.boolOr("showHidden", false)
         val limit = ctx.args.intOr("limit", 500).coerceIn(1, 5000)
         val sort = ctx.args.strOr("sort", "name")
@@ -74,17 +74,21 @@ object ToolsRead {
             }
         val shown = children.take(limit)
         val sb = StringBuilder()
-        sb.append("目录：").append(dir.path)
+        sb.append(L("目录：")).append(dir.path)
         if (ctx.sandbox.isPrivatePath(dir)) {
-            sb.append("（应用私有目录，经 ").append(ctx.bridge.privilegedLabel).append(" 读取）")
+            sb.append(L("（应用私有目录，经 %s 读取）").format(ctx.bridge.privilegedLabel))
         }
         sb.append('\n')
-        sb.append("共 ").append(children.size).append(" 项（目录 ")
-            .append(children.count { it.dir }).append("，文件 ")
-            .append(children.count { !it.dir }).append("）")
-        if (children.size > shown.size) sb.append("，仅显示前 ").append(shown.size).append(" 项")
+        sb.append(
+            L("共 %s 项（目录 %s，文件 %s）").format(
+                children.size,
+                children.count { it.dir },
+                children.count { !it.dir }
+            )
+        )
+        if (children.size > shown.size) sb.append(L("，仅显示前 %s 项").format(shown.size))
         sb.append('\n')
-        if (children.isEmpty()) sb.append("（空目录，或者应用没有权限读到内容）\n")
+        if (children.isEmpty()) sb.append(L("（空目录，或者应用没有权限读到内容）\n"))
         shown.forEach { f ->
             val type = if (f.dir) "DIR " else "FILE"
             val size = if (f.dir) "     -   " else String.format("%10s", ctx.sandbox.humanSize(f.size))
@@ -113,7 +117,7 @@ object ToolsRead {
         )
     ) { ctx ->
         val root = ctx.path(mustExist = true)
-        if (!root.isDirectory) ctx.fail("不是目录：${root.path}")
+        if (!root.isDirectory) ctx.fail(L("不是目录：%s").format(root.path))
         ctx.guard(PermKey.READ, root, L("查看目录树 %s").format(root.path))
         val depth = ctx.args.intOr("depth", 3).coerceIn(1, 12)
         val maxEntries = ctx.args.intOr("maxEntries", 400).coerceIn(1, 5000)
@@ -137,8 +141,8 @@ object ToolsRead {
             }
         }
         walk(root, 1)
-        if (truncated) sb.append("... 条目过多，已截断（可用 maxEntries 调整）\n")
-        sb.append("共 ").append(count).append(" 项")
+        if (truncated) sb.append(L("... 条目过多，已截断（可用 maxEntries 调整）\n"))
+        sb.append(L("共 %s 项").format(count))
         ToolResult(sb.toString().trimEnd())
     }
 
@@ -152,30 +156,35 @@ object ToolsRead {
     ) { ctx ->
         val f = ctx.path(mustExist = false)
         val st = ctx.bridge.stat(f)
-            ?: ctx.fail("路径不存在，或者读不到：${f.path}")
+            ?: ctx.fail(L("路径不存在，或者读不到：%s").format(f.path))
         ctx.guard(PermKey.READ, f, L("查看信息 %s").format(f.path))
         val sb = StringBuilder()
-        sb.append("路径：").append(f.path).append('\n')
-        sb.append("名称：").append(f.name).append('\n')
-        sb.append("类型：").append(if (st.dir) "目录" else "文件").append('\n')
-        sb.append("大小：").append(ctx.sandbox.humanSize(st.size)).append(" (").append(st.size).append(" 字节)\n")
-        sb.append("修改时间：").append(ctx.sandbox.timeText(st.modified)).append('\n')
-        f.parentFile?.let { sb.append("所在目录：").append(it.path).append('\n') }
+        sb.append(L("路径：")).append(f.path).append('\n')
+        sb.append(L("名称：")).append(f.name).append('\n')
+        sb.append(L("类型：")).append(if (st.dir) L("目录") else L("文件")).append('\n')
+        sb.append(L("大小：")).append(ctx.sandbox.humanSize(st.size))
+            .append(L(" (%s 字节)\n").format(st.size))
+        sb.append(L("修改时间：")).append(ctx.sandbox.timeText(st.modified)).append('\n')
+        f.parentFile?.let { sb.append(L("所在目录：")).append(it.path).append('\n') }
         if (st.bridged) {
-            sb.append("读取方式：经 ").append(ctx.bridge.privilegedLabel).append(" 转发（应用自己没权限）\n")
+            sb.append(L("读取方式：经 %s 转发（应用自己没权限）\n").format(ctx.bridge.privilegedLabel))
         }
-        sb.append("可读：").append(if (st.bridged) "是（通过 shell）" else f.canRead())
-            .append("  可写：").append(if (st.bridged) "是（通过 shell）" else f.canWrite()).append('\n')
+        val yes = L("是（通过 shell）")
+        sb.append(L("可读：")).append(if (st.bridged) yes else f.canRead())
+            .append(L("  可写：")).append(if (st.bridged) yes else f.canWrite()).append('\n')
         if (st.dir) {
             val kids = ctx.bridge.listDir(f).orEmpty()
-            sb.append("子项：").append(kids.size).append(" 个（目录 ").append(kids.count { it.dir })
-                .append("，文件 ").append(kids.count { !it.dir }).append("）\n")
+            sb.append(
+                L("子项：%s 个（目录 %s，文件 %s）\n").format(
+                    kids.size, kids.count { it.dir }, kids.count { !it.dir }
+                )
+            )
         } else {
-            sb.append("扩展名：").append(f.extension.ifBlank { "（无）" }).append('\n')
+            sb.append(L("扩展名：")).append(f.extension.ifBlank { L("（无）") }).append('\n')
             val mime = IMAGE_EXT[f.extension.lowercase()]
-            if (mime != null) sb.append("图片类型：").append(mime).append("（可用 read_image 直接查看）\n")
+            if (mime != null) sb.append(L("图片类型：%s（可用 read_image 直接查看）\n").format(mime))
         }
-        runCatching { sb.append("可用空间：").append(ctx.sandbox.humanSize(f.absoluteFile.usableSpace)) }
+        runCatching { sb.append(L("可用空间：")).append(ctx.sandbox.humanSize(f.absoluteFile.usableSpace)) }
         ToolResult(sb.toString())
     }
 
@@ -200,17 +209,22 @@ object ToolsRead {
     ) { ctx ->
         val f = ctx.path(mustExist = false)
         val fStat = ctx.bridge.stat(f)
-            ?: ctx.fail("文件不存在，或者读不到：${f.path}\n（私有目录要在 设置 → 权限 → 应用私有目录 里开放，并且需要 root 或 Shizuku）")
-        if (fStat.dir) ctx.fail("这是目录，请用 list_dir：${f.path}")
+            ?: ctx.fail(
+                L("文件不存在，或者读不到：%s\n(私有目录要在 设置 → 权限 → 应用私有目录 里开放，并且需要 root 或 Shizuku)").format(f.path)
+            )
+        if (fStat.dir) ctx.fail(L("这是目录，请用 list_dir：%s").format(f.path))
         ctx.guard(
             PermKey.READ, f, L("读取文件 %s").format(f.name),
             L("大小 %s").format(ctx.sandbox.humanSize(fStat.size)), fStat.size
         )
         val maxBytes = ctx.args.intOr("maxBytes", 2_000_000).coerceIn(1024, 16_000_000)
         val bytes = ctx.bridge.readBytes(f, maxBytes.toLong())
-            ?: ctx.fail("读不出来：应用自己没权限，而且没有可用的 root / Shizuku")
+            ?: ctx.fail(L("读不出来：应用自己没权限，而且没有可用的 root / Shizuku"))
         if (looksBinary(bytes)) {
-            ctx.fail("这是二进制文件（含空字节），无法按文本读取：${f.name}\n如果是图片请用 read_image；其他二进制可用 file_info 查看大小。")
+            ctx.fail(
+                L("这是二进制文件（含空字节），无法按文本读取：%s\n如果是图片请用 read_image；其他二进制可用 file_info 查看大小。")
+                    .format(f.name)
+            )
         }
         val charset = runCatching { charset(ctx.args.strOr("encoding", "UTF-8")) }.getOrElse { Charsets.UTF_8 }
         val text = String(bytes, charset)
@@ -220,17 +234,21 @@ object ToolsRead {
         val numbered = ctx.args.boolOr("numbered", true)
         val end = minOf(startLine - 1 + lineCount, lines.size)
         val sb = StringBuilder()
-        sb.append("文件：").append(f.path).append('\n')
-        sb.append("总行数：").append(lines.size)
-        if (fStat.size > bytes.size) sb.append("（文件较大，本次只读取了前 ").append(ctx.sandbox.humanSize(bytes.size.toLong())).append("）")
-        sb.append("，显示第 ").append(startLine).append(" ~ ").append(end).append(" 行\n")
+        sb.append(L("文件：")).append(f.path).append('\n')
+        sb.append(L("总行数：")).append(lines.size)
+        if (fStat.size > bytes.size) {
+            sb.append(L("（文件较大，本次只读取了前 %s）").format(ctx.sandbox.humanSize(bytes.size.toLong())))
+        }
+        sb.append(L("，显示第 %s ~ %s 行\n").format(startLine, end))
         sb.append("----\n")
         for (i in (startLine - 1) until end) {
             if (numbered) sb.append(String.format("%5d| ", i + 1))
             sb.append(lines[i])
             sb.append('\n')
         }
-        if (end < lines.size) sb.append("... 还有 ").append(lines.size - end).append(" 行（可加大 lineCount 或调整 startLine）\n")
+        if (end < lines.size) {
+            sb.append(L("... 还有 %s 行（可加大 lineCount 或调整 startLine）\n").format(lines.size - end))
+        }
         ToolResult(sb.toString().trimEnd())
     }
 
@@ -262,18 +280,22 @@ object ToolsRead {
         )
     ) { ctx ->
         val f = ctx.path(mustExist = false)
-        val st = ctx.bridge.stat(f) ?: ctx.fail("图片不存在，或者读不到：${f.path}")
-        if (st.dir) ctx.fail("这是目录：${f.path}")
+        val st = ctx.bridge.stat(f) ?: ctx.fail(L("图片不存在，或者读不到：%s").format(f.path))
+        if (st.dir) ctx.fail(L("这是目录：%s").format(f.path))
         val ext = f.extension.lowercase()
-        val mime = IMAGE_EXT[ext] ?: ctx.fail("不支持的图片格式：.${f.extension}（支持 png/jpg/jpeg/gif/webp/bmp）")
+        val mime = IMAGE_EXT[ext]
+            ?: ctx.fail(L("不支持的图片格式：.%s（支持 png/jpg/jpeg/gif/webp/bmp）").format(f.extension))
         val maxBytes = ctx.args.intOr("maxBytes", 8_000_000)
-        if (st.size > maxBytes) ctx.fail("图片过大：${ctx.sandbox.humanSize(st.size)}，超过上限")
+        if (st.size > maxBytes) {
+            ctx.fail(L("图片过大：%s，超过上限").format(ctx.sandbox.humanSize(st.size)))
+        }
         ctx.guard(PermKey.READ, f, L("查看图片 %s").format(f.name), ctx.sandbox.humanSize(st.size), st.size, mime)
         val raw = ctx.bridge.readBytes(f, maxBytes.toLong())
-            ?: ctx.fail("读不出来：应用自己没权限，而且没有可用的 root / Shizuku")
+            ?: ctx.fail(L("读不出来：应用自己没权限，而且没有可用的 root / Shizuku"))
         val b64 = java.util.Base64.getEncoder().encodeToString(raw)
         ToolResult(
-            text = "图片：${f.path}\n大小：${ctx.sandbox.humanSize(st.size)}（$mime）",
+            text = L("图片：%s\n大小：%s（%s）")
+                .format(f.path, ctx.sandbox.humanSize(st.size), mime),
             extraContent = listOf(jo("type" to "image", "data" to b64, "mimeType" to mime))
         )
     }
@@ -300,16 +322,16 @@ object ToolsRead {
         )
     ) { ctx ->
         val root = ctx.path(mustExist = true)
-        if (!root.isDirectory) ctx.fail("搜索起点必须是目录：${root.path}")
+        if (!root.isDirectory) ctx.fail(L("搜索起点必须是目录：%s").format(root.path))
         ctx.guard(PermKey.READ, root, L("搜索目录 %s").format(root.path))
         val namePattern = ctx.args.str("name")
         val contentPattern = ctx.args.str("content")
-        if (namePattern == null && contentPattern == null) ctx.fail("至少要提供 name 或 content 之一")
+        if (namePattern == null && contentPattern == null) ctx.fail(L("至少要提供 name 或 content 之一"))
         val caseSensitive = ctx.args.boolOr("caseSensitive", false)
         val nameRegex = namePattern?.let { globToRegex(it, caseSensitive) }
         val contentRegex = contentPattern?.let {
             runCatching { Regex(it, if (caseSensitive) emptySet() else setOf(RegexOption.IGNORE_CASE)) }
-                .getOrElse { e -> ctx.fail("内容正则不合法：${e.message}") }
+                .getOrElse { e -> ctx.fail(L("内容正则不合法：%s").format(e.message)) }
         }
         val maxDepth = ctx.args.intOr("maxDepth", 8).coerceIn(1, 30)
         val maxResults = ctx.args.intOr("maxResults", 100).coerceIn(1, 1000)
@@ -360,13 +382,13 @@ object ToolsRead {
         }
         walk(root, 1)
         val sb = StringBuilder()
-        sb.append("搜索目录：").append(root.path).append('\n')
-        if (namePattern != null) sb.append("文件名条件：").append(namePattern).append('\n')
-        if (contentPattern != null) sb.append("内容条件：").append(contentPattern).append('\n')
-        sb.append("扫描条目：").append(scanned).append("，命中：").append(hits.size)
-        if (truncated) sb.append("（已达上限，结果可能不完整）")
+        sb.append(L("搜索目录：")).append(root.path).append('\n')
+        if (namePattern != null) sb.append(L("文件名条件：")).append(namePattern).append('\n')
+        if (contentPattern != null) sb.append(L("内容条件：")).append(contentPattern).append('\n')
+        sb.append(L("扫描条目：%s，命中：%s").format(scanned, hits.size))
+        if (truncated) sb.append(L("（已达上限，结果可能不完整）"))
         sb.append("\n----\n")
-        if (hits.isEmpty()) sb.append("没有找到匹配项") else sb.append(hits.joinToString("\n"))
+        if (hits.isEmpty()) sb.append(L("没有找到匹配项")) else sb.append(hits.joinToString("\n"))
         ToolResult(sb.toString())
     }
 
@@ -402,7 +424,7 @@ object ToolsRead {
         )
     ) { ctx ->
         val f = ctx.path(mustExist = true)
-        if (f.isDirectory) ctx.fail("目录不支持计算校验值：${f.path}")
+        if (f.isDirectory) ctx.fail(L("目录不支持计算校验值：%s").format(f.path))
         ctx.guard(PermKey.READ, f, L("计算校验值 %s").format(f.name))
         val algo = ctx.args.strOr("algorithm", "sha256")
         val md = MessageDigest.getInstance(algo)
@@ -415,7 +437,7 @@ object ToolsRead {
             }
         }
         val hex = md.digest().joinToString("") { "%02x".format(it) }
-        ToolResult("文件：${f.path}\n算法：${algo.uppercase()}\n校验值：$hex")
+        ToolResult(L("文件：%s\n算法：%s\n校验值：%s").format(f.path, algo.uppercase(), hex))
     }
 
     // ---------------------------------------------------------- storage_info
@@ -428,22 +450,24 @@ object ToolsRead {
     ) { ctx ->
         ctx.guard(PermKey.SYSTEM, null, L("查看存储空间"))
         val sb = StringBuilder()
-        sb.append("允许访问的根目录（").append(ctx.config.roots.size).append(" 个）：\n")
+        sb.append(L("允许访问的根目录（%s 个）：\n").format(ctx.config.roots.size))
         ctx.config.roots.forEachIndexed { i, r ->
             val f = File(r)
             sb.append("  ${i + 1}. ").append(r)
-                .append(if (f.exists()) "" else "（不存在）")
+                .append(if (f.exists()) "" else L("（不存在）"))
                 .append('\n')
         }
-        sb.append("不限制目录：").append(if (ctx.config.fullAccess) "是" else "否").append('\n')
+        sb.append(L("不限制目录：")).append(if (ctx.config.fullAccess) L("是") else L("否")).append('\n')
         val roots = (ctx.config.roots.map { File(it) } + File("/")).distinctBy { runCatching { it.absolutePath }.getOrNull() }
-        sb.append("\n存储分区：\n")
+        sb.append(L("\n存储分区：\n"))
         roots.forEach { f ->
             runCatching {
-                sb.append("  ").append(f.absolutePath).append("：总 ")
-                    .append(ctx.sandbox.humanSize(f.totalSpace))
-                    .append("，已用 ").append(ctx.sandbox.humanSize(f.totalSpace - f.freeSpace))
-                    .append("，可用 ").append(ctx.sandbox.humanSize(f.usableSpace)).append('\n')
+                sb.append("  ").append(f.absolutePath)
+                    .append(L("：总 %s，已用 %s，可用 %s\n").format(
+                        ctx.sandbox.humanSize(f.totalSpace),
+                        ctx.sandbox.humanSize(f.totalSpace - f.freeSpace),
+                        ctx.sandbox.humanSize(f.usableSpace)
+                    ))
             }
         }
         ToolResult(sb.toString())
@@ -460,40 +484,45 @@ object ToolsRead {
     ) { ctx ->
         ctx.guard(PermKey.SYSTEM, null, L("查看服务器信息"))
         val sb = StringBuilder()
-        sb.append("MCP 手机文件服务器\n")
-        sb.append("版本：").append(ServerMeta.fullVersion).append('（').append(ServerMeta.NAME).append('）').append('\n')
-        sb.append("设备：").append(ServerMeta.deviceLabel).append('\n')
-        sb.append("端口：").append(ctx.config.port).append('\n')
-        sb.append("运行时间：").append(ServerMeta.uptimeText()).append('\n')
-        sb.append("累计请求：").append(ctx.log.stats().total)
-            .append("（允许 ").append(ctx.log.stats().ok)
-            .append(" / 失败 ").append(ctx.log.stats().failed)
-            .append(" / 审批 ").append(ctx.log.stats().approvals)
-            .append(" / 拒绝 ").append(ctx.log.stats().denied).append("）\n")
-        sb.append("\n根目录：\n")
+        sb.append(L("MCP 手机文件服务器\n"))
+        sb.append(L("版本：")).append(ServerMeta.fullVersion).append('（').append(ServerMeta.NAME).append('）').append('\n')
+        sb.append(L("设备：")).append(ServerMeta.deviceLabel).append('\n')
+        sb.append(L("端口：")).append(ctx.config.port).append('\n')
+        sb.append(L("运行时间：")).append(ServerMeta.uptimeText()).append('\n')
+        val st = ctx.log.stats()
+        sb.append(L("累计请求：")).append(st.total)
+            .append(L("（允许 %s / 失败 %s / 审批 %s / 拒绝 %s）\n")
+                .format(st.ok, st.failed, st.approvals, st.denied))
+        sb.append(L("\n根目录：\n"))
         ctx.config.roots.forEach { sb.append("  ").append(it).append('\n') }
-        sb.append("不限制目录：").append(if (ctx.config.fullAccess) "是" else "否").append('\n')
-        sb.append("只读模式：").append(if (ctx.config.readOnly) "已开启（所有写/删会被拒绝）" else "关闭").append('\n')
-        sb.append("回收站：").append(if (ctx.config.trashEnabled) "开启（删除会先进回收站）" else "关闭（删除即彻底删除）").append('\n')
-        sb.append("\n权限开关：\n")
+        sb.append(L("不限制目录：")).append(if (ctx.config.fullAccess) L("是") else L("否")).append('\n')
+        sb.append(L("只读模式："))
+            .append(if (ctx.config.readOnly) L("已开启（所有写/删会被拒绝）") else L("关闭")).append('\n')
+        sb.append(L("回收站："))
+            .append(
+                if (ctx.config.trashEnabled) L("开启（删除会先进回收站）")
+                else L("关闭（删除即彻底删除）")
+            ).append('\n')
+        sb.append(L("\n权限开关：\n"))
         PermKey.entries.forEach { k ->
             val action = ctx.permissions.decide(k, null).action
-            sb.append("  ").append(k.title).append("（").append(k.id).append("）：").append(action.label)
+            sb.append("  ").append(L(k.title)).append("（").append(k.id).append("）：")
+                .append(L(action.label))
                 .append(when (action) {
-                    PermAction.ASK -> "（每次操作会弹出审批窗口）"
-                    PermAction.DENY -> "（相关操作会被直接拒绝）"
+                    PermAction.ASK -> L("（每次操作会弹出审批窗口）")
+                    PermAction.DENY -> L("（相关操作会被直接拒绝）")
                     PermAction.ALLOW -> ""
                 }).append('\n')
         }
         if (ctx.permissions.pathRules().isNotEmpty()) {
-            sb.append("\n路径规则：\n")
+            sb.append(L("\n路径规则：\n"))
             ctx.permissions.pathRules().forEach {
-                sb.append("  ").append(if (it.perm == "*") "全部权限" else it.perm)
-                    .append(" @ ").append(it.path.ifBlank { "（未填）" })
-                    .append(" → ").append(it.actionEnum.label).append('\n')
+                sb.append("  ").append(if (it.perm == "*") L("全部权限") else it.perm)
+                    .append(" @ ").append(it.path.ifBlank { L("（未填）") })
+                    .append(" → ").append(L(it.actionEnum.label)).append('\n')
             }
         }
-        sb.append("\n提示：涉及写入/删除的操作会实时弹窗询问手机主人，被拒绝时请勿反复重试。")
+        sb.append(L("\n提示：涉及写入/删除的操作会实时弹窗询问手机主人，被拒绝时请勿反复重试。"))
         ToolResult(sb.toString())
     }
 }

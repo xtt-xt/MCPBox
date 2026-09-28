@@ -283,7 +283,7 @@ class HttpServer(
                 return sb.toString()
             }
             sb.append(c.toChar())
-            if (sb.length > limit) throw IOException("请求头过长")
+            if (sb.length > limit) throw IOException(L("请求头过长"))
         }
     }
 
@@ -292,7 +292,7 @@ class HttpServer(
         var read = 0
         while (read < length) {
             val n = input.read(buf, read, length - read)
-            if (n < 0) throw IOException("请求体不完整")
+            if (n < 0) throw IOException(L("请求体不完整"))
             read += n
         }
         return buf
@@ -312,7 +312,7 @@ class HttpServer(
                 }
                 break
             }
-            if (out.size() + size > limit) throw IOException("请求体过大")
+            if (out.size() + size > limit) throw IOException(L("请求体过大"))
             val chunk = readExactly(input, size.toInt())
             out.write(chunk)
             readLine(input, 512) // trailing CRLF

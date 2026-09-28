@@ -127,12 +127,12 @@ class McpServer(
             http.start(config.port, config.bindAll)
             boundPort = config.port
             ServerMeta.startTime = System.currentTimeMillis()
-            log.add(LogKind.SYSTEM, message = "服务已启动，端口 ${config.port}")
+            log.add(LogKind.SYSTEM, message = L("服务已启动，端口 %s").format(config.port))
             startCleanup()
             true
         } catch (e: Exception) {
-            lastError = "启动失败：${e.message}"
-            log.add(LogKind.ERROR, ok = false, message = lastError ?: "启动失败")
+            lastError = L("启动失败：%s").format(e.message)
+            log.add(LogKind.ERROR, ok = false, message = lastError ?: L("启动失败"))
             false
         }
     }
@@ -341,7 +341,7 @@ class McpServer(
         if (given.isNotEmpty() && given == loginPassword()) {
             val sid = java.util.UUID.randomUUID().toString().replace("-", "")
             webSessions[sid] = System.currentTimeMillis() + SESSION_TTL_MS
-            log.add(LogKind.REQUEST, tool = "web_login", client = req.remote, ok = true, message = "网页控制台登录成功")
+            log.add(LogKind.REQUEST, tool = "web_login", client = req.remote, ok = true, message = L("网页控制台登录成功"))
             return ex.respond(
                 302, null, ByteArray(0),
                 cors + mapOf(
@@ -350,7 +350,10 @@ class McpServer(
                 )
             )
         }
-        log.add(LogKind.REQUEST, tool = "web_login", client = req.remote, ok = false, message = "网页控制台密码错误")
+        log.add(
+                LogKind.REQUEST, tool = "web_login", client = req.remote, ok = false,
+                message = L("网页控制台密码错误")
+            )
         return ex.respondText(
             401, "text/html; charset=utf-8",
             WebConsole.loginPage(error = true, passwordIsToken = config.consolePassword.isBlank()), cors
@@ -474,7 +477,7 @@ class McpServer(
                 if (session != null) {
                     sessions.remove(session.id)
                     runCatching { session.sse?.close() }
-                    log.add(LogKind.CONNECT, message = "客户端断开：${session.label()}")
+                    log.add(LogKind.CONNECT, message = L("客户端断开：%s").format(session.label()))
                 }
                 ex.respondText(200, "application/json; charset=utf-8", jo("ok" to true).toString(), cors)
             }
@@ -521,7 +524,10 @@ class McpServer(
         )
         sessions[session.id] = session
         clients[req.remote] = ClientTouch(req.remote, System.currentTimeMillis(), session.label())
-        log.add(LogKind.CONNECT, message = "客户端连接（SSE）：${session.label()} @${req.remote}")
+        log.add(
+            LogKind.CONNECT,
+            message = L("客户端连接（SSE）：%s @%s").format(session.label(), req.remote)
+        )
         val sse = ex.openSse(cors)
         session.sse = sse
         sse.send("/messages?sessionId=${session.id}", "endpoint")
@@ -560,7 +566,7 @@ class McpServer(
         val sse = session.sse
         responses.forEach { r ->
             val ok = sse?.send(r.toString(), "message") ?: false
-            if (!ok) log.add(LogKind.ERROR, ok = false, message = "SSE 通道已断开，响应未能送达")
+            if (!ok) log.add(LogKind.ERROR, ok = false, message = L("SSE 通道已断开，响应未能送达"))
         }
         return true
     }
@@ -618,7 +624,8 @@ class McpServer(
                 clients[remote] = ClientTouch(remote, System.currentTimeMillis(), newSession.label())
                 log.add(
                     LogKind.CONNECT,
-                    message = "客户端已连接：${newSession.label()} @$remote（协议 $negotiated）"
+                    message = L("客户端已连接：%s @%s（协议 %s）")
+                        .format(newSession.label(), remote, negotiated)
                 )
                 RpcOut(
                     rpcResult(
@@ -650,7 +657,7 @@ class McpServer(
             "tools/list" -> {
                 log.add(
                     LogKind.REQUEST, tool = "tools/list", client = remote,
-                    message = "列出工具（会话 $profile）"
+                    message = L("列出工具（会话 %s）").format(profile)
                 )
                 RpcOut(
                     rpcResult(
@@ -731,21 +738,21 @@ class McpServer(
         } catch (e: PermissionDeniedException) {
             log.add(
                 LogKind.REQUEST, tool = name, path = pathForLog, client = remote, ok = false,
-                message = e.message ?: "被拒绝", durationMs = System.currentTimeMillis() - started
+                message = e.message ?: L("被拒绝"), durationMs = System.currentTimeMillis() - started
             )
-            toolErrorResult("操作被拒绝：${e.message}\n（用户可在 App 的权限页调整该权限）")
+            toolErrorResult(L("操作被拒绝：%s\n（用户可在 App 的权限页调整该权限）").format(e.message ?: ""))
         } catch (e: ToolFailure) {
             log.add(
                 LogKind.REQUEST, tool = name, path = pathForLog, client = remote, ok = false,
-                message = e.message ?: "失败", durationMs = System.currentTimeMillis() - started
+                message = e.message ?: L("失败"), durationMs = System.currentTimeMillis() - started
             )
-            toolErrorResult(e.message ?: "操作失败")
+            toolErrorResult(e.message ?: L("操作失败"))
         } catch (e: SandboxException) {
             log.add(
                 LogKind.REQUEST, tool = name, path = pathForLog, client = remote, ok = false,
-                message = e.message ?: "路径不合法", durationMs = System.currentTimeMillis() - started
+                message = e.message ?: L("路径不合法"), durationMs = System.currentTimeMillis() - started
             )
-            toolErrorResult(e.message ?: "路径不合法")
+            toolErrorResult(e.message ?: L("路径不合法"))
         } catch (e: Exception) {
             log.add(
                 LogKind.ERROR, tool = name, path = pathForLog, client = remote, ok = false,

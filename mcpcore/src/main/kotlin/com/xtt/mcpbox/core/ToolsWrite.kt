@@ -33,20 +33,20 @@ object ToolsWrite {
     ) { ctx ->
         val f = ctx.path(mustExist = false)
         val existed = ctx.bridge.stat(f)
-        if (existed?.dir == true) ctx.fail("目标是一个目录：${f.path}")
+        if (existed?.dir == true) ctx.fail(L("目标是一个目录：%s").format(f.path))
         val content = ctx.args.str("content") ?: ""
         val mode = ctx.args.strOr("mode", "overwrite")
         val encoding = ctx.args.strOr("encoding", "utf8").lowercase()
         val bytes = if (encoding == "base64") {
             runCatching { java.util.Base64.getDecoder().decode(content) }
-                .getOrElse { ctx.fail("base64 内容不合法") }
+                .getOrElse { ctx.fail(L("base64 内容不合法")) }
         } else content.toByteArray(Charsets.UTF_8)
         val exists = existed != null
-        if (mode == "create_new" && exists) ctx.fail("文件已存在：${f.path}")
+        if (mode == "create_new" && exists) ctx.fail(L("文件已存在：%s").format(f.path))
         val verb = when {
-            exists && mode == "append" -> "追加"
-            exists -> "覆盖"
-            else -> "新建"
+            exists && mode == "append" -> L("追加")
+            exists -> L("覆盖")
+            else -> L("新建")
         }
         ctx.guard(
             PermKey.WRITE, f,
@@ -57,13 +57,13 @@ object ToolsWrite {
         try {
             ctx.sandbox.assertWritable(f)
         } catch (e: Exception) {
-            ctx.fail(e.message ?: "当前模式下不允许写入")
+            ctx.fail(e.message ?: L("当前模式下不允许写入"))
         }
         val parent = f.parentFile
         if (ctx.args.boolOr("createDirs", true)) {
             parent?.let { ctx.bridge.mkdirs(it) }
         } else if (parent != null && !parent.exists()) {
-            ctx.fail("上级目录不存在：${parent.path}（可设置 createDirs=true）")
+            ctx.fail(L("上级目录不存在：%s（可设置 createDirs=true）").format(parent.path))
         }
         val payload = if (mode == "append" && exists) {
             (ctx.bridge.readBytes(f) ?: ByteArray(0)) + bytes
@@ -71,10 +71,16 @@ object ToolsWrite {
             bytes
         }
         if (!ctx.bridge.writeBytes(f, payload)) {
-            ctx.fail("写入失败：应用自己没有权限，而且没有可用的 root / Shizuku\n目标：${f.path}")
+            ctx.fail(
+                L("写入失败：应用自己没有权限，而且没有可用的 root / Shizuku\n目标：%s").format(f.path)
+            )
         }
         val total = ctx.bridge.stat(f)?.size ?: payload.size.toLong()
-        ToolResult("${verb}成功：${f.path}\n本次写入 ${ctx.sandbox.humanSize(bytes.size.toLong())}，文件当前 ${ctx.sandbox.humanSize(total)}")
+        ToolResult(
+            L("%s成功：%s\n本次写入 %s，文件当前 %s").format(
+                verb, f.path, ctx.sandbox.humanSize(bytes.size.toLong()), ctx.sandbox.humanSize(total)
+            )
+        )
     }
 
     private fun preview(content: String): String {
@@ -102,19 +108,20 @@ object ToolsWrite {
         )
     ) { ctx ->
         val f = ctx.path(mustExist = false)
-        val st = ctx.bridge.stat(f) ?: ctx.fail("文件不存在，或者读不到：${f.path}")
-        if (st.dir) ctx.fail("这是目录：${f.path}")
-        val oldText = ctx.args.str("oldText") ?: ctx.fail("缺少 oldText")
+        val st = ctx.bridge.stat(f) ?: ctx.fail(L("文件不存在，或者读不到：%s").format(f.path))
+        if (st.dir) ctx.fail(L("这是目录：%s").format(f.path))
+        val oldText = ctx.args.str("oldText") ?: ctx.fail(L("缺少 oldText"))
         val newText = ctx.args.str("newText") ?: ""
         val useRegex = ctx.args.boolOr("regex", false)
         val replaceAll = ctx.args.boolOr("replaceAll", false)
         val maxCount = ctx.args.intOr("count", 1).coerceIn(1, 100000)
         val text = ctx.bridge.readText(f)
-            ?: ctx.fail("读取失败：应用自己没有权限，而且没有可用的 root / Shizuku")
+            ?: ctx.fail(L("读取失败：应用自己没有权限，而且没有可用的 root / Shizuku"))
         val occurrences: Int
         val result: String
         if (useRegex) {
-            val re = runCatching { Regex(oldText) }.getOrElse { ctx.fail("正则不合法：${it.message}") }
+            val re = runCatching { Regex(oldText) }
+                .getOrElse { ctx.fail(L("正则不合法：%s").format(it.message)) }
             occurrences = re.findAll(text).count()
             result = if (replaceAll) re.replace(text, newText) else re.replaceFirst(text, newText)
         } else {
@@ -122,7 +129,7 @@ object ToolsWrite {
             result = if (replaceAll) text.replace(oldText, newText)
             else text.replaceFirst(oldText, newText)
         }
-        if (occurrences == 0) ctx.fail("没有找到要替换的内容（oldText 在文件中不存在）")
+        if (occurrences == 0) ctx.fail(L("没有找到要替换的内容（oldText 在文件中不存在）"))
         val willReplace = if (replaceAll) occurrences else 1
         ctx.guard(
             PermKey.WRITE, f,
@@ -133,13 +140,16 @@ object ToolsWrite {
         try {
             ctx.sandbox.assertWritable(f)
         } catch (e: Exception) {
-            ctx.fail(e.message ?: "当前模式下不允许写入")
+            ctx.fail(e.message ?: L("当前模式下不允许写入"))
         }
         if (!ctx.bridge.writeBytes(f, result.toByteArray(Charsets.UTF_8))) {
-            ctx.fail("写入失败：应用自己没有权限，而且没有可用的 root / Shizuku")
+            ctx.fail(L("写入失败：应用自己没有权限，而且没有可用的 root / Shizuku"))
         }
         val newSize = ctx.bridge.stat(f)?.size ?: result.length.toLong()
-        ToolResult("修改成功：${f.path}\n匹配 $occurrences 处，已替换 $willReplace 处\n文件大小：${ctx.sandbox.humanSize(newSize)}")
+        ToolResult(
+            L("修改成功：%s\n匹配 %s 处，已替换 %s 处\n文件大小：%s")
+                .format(f.path, occurrences, willReplace, ctx.sandbox.humanSize(newSize))
+        )
     }
 
     private fun countOccurrences(haystack: String, needle: String): Int {
@@ -169,14 +179,14 @@ object ToolsWrite {
     ) { ctx ->
         val f = ctx.path(mustExist = false)
         ctx.bridge.stat(f)?.let {
-            return@ToolSpec if (it.dir) ToolResult("目录已存在：${f.path}")
-            else ctx.fail("同名文件已存在：${f.path}")
+            return@ToolSpec if (it.dir) ToolResult(L("目录已存在：%s").format(f.path))
+            else ctx.fail(L("同名文件已存在：%s").format(f.path))
         }
         ctx.guard(PermKey.WRITE, f, L("新建目录 %s").format(f.path))
         try {
             ctx.sandbox.assertWritable(f)
         } catch (e: Exception) {
-            ctx.fail(e.message ?: "当前模式下不允许写入")
+            ctx.fail(e.message ?: L("当前模式下不允许写入"))
         }
         val parents = ctx.args.boolOr("parents", true)
         val ok = if (parents) {
@@ -186,8 +196,8 @@ object ToolsWrite {
             parent != null && (parent.isDirectory || ctx.bridge.stat(parent)?.dir == true) &&
                 ctx.bridge.mkdirs(f)
         }
-        if (!ok) ctx.fail("创建目录失败（可能是权限不足）：${f.path}")
-        ToolResult("已创建目录：${f.path}")
+        if (!ok) ctx.fail(L("创建目录失败（可能是权限不足）：%s").format(f.path))
+        ToolResult(L("已创建目录：%s").format(f.path))
     }
 
     // ------------------------------------------------------------- copy_path
@@ -205,17 +215,17 @@ object ToolsWrite {
             listOf("source", "destination")
         )
     ) { ctx ->
-        val src = ctx.sandbox.resolve(ctx.args.str("source") ?: ctx.fail("缺少 source"), true)
-        val srcStat = ctx.bridge.stat(src) ?: ctx.fail("源不存在或读不到：${src.path}")
-        val dstRaw = ctx.args.str("destination") ?: ctx.fail("缺少 destination")
+        val src = ctx.sandbox.resolve(ctx.args.str("source") ?: ctx.fail(L("缺少 source")), true)
+        val srcStat = ctx.bridge.stat(src) ?: ctx.fail(L("源不存在或读不到：%s").format(src.path))
+        val dstRaw = ctx.args.str("destination") ?: ctx.fail(L("缺少 destination"))
         var dst = ctx.sandbox.resolve(dstRaw)
         val dstIsDir = dst.isDirectory || ctx.bridge.stat(dst)?.dir == true
         if (dstIsDir && dst.path != src.path) dst = File(dst, src.name)
-        if (dst.path == src.path) ctx.fail("源和目标相同：${src.path}")
-        if (isInside(src, dst)) ctx.fail("不能把目录复制到它自己的子目录里：${dst.path}")
+        if (dst.path == src.path) ctx.fail(L("源和目标相同：%s").format(src.path))
+        if (isInside(src, dst)) ctx.fail(L("不能把目录复制到它自己的子目录里：%s").format(dst.path))
         val dstExists = ctx.bridge.stat(dst) != null
         if (dstExists && !ctx.args.boolOr("overwrite", false)) {
-            ctx.fail("目标已存在（可设置 overwrite=true 覆盖）：${dst.path}")
+            ctx.fail(L("目标已存在（可设置 overwrite=true 覆盖）：%s").format(dst.path))
         }
         val size = srcStat.size
         ctx.guard(
@@ -227,15 +237,17 @@ object ToolsWrite {
         try {
             ctx.sandbox.assertWritable(dst)
         } catch (e: Exception) {
-            ctx.fail(e.message ?: "当前模式下不允许写入")
+            ctx.fail(e.message ?: L("当前模式下不允许写入"))
         }
         if (dstExists) ctx.bridge.delete(dst, recursive = true)
         val (ok, how) = ctx.bridge.copy(src, dst)
-        if (!ok) ctx.fail("复制失败：$how")
+        if (!ok) ctx.fail(L("复制失败：%s").format(how))
         val newSize = ctx.bridge.stat(dst)?.size ?: size
+        val local = L("本地")
         ToolResult(
-            "复制完成\n源：${src.path}\n目标：${dst.path}\n" +
-                "大小：${ctx.sandbox.humanSize(newSize)}" + if (how != "本地") "（经 $how 转发）" else ""
+            L("复制完成\n源：%s\n目标：%s\n大小：%s")
+                .format(src.path, dst.path, ctx.sandbox.humanSize(newSize)) +
+                if (how != local) L("（经 %s 转发）").format(how) else ""
         )
     }
 
@@ -254,18 +266,20 @@ object ToolsWrite {
             listOf("source", "destination")
         )
     ) { ctx ->
-        val src = ctx.sandbox.resolve(ctx.args.str("source") ?: ctx.fail("缺少 source"), true)
-        val srcStat = ctx.bridge.stat(src) ?: ctx.fail("源不存在或读不到：${src.path}")
-        var dst = ctx.sandbox.resolve(ctx.args.str("destination") ?: ctx.fail("缺少 destination"))
+        val src = ctx.sandbox.resolve(ctx.args.str("source") ?: ctx.fail(L("缺少 source")), true)
+        val srcStat = ctx.bridge.stat(src) ?: ctx.fail(L("源不存在或读不到：%s").format(src.path))
+        var dst = ctx.sandbox.resolve(
+            ctx.args.str("destination") ?: ctx.fail(L("缺少 destination"))
+        )
         val dstIsDir = dst.isDirectory || ctx.bridge.stat(dst)?.dir == true
         if (dstIsDir && dst.path != src.path && dst.parentFile?.path != src.parentFile?.path) {
             dst = File(dst, src.name)
         }
-        if (dst.path == src.path) ctx.fail("源和目标相同：${src.path}")
-        if (isInside(src, dst)) ctx.fail("不能把目录移动到它自己的子目录里：${dst.path}")
+        if (dst.path == src.path) ctx.fail(L("源和目标相同：%s").format(src.path))
+        if (isInside(src, dst)) ctx.fail(L("不能把目录移动到它自己的子目录里：%s").format(dst.path))
         val dstExists = ctx.bridge.stat(dst) != null
         if (dstExists && !ctx.args.boolOr("overwrite", false)) {
-            ctx.fail("目标已存在（可设置 overwrite=true 覆盖）：${dst.path}")
+            ctx.fail(L("目标已存在（可设置 overwrite=true 覆盖）：%s").format(dst.path))
         }
         ctx.guard(
             PermKey.WRITE, dst,
@@ -277,14 +291,15 @@ object ToolsWrite {
             ctx.sandbox.assertWritable(dst)
             ctx.sandbox.assertWritable(src)
         } catch (e: Exception) {
-            ctx.fail(e.message ?: "当前模式下不允许写入")
+            ctx.fail(e.message ?: L("当前模式下不允许写入"))
         }
         if (dstExists) ctx.bridge.delete(dst, recursive = true)
         val (ok, how) = ctx.bridge.move(src, dst)
-        if (!ok) ctx.fail("移动失败：${src.path} → ${dst.path}（$how）")
+        if (!ok) ctx.fail(L("移动失败：%s → %s（%s）").format(src.path, dst.path, how))
+        val local = L("本地")
         ToolResult(
-            "移动完成\n源：${src.path}\n目标：${dst.path}" +
-                if (how != "本地") "\n方式：经 $how 转发" else ""
+            L("移动完成\n源：%s\n目标：%s").format(src.path, dst.path) +
+                if (how != local) L("\n方式：经 %s 转发").format(how) else ""
         )
     }
 
@@ -305,7 +320,7 @@ object ToolsWrite {
         )
     ) { ctx ->
         val f = ctx.path(mustExist = false)
-        val st = ctx.bridge.stat(f) ?: ctx.fail("路径不存在，或者读不到：${f.path}")
+        val st = ctx.bridge.stat(f) ?: ctx.fail(L("路径不存在，或者读不到：%s").format(f.path))
         val recursive = ctx.args.boolOr("recursive", false)
         val isPrivate = ctx.sandbox.isPrivatePath(f)
         // 私有目录跨分区搬不进回收站，只能直接删
@@ -313,7 +328,10 @@ object ToolsWrite {
         if (st.dir) {
             val kids = ctx.bridge.listDir(f).orEmpty().size
             if (kids > 0 && !recursive) {
-                ctx.fail("目录不是空的（$kids 项），确认要删除请设置 recursive=true：${f.path}")
+                ctx.fail(
+                    L("目录不是空的（%s 项），确认要删除请设置 recursive=true：%s")
+                        .format(kids, f.path)
+                )
             }
         }
         val size = st.size
@@ -332,12 +350,18 @@ object ToolsWrite {
             size
         )
         if (permanent) {
-            if (!ctx.bridge.delete(f, recursive)) ctx.fail("删除失败：${f.path}（应用没权限，且 root / Shizuku 不可用）")
-            ToolResult("已彻底删除：${f.path}\n释放空间：${ctx.sandbox.humanSize(size)}（不可恢复）")
+            if (!ctx.bridge.delete(f, recursive)) {
+                ctx.fail(L("删除失败：%s（应用没权限，且 root / Shizuku 不可用）").format(f.path))
+            }
+            ToolResult(
+                L("已彻底删除：%s\n释放空间：%s（不可恢复）")
+                    .format(f.path, ctx.sandbox.humanSize(size))
+            )
         } else {
             val entry = ctx.trash.move(f)
             ToolResult(
-                "已移入回收站：${f.path}\n回收站 ID：${entry.id}（可用 list_trash 查看、restore_trash 还原）"
+                L("已移入回收站：%s\n回收站 ID：%s（可用 list_trash 查看、restore_trash 还原）")
+                    .format(f.path, entry.id)
             )
         }
     }
@@ -353,14 +377,17 @@ object ToolsWrite {
         val entries = ctx.trash.entries()
         val total = entries.sumOf { it.size }
         val sb = StringBuilder()
-        sb.append("回收站：").append(ctx.sandbox.trashDir().path).append('\n')
-        sb.append("共 ").append(entries.size).append(" 项，占用 ").append(ctx.sandbox.humanSize(total)).append("\n----\n")
-        if (entries.isEmpty()) sb.append("（空）")
+        sb.append(L("回收站：")).append(ctx.sandbox.trashDir().path).append('\n')
+        sb.append(
+            L("共 %s 项，占用 %s\n----\n").format(entries.size, ctx.sandbox.humanSize(total))
+        )
+        if (entries.isEmpty()) sb.append(L("（空）"))
         entries.sortedByDescending { it.deletedAt }.forEach {
-            sb.append("[").append(it.id).append("] ").append(if (it.isDir) "目录 " else "文件 ")
+            sb.append("[").append(it.id).append("] ")
+                .append(if (it.isDir) L("目录 ") else L("文件 "))
                 .append(it.name).append("  ").append(ctx.sandbox.humanSize(it.size)).append('\n')
-            sb.append("      原位置：").append(it.originalPath).append('\n')
-            sb.append("      删除时间：").append(ctx.sandbox.timeText(it.deletedAt)).append('\n')
+            sb.append(L("      原位置：")).append(it.originalPath).append('\n')
+            sb.append(L("      删除时间：")).append(ctx.sandbox.timeText(it.deletedAt)).append('\n')
         }
         ToolResult(sb.toString().trimEnd())
     }
@@ -384,13 +411,15 @@ object ToolsWrite {
         val id = ctx.args.str("id")
         val name = ctx.args.str("name")
         val entry = when {
-            id != null && name != null -> ctx.fail("id 和 name 只能给一个")
-            id != null -> all.firstOrNull { it.id == id } ?: ctx.fail("回收站里没有 ID=$id 的条目")
+            id != null && name != null -> ctx.fail(L("id 和 name 只能给一个"))
+            id != null -> all.firstOrNull { it.id == id }
+                ?: ctx.fail(L("回收站里没有 ID=%s 的条目").format(id))
             name != null -> all.firstOrNull { it.name == name }
                 ?: all.firstOrNull { it.name.contains(name) }
-                ?: ctx.fail("回收站里没有文件名含 $name 的条目")
+                ?: ctx.fail(L("回收站里没有文件名含 %s 的条目").format(name))
             else -> {
-                if (all.size == 1) all.first() else ctx.fail("请提供 id 或 name（回收站有 ${all.size} 项，可用 list_trash 查看）")
+                if (all.size == 1) all.first()
+                else ctx.fail(L("请提供 id 或 name（回收站有 %s 项，可用 list_trash 查看）").format(all.size))
             }
         }
         val dst = ctx.optionalPath("destination")
@@ -401,7 +430,7 @@ object ToolsWrite {
             entry.size
         )
         val restored = ctx.trash.restore(entry, dst, ctx.args.boolOr("overwrite", false))
-        ToolResult("已还原：${entry.name} → ${restored.path}")
+        ToolResult(L("已还原：%s → %s").format(entry.name, restored.path))
     }
 
     // ---------------------------------------------------------- empty_trash
@@ -412,9 +441,11 @@ object ToolsWrite {
         perm = PermKey.DELETE,
         schema = Schema.obj(mapOf("confirm" to Schema.bool("必须为 true 才会执行", true)), listOf("confirm"))
     ) { ctx ->
-        if (!ctx.args.boolOr("confirm", false)) ctx.fail("请设置 confirm=true 确认清空回收站")
+        if (!ctx.args.boolOr("confirm", false)) {
+            ctx.fail(L("请设置 confirm=true 确认清空回收站"))
+        }
         val entries = ctx.trash.entries()
-        if (entries.isEmpty()) return@ToolSpec ToolResult("回收站已经是空的")
+        if (entries.isEmpty()) return@ToolSpec ToolResult(L("回收站已经是空的"))
         val size = entries.sumOf { it.size }
         ctx.guard(
             PermKey.DELETE, ctx.sandbox.trashDir(),
@@ -423,7 +454,7 @@ object ToolsWrite {
             size
         )
         val (n, bytes) = ctx.trash.emptyAll()
-        ToolResult("回收站已清空：删除 $n 项，释放 ${ctx.sandbox.humanSize(bytes)}")
+        ToolResult(L("回收站已清空：删除 %s 项，释放 %s").format(n, ctx.sandbox.humanSize(bytes)))
     }
 
     // --------------------------------------------------------- notify_user

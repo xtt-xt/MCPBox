@@ -196,8 +196,12 @@ class PackStore(private val src: SettingsSource) {
             builtin = false,
             core = false
         )
-        if (isBuiltin(created.id)) throw ToolFailure("「${created.id}」是内置包的名字，换一个吧")
-        if (custom.any { it.id == created.id }) throw ToolFailure("已经有一个叫「${created.id}」的包了")
+        if (isBuiltin(created.id)) {
+            throw ToolFailure(L("「%s」是内置包的名字，换一个吧").format(created.id))
+        }
+        if (custom.any { it.id == created.id }) {
+            throw ToolFailure(L("已经有一个叫「%s」的包了").format(created.id))
+        }
         custom = custom + created
         persist()
         return created
@@ -207,8 +211,8 @@ class PackStore(private val src: SettingsSource) {
         validate(pack)
         val existing = custom.firstOrNull { it.id == pack.id }
             ?: throw ToolFailure(
-                if (isBuiltin(pack.id)) "内置包不能改，但可以用 manage_pack 新建一个自己的包"
-                else "找不到包：${pack.id}"
+                if (isBuiltin(pack.id)) L("内置包不能改，但可以用 manage_pack 新建一个自己的包")
+                else L("找不到包：%s").format(pack.id)
             )
         val merged = pack.copy(id = existing.id, builtin = false, core = false)
         custom = custom.map { if (it.id == existing.id) merged else it }
@@ -217,7 +221,7 @@ class PackStore(private val src: SettingsSource) {
     }
 
     fun remove(id: String): Boolean {
-        if (isBuiltin(id)) throw ToolFailure("「$id」是内置包，不能删")
+        if (isBuiltin(id)) throw ToolFailure(L("「%s」是内置包，不能删").format(id))
         val existed = custom.any { it.id == id }
         if (existed) {
             custom = custom.filterNot { it.id == id }
@@ -227,12 +231,12 @@ class PackStore(private val src: SettingsSource) {
     }
 
     private fun validate(pack: ToolPack) {
-        if (pack.title.isBlank()) throw ToolFailure("包名不能为空")
-        if (pack.title.length > 60) throw ToolFailure("包名太长（最多 60 字）")
-        if (pack.description.length > 1200) throw ToolFailure("包说明太长（最多 1200 字）")
-        if (pack.id.length > 48) throw ToolFailure("包 id 太长（最多 48 字）")
+        if (pack.title.isBlank()) throw ToolFailure(L("包名不能为空"))
+        if (pack.title.length > 60) throw ToolFailure(L("包名太长（最多 60 字）"))
+        if (pack.description.length > 1200) throw ToolFailure(L("包说明太长（最多 1200 字）"))
+        if (pack.id.length > 48) throw ToolFailure(L("包 id 太长（最多 48 字）"))
         if (!pack.id.matches(Regex("^[a-zA-Z0-9._\\-]*$"))) {
-            throw ToolFailure("包 id 只能用字母、数字、点、横线和下划线")
+            throw ToolFailure(L("包 id 只能用字母、数字、点、横线和下划线"))
         }
     }
 }

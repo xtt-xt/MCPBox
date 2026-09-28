@@ -67,7 +67,7 @@ object ToolsMemory {
                 o.str("folder") ?: ""
             )
         }.orEmpty()
-        if (items.isEmpty()) ctx.fail("entities 不能为空（每项至少要有 name）")
+        if (items.isEmpty()) ctx.fail(L("entities 不能为空（每项至少要有 name）"))
 
         val r = store.createEntities(items)
         // 顺带把 observations 塞进去
@@ -81,12 +81,14 @@ object ToolsMemory {
         val names = items.map { it.first }
         ToolResult(
             buildString {
-                append("已创建 ").append(r.created).append(" 个实体，已存在 ").append(r.skipped).append(" 个")
-                if (obsAdded > 0) append("，附带 ") .append(obsAdded).append(" 条观察")
-                append("。\n")
+                append(L("已创建 %s 个实体，已存在 %s 个").format(r.created, r.skipped))
+                if (obsAdded > 0) append(L("，附带 %s 条观察").format(obsAdded))
+                append(L("。\n"))
                 names.forEach { append("  · ").append(it).append('\n') }
-                append("\n当前记忆库共 ").append(store.graph.entities.size).append(" 个实体、")
-                    .append(store.graph.relations.size).append(" 条关系。")
+                append(
+                    L("\n当前记忆库共 %s 个实体、%s 条关系。")
+                        .format(store.graph.entities.size, store.graph.relations.size)
+                )
             }
         )
     }
@@ -127,21 +129,23 @@ object ToolsMemory {
             if (from.isEmpty() || to.isEmpty()) return@mapNotNull null
             Triple(from, to, o.str("relationType") ?: o.str("type") ?: "RELATED_TO")
         }.orEmpty()
-        if (items.isEmpty()) ctx.fail("relations 不能为空（每项要有 from 和 to）")
+        if (items.isEmpty()) ctx.fail(L("relations 不能为空（每项要有 from 和 to）"))
 
         val r = store.createRelations(items)
         val missing = items.flatMap { listOf(it.first, it.second) }
             .filterNot { store.hasEntity(it) }.distinct()
         ToolResult(
             buildString {
-                append("已建立 ").append(r.created).append(" 条关系，已存在 ").append(r.skipped).append(" 条。\n")
+                append(L("已建立 %s 条关系，已存在 %s 条。\n").format(r.created, r.skipped))
                 items.forEach { append("  ").append(it.first).append(" ──").append(it.third).append("──▸ ").append(it.second).append('\n') }
                 if (missing.isNotEmpty()) {
-                    append("\n注意：这些实体还不存在，建议补建：")
-                    append(missing.joinToString("、")).append('\n')
+                    append(L("\n注意：这些实体还不存在，建议补建："))
+                    append(missing.joinToString(L("、"))).append('\n')
                 }
-                append("\n当前记忆库共 ").append(store.graph.entities.size).append(" 个实体、")
-                    .append(store.graph.relations.size).append(" 条关系。")
+                append(
+                    L("\n当前记忆库共 %s 个实体、%s 条关系。")
+                        .format(store.graph.entities.size, store.graph.relations.size)
+                )
             }
         )
     }
@@ -177,21 +181,24 @@ object ToolsMemory {
             if (name.isEmpty() || texts.isEmpty()) return@mapNotNull null
             name to texts
         }.orEmpty()
-        if (items.isEmpty()) ctx.fail("observations 不能为空（每项要有 entityName 和 contents）")
+        if (items.isEmpty()) {
+            ctx.fail(L("observations 不能为空（每项要有 entityName 和 contents）"))
+        }
 
         val sb = StringBuilder()
         var total = 0
         items.forEach { (name, texts) ->
             if (!store.hasEntity(name)) {
-                sb.append("  ! 跳过「").append(name).append("」：实体不存在\n")
+                sb.append(L("  ! 跳过「%s」：实体不存在\n").format(name))
                 return@forEach
             }
             val n = store.addObservations(name, texts)
             total += n
-            sb.append("  · ").append(name).append("：新增 ").append(n).append(" 条")
-                .append(if (n < texts.size) "（跳过 ${texts.size - n} 条重复）" else "").append('\n')
+            sb.append(L("  · %s：新增 %s 条").format(name, n))
+                .append(if (n < texts.size) L("（跳过 %s 条重复）").format(texts.size - n) else "")
+                .append('\n')
         }
-        ToolResult("已追加 $total 条观察。\n$sb".trimEnd())
+        ToolResult(L("已追加 %s 条观察。\n%s").format(total, sb.toString()).trimEnd())
     }
 
     // ---------------------------------------------------------------- read_graph
@@ -217,9 +224,9 @@ object ToolsMemory {
             limit = ctx.args.intOr("limit", 50)
         )
         if (g.entities.isEmpty()) {
-            ToolResult("记忆库还是空的（或该过滤条件下没有内容）。用 create_entities 开始记录吧。")
+            ToolResult(L("记忆库还是空的（或该过滤条件下没有内容）。用 create_entities 开始记录吧。"))
         } else {
-            ToolResult(renderGraph(store, g, "记忆库"))
+            ToolResult(renderGraph(store, g, L("记忆库")))
         }
     }
 
@@ -240,13 +247,13 @@ object ToolsMemory {
         )
     ) { ctx ->
         val query = ctx.args.str("query")?.trim().orEmpty()
-        if (query.isEmpty()) ctx.fail("query 不能为空")
+        if (query.isEmpty()) ctx.fail(L("query 不能为空"))
         ctx.guard(PermKey.MEMORY, null, L("记忆：搜索「%s」").format(query))
         val g = store.search(query, ctx.args.intOr("limit", 20))
         if (g.entities.isEmpty()) {
-            ToolResult("没有找到和「$query」相关的记忆。")
+            ToolResult(L("没有找到和「%s」相关的记忆。").format(query))
         } else {
-            ToolResult(renderGraph(store, g, "搜索「$query」"))
+            ToolResult(renderGraph(store, g, L("搜索「%s」").format(query)))
         }
     }
 
@@ -265,15 +272,23 @@ object ToolsMemory {
         )
     ) { ctx ->
         val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
-        if (names.isEmpty()) ctx.fail("names 不能为空")
+        if (names.isEmpty()) ctx.fail(L("names 不能为空"))
         ctx.guard(PermKey.MEMORY, null, L("记忆：读取 %s 个实体").format(names.size))
         val found = names.mapNotNull { store.entity(it) }
         val missing = names.filterNot { store.hasEntity(it) }
         if (found.isEmpty()) {
-            ToolResult("这些实体都不存在：" + missing.joinToString("、"))
+            ToolResult(L("这些实体都不存在：") + missing.joinToString(L("、")))
         } else {
-            val sb = StringBuilder(renderGraph(store, MemoryGraph(found, store.graph.relations, store.graph.revision), "记忆"))
-            if (missing.isNotEmpty()) sb.append("\n\n以下实体不存在：").append(missing.joinToString("、"))
+            val sb = StringBuilder(
+                renderGraph(
+                    store,
+                    MemoryGraph(found, store.graph.relations, store.graph.revision),
+                    L("记忆")
+                )
+            )
+            if (missing.isNotEmpty()) {
+                sb.append(L("\n\n以下实体不存在：")).append(missing.joinToString(L("、")))
+            }
             ToolResult(sb.toString())
         }
     }
@@ -304,10 +319,13 @@ object ToolsMemory {
         )
     ) { ctx ->
         val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
-        if (names.isEmpty()) ctx.fail("names 不能为空")
+        if (names.isEmpty()) ctx.fail(L("names 不能为空"))
         ctx.guard(PermKey.MEMORY, null, L("记忆：删除实体 %s").format(names.joinToString(L("、"))))
         val n = store.deleteEntities(names)
-        ToolResult("已删除 $n 个实体（连带的关系也一起删了）。\n剩余：${store.graph.entities.size} 个实体、${store.graph.relations.size} 条关系。")
+        ToolResult(
+            L("已删除 %s 个实体（连带的关系也一起删了）。\n剩余：%s 个实体、%s 条关系。")
+                .format(n, store.graph.entities.size, store.graph.relations.size)
+        )
     }
 
     // ----------------------------------------------------------- delete_relations
@@ -341,10 +359,10 @@ object ToolsMemory {
             if (from.isEmpty() || to.isEmpty()) return@mapNotNull null
             Triple(from, to, o.str("relationType") ?: o.str("type"))
         }.orEmpty()
-        if (items.isEmpty()) ctx.fail("relations 不能为空")
+        if (items.isEmpty()) ctx.fail(L("relations 不能为空"))
         ctx.guard(PermKey.MEMORY, null, L("记忆：删除 %s 条关系").format(items.size))
         val n = store.deleteRelations(items)
-        ToolResult("已删除 $n 条关系。剩余 ${store.graph.relations.size} 条。")
+        ToolResult(L("已删除 %s 条关系。剩余 %s 条。").format(n, store.graph.relations.size))
     }
 
     // -------------------------------------------------------- delete_observations
@@ -377,20 +395,20 @@ object ToolsMemory {
             if (name.isEmpty() || texts.isEmpty()) return@mapNotNull null
             name to texts
         }.orEmpty()
-        if (items.isEmpty()) ctx.fail("deletions 不能为空")
+        if (items.isEmpty()) ctx.fail(L("deletions 不能为空"))
         ctx.guard(PermKey.MEMORY, null, L("记忆：删除观察"))
         var total = 0
         val sb = StringBuilder()
         items.forEach { (name, texts) ->
             if (!store.hasEntity(name)) {
-                sb.append("  ! 跳过「").append(name).append("」：实体不存在\n")
+                sb.append(L("  ! 跳过「%s」：实体不存在\n").format(name))
                 return@forEach
             }
             val n = store.deleteObservations(name, texts)
             total += n
-            sb.append("  · ").append(name).append("：删掉 ").append(n).append(" 条\n")
+            sb.append(L("  · %s：删掉 %s 条\n").format(name, n))
         }
-        ToolResult("共删除 $total 条观察。\n$sb".trimEnd())
+        ToolResult(L("共删除 %s 条观察。\n%s").format(total, sb.toString()).trimEnd())
     }
 
     // -------------------------------------------------------------------- 辅助
@@ -410,7 +428,7 @@ object ToolsMemory {
     private fun renderGraph(store: MemoryStore, g: MemoryGraph, title: String): String {
         val sb = StringBuilder()
         sb.append(title).append("\n")
-        sb.append("实体 ").append(g.entities.size).append(" 个 · 关系 ").append(g.relations.size).append(" 条\n")
+        sb.append(L("实体 %s 个 · 关系 %s 条\n").format(g.entities.size, g.relations.size))
 
         val byFolder = g.entities.groupBy { it.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER } }
         byFolder.forEach { (folder, list) ->
@@ -432,7 +450,8 @@ object ToolsMemory {
         val shown = g.entities.map { it.name }.toSet()
         val dangling = g.relations.flatMap { listOf(it.from, it.to) }.filterNot { it in shown }.distinct()
         if (dangling.isNotEmpty()) {
-            sb.append("\n（还有未展开的关联实体：").append(dangling.joinToString("、")).append("）\n")
+            sb.append(L("\n（还有未展开的关联实体：")).append(dangling.joinToString(L("、")))
+                .append(L("）\n"))
         }
         return sb.toString().trimEnd()
     }

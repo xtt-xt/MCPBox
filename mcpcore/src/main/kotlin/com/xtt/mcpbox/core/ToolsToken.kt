@@ -34,38 +34,39 @@ object ToolsToken {
 
         ToolResult(
             buildString {
-                append("访问令牌\n")
+                append(L("访问令牌\n"))
                 if (!enabled) {
-                    append("  未启用令牌校验：接口不需要 token 也能访问（设置 → 安全 里可以打开）。\n")
+                    append(L("  未启用令牌校验：接口不需要 token 也能访问（设置 → 安全 里可以打开）。\n"))
                 } else {
                     append("  ").append(token).append('\n')
-                    append("  长度 ").append(token.length).append(" 位 · 已在「设置 → 安全」里开启校验\n")
+                    append(L("  长度 %s 位 · 已在「设置 → 安全」里开启校验\n").format(token.length))
                 }
 
-                append("\n服务地址\n")
-                append("  端口：").append(port).append('\n')
+                append(L("\n服务地址\n"))
+                append(L("  端口：")).append(port).append('\n')
                 if (lan != null) {
-                    append("  局域网：http://").append(lan).append(':').append(port).append("（手机连同一个 Wi-Fi 的设备可用）\n")
+                    append("  ").append(L("局域网：%s").format("http://$lan:$port"))
+                        .append(L("（手机连同一个 Wi-Fi 的设备可用）\n"))
                 }
-                append("  本机：http://127.0.0.1:").append(port)
-                append("（手机本机 / 工作区容器内都能直连）\n")
+                append(L("  本机：")).append("http://127.0.0.1:").append(port)
+                append(L("（手机本机 / 工作区容器内都能直连）\n"))
                 if (urls.size > 2) {
-                    append("  其它：").append(urls.drop(2).joinToString("、")).append('\n')
+                    append(L("  其它：")).append(urls.drop(2).joinToString(L("、"))).append('\n')
                 }
 
-                append("\n用法示例\n")
+                append(L("\n用法示例\n"))
                 val t = if (enabled) token else "<token>"
-                append("  上传文件到手机：\n")
-                append("    curl -X POST --data-binary @本地文件 \\\n")
+                append(L("  上传文件到手机：\n"))
+                append(L("    curl -X POST --data-binary @本地文件 \\\n"))
                 append("      \"http://127.0.0.1:").append(port).append("/upload?path=/storage/emulated/0/x.txt&token=").append(t).append("\"\n")
-                append("  从手机取文件：\n")
+                append(L("  从手机取文件：\n"))
                 append("    curl -H \"Authorization: Bearer ").append(t).append("\" \\\n")
                 append("      \"http://127.0.0.1:").append(port).append("/download?path=/storage/emulated/0/x.txt\"\n")
-                append("  也可以把令牌放进请求头 X-MCP-Token，或用 Authorization: Bearer。\n")
-                append("\n提示\n")
-                append("  · 路径里的中文和空格要 URL 编码（例如 %E6%96%87%E4%BB%B6）。\n")
-                append("  · 令牌泄露等于把文件存取权限交出去；用户重置令牌后旧值立刻失效。\n")
-                append("  · 文件相关的操作优先用本工具集里的 list_dir / read_file / write_file，不必走 HTTP。")
+                append(L("  也可以把令牌放进请求头 X-MCP-Token，或用 Authorization: Bearer。\n"))
+                append(L("\n提示\n"))
+                append(L("  · 路径里的中文和空格要 URL 编码（例如 %E6%96%87%E4%BB%B6）。\n"))
+                append(L("  · 令牌泄露等于把文件存取权限交出去；用户重置令牌后旧值立刻失效。\n"))
+                append(L("  · 文件相关的操作优先用本工具集里的 list_dir / read_file / write_file，不必走 HTTP。"))
             }
         )
     }

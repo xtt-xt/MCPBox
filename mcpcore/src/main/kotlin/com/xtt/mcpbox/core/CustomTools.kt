@@ -61,14 +61,14 @@ object ToolTemplate {
         }
         val missing = params.filter { it.required && provided[it.name].isNullOrBlank() }
         if (missing.isNotEmpty()) {
-            throw ToolFailure("缺少必填参数：" + missing.joinToString("、") { it.name })
+            throw ToolFailure(L("缺少必填参数：") + missing.joinToString(L("、")) { it.name })
         }
         val regex = Regex("\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(:\\s*raw\\s*)?}}")
         return regex.replace(template) { m ->
             val key = m.groupValues[1]
             val raw = m.groupValues[2].isNotEmpty()
             val value = provided[key]
-                ?: throw ToolFailure("模板里用到了参数 {{$key}}，但它没有定义")
+                ?: throw ToolFailure(L("模板里用到了参数 {{%s}}，但它没有定义").format(key))
             if (raw) value else shellQuote(value)
         }
     }
@@ -78,21 +78,23 @@ object ToolTemplate {
     /** 校验工具定义，返回错误信息（null = 通过）。 */
     fun validate(tool: CustomTool, others: List<CustomTool>): String? {
         if (!tool.name.matches(Regex("[a-z][a-z0-9_]{1,40}"))) {
-            return "工具名要小写字母开头，只能包含小写字母/数字/下划线，长度 2-41"
+            return L("工具名要小写字母开头，只能包含小写字母/数字/下划线，长度 2-41")
         }
         if (others.any { it.name == tool.name && it.id != tool.id }) {
-            return "已存在同名工具：${tool.name}"
+            return L("已存在同名工具：%s").format(tool.name)
         }
-        if (tool.command.isBlank()) return "命令模板不能为空"
+        if (tool.command.isBlank()) return L("命令模板不能为空")
         val declared = tool.params.map { it.name }.toSet()
         val used = Regex("\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)").findAll(tool.command)
             .map { it.groupValues[1] }.toSet()
         val undefined = used - declared
         if (undefined.isNotEmpty()) {
-            return "命令里用到了未定义的参数：" + undefined.joinToString("、")
+            return L("命令里用到了未定义的参数：") + undefined.joinToString(L("、"))
         }
         tool.params.forEach { p ->
-            if (!p.name.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) return "参数名不合法：${p.name}"
+            if (!p.name.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) {
+                return L("参数名不合法：%s").format(p.name)
+            }
         }
         return null
     }
@@ -154,7 +156,7 @@ class CustomToolStore(private val config: Config, private val src: SettingsSourc
 
     fun update(tool: CustomTool): CustomTool {
         val existing = tools.firstOrNull { it.id == tool.id || it.name == tool.name }
-            ?: throw ToolFailure("找不到工具：${tool.name}")
+            ?: throw ToolFailure(L("找不到工具：%s").format(tool.name))
         val merged = tool.copy(id = existing.id, createdAt = existing.createdAt)
         ToolTemplate.validate(merged, tools)?.let { throw ToolFailure(it) }
         tools = tools.map { if (it.id == existing.id) merged else it }
@@ -179,7 +181,7 @@ class CustomToolStore(private val config: Config, private val src: SettingsSourc
         return jo(
             "version" to 1,
             "exportedAt" to System.currentTimeMillis(),
-            "note" to "MCP 文件盒 · 自定义工具导出",
+            "note" to L("MCP 文件盒 · 自定义工具导出"),
             "tools" to el
         ).let { J_PRETTY.encodeToString(JsonObject.serializer(), it) }
     }
@@ -188,18 +190,18 @@ class CustomToolStore(private val config: Config, private val src: SettingsSourc
 
     fun importJson(text: String, replace: Boolean = false): ImportResult {
         val el = runCatching { J.parseToJsonElement(text) }.getOrElse {
-            throw ToolFailure("不是合法的 JSON：${it.message}")
+            throw ToolFailure(L("不是合法的 JSON：%s").format(it.message))
         }
         val arr = when {
             el is kotlinx.serialization.json.JsonArray -> el
             el is JsonObject && el["tools"] != null -> el["tools"] as? kotlinx.serialization.json.JsonArray
-                ?: throw ToolFailure("JSON 里 tools 字段不是数组")
-            else -> throw ToolFailure("JSON 结构不对，需要数组或 {\"tools\":[...]}")
+                ?: throw ToolFailure(L("JSON 里 tools 字段不是数组"))
+            else -> throw ToolFailure(L("JSON 结构不对，需要数组或 {\"tools\":[...]}"))
         }
         val incoming = arr.mapNotNull { item ->
             runCatching { J.decodeFromJsonElement(CustomTool.serializer(), item) }.getOrNull()
         }
-        if (incoming.isEmpty()) throw ToolFailure("没有解析出任何工具")
+        if (incoming.isEmpty()) throw ToolFailure(L("没有解析出任何工具"))
         var added = 0
         var updated = 0
         var skipped = 0
@@ -226,7 +228,8 @@ class CustomToolStore(private val config: Config, private val src: SettingsSourc
         persist()
         return ImportResult(
             added = added, updated = updated, skipped = skipped,
-            message = "导入完成：新增 $added，更新 $updated" + if (skipped > 0) "，跳过 $skipped" else ""
+            message = L("导入完成：新增 %s，更新 %s").format(added, updated) +
+                if (skipped > 0) L("，跳过 %s").format(skipped) else ""
         )
     }
 

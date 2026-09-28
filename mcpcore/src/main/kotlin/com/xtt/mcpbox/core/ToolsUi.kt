@@ -82,11 +82,11 @@ object ToolsUi {
             if (label.isNotBlank()) append('"').append(label.replace('\n', ' ').take(60)).append("\" ")
             if (id.isNotBlank()) append(id).append(' ')
             append('(').append(centerX).append(',').append(centerY).append(')')
-            append(" 范围[").append(left).append(',').append(top).append("][")
+            append(L(" 范围[")).append(left).append(',').append(top).append("][")
                 .append(right).append(',').append(bottom).append(']')
             if (cls.isNotBlank()) append(' ').append(shortClass)
-            if (checked) append(" 已勾选")
-            if (!enabled) append(" 已禁用")
+            if (checked) append(L(" 已勾选"))
+            if (!enabled) append(L(" 已禁用"))
         }
 
         fun toJson(index: Int): JsonObject = jo(
@@ -144,8 +144,8 @@ object ToolsUi {
         val avail = ShellBackends.available().filter { it.id != "app" }
         if (avail.isEmpty()) {
             ctx.fail(
-                "UI 自动化需要 Root 或 Shizuku 身份：截屏、读取界面结构、模拟点击都要系统权限，\n" +
-                    "应用自身 UID 做不到。请先打开 Shizuku 授权（App 的「终端」页），或者用已 root 的设备。"
+                L("UI 自动化需要 Root 或 Shizuku 身份：截屏、读取界面结构、模拟点击都要系统权限，\n") +
+                    L("应用自身 UID 做不到。请先打开 Shizuku 授权（App 的「终端」页），或者用已 root 的设备。")
             )
         }
         if (pref != "auto") avail.firstOrNull { it.id == pref }?.let { return it }
@@ -187,8 +187,10 @@ object ToolsUi {
         )
         ctx.log.add(
             LogKind.REQUEST, tool = ctx.tool, client = ctx.client, ok = result.ok,
-            message = (if (result.ok) "UI 动作成功" else "UI 动作失败（退出码 ${result.exitCode}）") +
-                "：" + summary,
+            message = (
+                if (result.ok) L("UI 动作成功")
+                else L("UI 动作失败（退出码 %s）").format(result.exitCode)
+            ) + "：" + summary,
             durationMs = result.durationMs
         )
         return result
@@ -317,7 +319,8 @@ object ToolsUi {
                         ShellMirror.emit("\n[UI] 换用「${l.label}」后端读到了界面结构\n")
                         ctx.log.add(
                             LogKind.SYSTEM, tool = ctx.tool, client = ctx.client,
-                            message = "UI 后端回退：${launcher.label} 跑不动 uiautomator，改用 ${l.label}"
+                            message = L("UI 后端回退：%s 跑不动 uiautomator，改用 %s")
+                                .format(L(launcher.label), L(l.label))
                         )
                     }
                     val start = text.lastIndexOf("<?xml", idx).takeIf { it >= 0 } ?: idx
@@ -365,7 +368,7 @@ object ToolsUi {
         id: String?,
         index: Int
     ): UiNode {
-        val key = text ?: desc ?: id ?: ctx.fail("没有给出定位条件")
+        val key = text ?: desc ?: id ?: ctx.fail(L("没有给出定位条件"))
         val field: (UiNode) -> String = when {
             text != null -> { n -> n.text }
             desc != null -> { n -> n.desc }
@@ -383,15 +386,16 @@ object ToolsUi {
             val near = all.filter { it.label.isNotBlank() }
                 .take(12).joinToString("\n") { "  ・" + it.label.take(30) }
             ctx.fail(
-                "没找到「$target」。当前屏幕上能看到的文字：\n" +
-                    (near.ifBlank { "  （没有可读文字，可能是自绘界面或还没加载完）" }) +
-                    "\n\n可以先用 ui_dump 看看结构，或者直接用 ui_tap 传 x / y 坐标。"
+                L("没找到「%s」。当前屏幕上能看到的文字：\n").format(target) +
+                    near.ifBlank { L("  （没有可读文字，可能是自绘界面或还没加载完）") } +
+                    L("\n\n可以先用 ui_dump 看看结构，或者直接用 ui_tap 传 x / y 坐标。")
             )
         }
         if (hits.size > 1 && index < 0) {
             val lines = hits.take(8).mapIndexed { i, n -> "  [$i] ${n.line(i)}" }.joinToString("\n")
             ctx.fail(
-                "「$target」匹配到 ${hits.size} 个元素，请用 index 指定要哪一个：\n$lines"
+                L("「%s」匹配到 %s 个元素，请用 index 指定要哪一个：\n%s")
+                    .format(target, hits.size, lines)
             )
         }
         return hits.getOrElse(index.coerceAtLeast(0)) { hits.first() }
@@ -429,23 +433,32 @@ object ToolsUi {
             timeoutMs = 30_000
         )
         if (!res.ok) {
-            ctx.fail("截屏失败（退出码 ${res.exitCode}）：\n" + (res.stderr + res.stdout).trim().take(400))
+            ctx.fail(
+                L("截屏失败（退出码 %s）：\n").format(res.exitCode) +
+                    (res.stderr + res.stdout).trim().take(400)
+            )
         }
         val maxBytes = ctx.args.intOr("maxBytes", 8_000_000)
         val bytes = ctx.bridge.readBytes(target, maxBytes.toLong())
-            ?: ctx.fail("截屏命令执行了，但读不到图片：${target.path}\n（应用自己没有权限读它，而且没有可用的 root / Shizuku）")
-        if (bytes.isEmpty()) ctx.fail("截出来的图片是空的：${target.path}")
+            ?: ctx.fail(
+                L("截屏命令执行了，但读不到图片：%s\n（应用自己没有权限读它，而且没有可用的 root / Shizuku）")
+                    .format(target.path)
+            )
+        if (bytes.isEmpty()) ctx.fail(L("截出来的图片是空的：%s").format(target.path))
         val (sw, sh) = screenSize(launcher)
         val (pw, ph) = pngSize(bytes) ?: (0 to 0)
         val scale = if (pw > 0 && sw > 0) sw.toDouble() / pw else 1.0
         val b64 = java.util.Base64.getEncoder().encodeToString(bytes)
         val note = buildString {
-            append("截屏：${target.path}\n")
-            append("图片尺寸：${pw}x${ph}　屏幕坐标空间：${sw}x${sh}\n")
+            append(L("截屏：%s\n").format(target.path))
+            append(L("图片尺寸：%sx%s　屏幕坐标空间：%sx%s\n").format(pw, ph, sw, sh))
             if (scale != 1.0 && sw > 0) {
-                append("注意：图片被缩放过了，点坐标要按屏幕空间算（乘 %.3f），ui_dump 给的坐标已经是屏幕空间。\n".format(scale))
+                append(
+                    L("注意：图片被缩放过了，点坐标要按屏幕空间算（乘 %s），ui_dump 给的坐标已经是屏幕空间。\n")
+                        .format("%.3f".format(scale))
+                )
             }
-            append("前端：").append(foreground(launcher))
+            append(L("前端：")).append(foreground(launcher))
         }
         ToolResult(
             text = note,
@@ -491,7 +504,10 @@ object ToolsUi {
 
         if (ctx.args.boolOr("raw", false)) {
             val xml = dumpXml(ctx, launcher)
-            return@ToolSpec ToolResult("原始 XML（${xml.length} 字符，已截断到 20000）\n----\n" + xml.take(20_000))
+            return@ToolSpec ToolResult(
+                L("原始 XML（%s 字符，已截断到 20000）\n----\n").format(xml.length) +
+                    xml.take(20_000)
+            )
         }
 
         val nodes = pickNodes(
@@ -501,28 +517,31 @@ object ToolsUi {
             ctx.args.intOr("maxNodes", 120)
         )
         val fg = foreground(launcher)
-        val head = "屏幕 ${snap.screenWidth}x${snap.screenHeight}（rotation=${snap.rotation}）" +
-            " · 前台 $fg · 结构里共 ${snap.nodes.size} 个节点，下面是 ${nodes.size} 个\n"
+        val head = buildString {
+            append(L("屏幕 %sx%s（rotation=%s）").format(snap.screenWidth, snap.screenHeight, snap.rotation))
+            append(L(" · 前台 %s · 结构里共 %s 个节点，下面是 %s 个\n")
+                .format(fg, snap.nodes.size, nodes.size))
+        }
 
         if (ctx.args.strOr("format", "text") == "json") {
             return@ToolSpec ToolResult(
-                head + "（坐标是屏幕空间，可直接用于 ui_tap）\n" +
+                head + L("（坐标是屏幕空间，可直接用于 ui_tap）\n") +
                     JsonArray(nodes.mapIndexed { i, n -> n.toJson(i) }).toString()
             )
         }
 
         if (nodes.isEmpty()) {
             return@ToolSpec ToolResult(
-                head + "（没有匹配的可交互元素）\n" +
-                    "可能是：界面还在加载 / 是自绘界面（游戏、视频）。可以用 ui_screenshot 看一眼，" +
-                    "或者用 onlyInteractive=false 看看全部节点。"
+                head + L("（没有匹配的可交互元素）\n") +
+                    L("可能是：界面还在加载 / 是自绘界面（游戏、视频）。可以用 ui_screenshot 看一眼，") +
+                    L("或者用 onlyInteractive=false 看看全部节点。")
             )
         }
         val body = nodes.mapIndexed { i, n -> n.line(i) }.joinToString("\n")
         ToolResult(
-            head + "格式：[序号] 类型 \"文字\" id (中心x,中心y) 范围[左,上][右,下] 类名\n" +
-                "用法：ui_tap 传 x/y 点坐标，或者传 text / desc / id 让我自动找；" +
-                "滚动用 ui_swipe 的 direction。\n----\n" + body
+            head + L("格式：[序号] 类型 \"文字\" id (中心x,中心y) 范围[左,上][右,下] 类名\n") +
+                L("用法：ui_tap 传 x/y 点坐标，或者传 text / desc / id 让我自动找；") +
+                L("滚动用 ui_swipe 的 direction。\n----\n") + body
         )
     }
 
@@ -567,7 +586,8 @@ object ToolsUi {
                 ctx.args.intOr("index", -1)
             )
             px = node.centerX; py = node.centerY
-            note = "定位到「${node.label.ifBlank { node.shortClass }}」→ 点 (${px}, ${py})"
+            note = L("定位到「%s」→ 点 (%s, %s)")
+                .format(node.label.ifBlank { node.shortClass }, px, py)
         }
 
         val cmd = if (longPress) {
@@ -575,9 +595,18 @@ object ToolsUi {
         } else {
             "input tap $px $py"
         }
-        val res = exec(ctx, launcher, cmd, summary = (if (longPress) "长按 " else "点击 ") + note, timeoutMs = 20_000)
-        if (!res.ok) ctx.fail("点击命令失败（退出码 ${res.exitCode}）：\n" + (res.stderr + res.stdout).trim().take(400))
-        ToolResult("$note\n（已通过 ${launcher.label} 执行：$cmd）")
+        val res = exec(
+            ctx, launcher, cmd,
+            summary = (if (longPress) L("长按 ") else L("点击 ")) + note,
+            timeoutMs = 20_000
+        )
+        if (!res.ok) {
+            ctx.fail(
+                L("点击命令失败（退出码 %s）：\n").format(res.exitCode) +
+                    (res.stderr + res.stdout).trim().take(400)
+            )
+        }
+        ToolResult(L("%s\n（已通过 %s 执行：%s）").format(note, L(launcher.label), cmd))
     }
 
     // --------------------------------------------------------------- ui_swipe
@@ -628,14 +657,26 @@ object ToolsUi {
         val label: String
         if (x1 != null && y1 != null && x2 != null && y2 != null) {
             sx = x1; sy = y1; ex = x2; ey = y2
-            label = "从 ($sx,$sy) 滑到 ($ex,$ey)"
+            label = L("从 (%s,%s) 滑到 (%s,%s)").format(sx, sy, ex, ey)
         } else {
             when (ctx.args.str("direction")?.lowercase()) {
-                "up" -> { sx = fromX; sy = fromY; ex = fromX; ey = fromY - dist; label = "内容上滚 $dist px" }
-                "down" -> { sx = fromX; sy = fromY; ex = fromX; ey = fromY + dist; label = "内容下滚 $dist px" }
-                "left" -> { sx = fromX; sy = fromY; ex = fromX - dist; ey = fromY; label = "向左滑 $dist px" }
-                "right" -> { sx = fromX; sy = fromY; ex = fromX + dist; ey = fromY; label = "向右滑 $dist px" }
-                else -> ctx.fail("请给 direction（up / down / left / right），或者给全 x1 y1 x2 y2 四个坐标")
+                "up" -> {
+                    sx = fromX; sy = fromY; ex = fromX; ey = fromY - dist
+                    label = L("内容上滚 %s px").format(dist)
+                }
+                "down" -> {
+                    sx = fromX; sy = fromY; ex = fromX; ey = fromY + dist
+                    label = L("内容下滚 %s px").format(dist)
+                }
+                "left" -> {
+                    sx = fromX; sy = fromY; ex = fromX - dist; ey = fromY
+                    label = L("向左滑 %s px").format(dist)
+                }
+                "right" -> {
+                    sx = fromX; sy = fromY; ex = fromX + dist; ey = fromY
+                    label = L("向右滑 %s px").format(dist)
+                }
+                else -> ctx.fail(L("请给 direction（up / down / left / right），或者给全 x1 y1 x2 y2 四个坐标"))
             }
         }
 
@@ -645,9 +686,18 @@ object ToolsUi {
                 append("input swipe $sx $sy $ex $ey $duration")
             }
         }
-        val res = exec(ctx, launcher, cmd, summary = "滑动：$label", timeoutMs = 20_000 + duration.toLong() * repeat)
-        if (!res.ok) ctx.fail("滑动命令失败（退出码 ${res.exitCode}）：\n" + (res.stderr + res.stdout).trim().take(400))
-        ToolResult("$label（重复 $repeat 次，每个 ${duration}ms）")
+        val res = exec(
+            ctx, launcher, cmd,
+            summary = L("滑动：%s").format(label),
+            timeoutMs = 20_000 + duration.toLong() * repeat
+        )
+        if (!res.ok) {
+            ctx.fail(
+                L("滑动命令失败（退出码 %s）：\n").format(res.exitCode) +
+                    (res.stderr + res.stdout).trim().take(400)
+            )
+        }
+        ToolResult(L("%s（重复 %s 次，每个 %sms）").format(label, repeat, duration))
     }
 
     // --------------------------------------------------------------- ui_input
@@ -671,8 +721,8 @@ object ToolsUi {
         )
     ) { ctx ->
         val launcher = pickLauncher(ctx, ctx.args.strOr("backend", "auto"))
-        val text = ctx.args.str("text") ?: ctx.fail("缺少 text")
-        if (text.isEmpty()) ctx.fail("text 不能为空")
+        val text = ctx.args.str("text") ?: ctx.fail(L("缺少 text"))
+        if (text.isEmpty()) ctx.fail(L("text 不能为空"))
 
         val cmds = ArrayList<String>()
         if (ctx.args.boolOr("clear", false)) {
@@ -686,15 +736,15 @@ object ToolsUi {
             val ok = ctx.host?.setClipboard(text) ?: false
             if (!ok) {
                 ctx.fail(
-                    "这段文字含非 ASCII 字符（中文等），安卓的 `input text` 输不进去，需要走剪贴板粘贴，" +
-                        "但当前拿不到剪贴板能力。\n可以用 ui_input 只输英文数字，" +
-                        "或者用 run_shell 配合别的输入法方案。"
+                    L("这段文字含非 ASCII 字符（中文等），安卓的 `input text` 输不进去，需要走剪贴板粘贴，") +
+                        L("但当前拿不到剪贴板能力。\n可以用 ui_input 只输英文数字，") +
+                        L("或者用 run_shell 配合别的输入法方案。")
                 )
             }
-            how = "剪贴板 + 粘贴（KEYCODE_PASTE）"
+            how = L("剪贴板 + 粘贴（KEYCODE_PASTE）")
             cmds.add("input keyevent 279")                       // PASTE
         } else {
-            how = "直接键入（input text）"
+            how = L("直接键入（input text）")
             cmds.add("input text " + FileBridge.shellQuote(text.replace(" ", "%s")))
         }
         if (ctx.args.boolOr("submit", false)) cmds.add("input keyevent 66")
@@ -702,14 +752,22 @@ object ToolsUi {
         val joined = cmds.joinToString("; ")
         val res = exec(
             ctx, launcher, joined,
-            summary = "输入文字：${text.take(40)}${if (text.length > 40) "…" else ""}（$how）",
+            summary = L("输入文字：%s%s（%s）")
+                .format(text.take(40), if (text.length > 40) "…" else "", how),
             timeoutMs = 40_000
         )
-        if (!res.ok) ctx.fail("输入失败（退出码 ${res.exitCode}）：\n" + (res.stderr + res.stdout).trim().take(400))
+        if (!res.ok) {
+            ctx.fail(
+                L("输入失败（退出码 %s）：\n").format(res.exitCode) +
+                    (res.stderr + res.stdout).trim().take(400)
+            )
+        }
         ToolResult(
-            "已输入 ${text.length} 个字符（$how）\n" +
-                (if (usePaste) "提示：粘贴前输入框必须有焦点，且文字确实进了剪贴板；如果没生效，先 ui_tap 点一下输入框再试。\n" else "") +
-                (if (ctx.args.boolOr("submit", false)) "已按回车提交。\n" else "")
+            L("已输入 %s 个字符（%s）\n").format(text.length, how) +
+                (if (usePaste) {
+                    L("提示：粘贴前输入框必须有焦点，且文字确实进了剪贴板；如果没生效，先 ui_tap 点一下输入框再试。\n")
+                } else "") +
+                (if (ctx.args.boolOr("submit", false)) L("已按回车提交。\n") else "")
         )
     }
 
@@ -735,18 +793,33 @@ object ToolsUi {
     ) { ctx ->
         val launcher = pickLauncher(ctx, ctx.args.strOr("backend", "auto"))
         val raw = ctx.args.str("key")?.trim().orEmpty()
-        if (raw.isEmpty()) ctx.fail("缺少 key")
+        if (raw.isEmpty()) ctx.fail(L("缺少 key"))
         val code = raw.toIntOrNull()
             ?: KEYS[raw.lowercase().replace('-', '_').replace(" ", "_")]
             ?: ctx.fail(
-                "不认识的按键：$raw\n可用：" + KEYS.keys.joinToString(" / ") + "，或者直接给数字键值（如 4 = 返回）"
+                L("不认识的按键：%s\n可用：").format(raw) +
+                    KEYS.keys.joinToString(" / ") +
+                    L("，或者直接给数字键值（如 4 = 返回）")
             )
         val repeat = ctx.args.intOr("repeat", 1).coerceIn(1, 50)
         val cmd = "input keyevent " + List(repeat) { code.toString() }.joinToString(" ")
-        val res = exec(ctx, launcher, cmd, summary = "按键：$raw（$code）${if (repeat > 1) " ×$repeat" else ""}", timeoutMs = 20_000)
-        if (!res.ok) ctx.fail("按键失败（退出码 ${res.exitCode}）：\n" + (res.stderr + res.stdout).trim().take(400))
+        val res = exec(
+            ctx, launcher, cmd,
+            summary = L("按键：%s（%s）%s")
+                .format(raw, code, if (repeat > 1) " ×$repeat" else ""),
+            timeoutMs = 20_000
+        )
+        if (!res.ok) {
+            ctx.fail(
+                L("按键失败（退出码 %s）：\n").format(res.exitCode) +
+                    (res.stderr + res.stdout).trim().take(400)
+            )
+        }
         val fg = runCatching { foreground(launcher) }.getOrDefault("")
-        ToolResult("已按 $raw（keycode $code）${if (repeat > 1) " $repeat 次" else ""}\n当前前台：$fg")
+        ToolResult(
+            L("已按 %s（keycode %s）%s\n当前前台：%s")
+                .format(raw, code, if (repeat > 1) L(" %s 次").format(repeat) else "", fg)
+        )
     }
 
     /** 常用按键 → keycode。名字跟着 Android 的 KEYCODE_ 常量走。 */
@@ -804,8 +877,10 @@ object ToolsUi {
         when (val action = ctx.args.strOr("action", "app")) {
             "home" -> {
                 val res = exec(ctx, launcher, "input keyevent 3", summary = "回桌面", timeoutMs = 20_000)
-                if (!res.ok) ctx.fail("回桌面失败：\n" + (res.stderr + res.stdout).trim().take(300))
-                ToolResult("已回到桌面")
+                if (!res.ok) {
+                    ctx.fail(L("回桌面失败：\n") + (res.stderr + res.stdout).trim().take(300))
+                }
+                ToolResult(L("已回到桌面"))
             }
 
             "current" -> {
@@ -816,7 +891,10 @@ object ToolsUi {
                     "dumpsys activity activities 2>/dev/null | grep -m1 -E 'ResumedActivity|topResumedActivity'",
                     null, 15_000
                 ).stdout.trim()
-                ToolResult("当前前台：$fg\n" + (if (act.isNotBlank()) act else "（拿不到 activity 信息）"))
+                ToolResult(
+                    L("当前前台：%s\n").format(fg) +
+                        (if (act.isNotBlank()) act else L("（拿不到 activity 信息）"))
+                )
             }
 
             "list" -> {
@@ -825,32 +903,43 @@ object ToolsUi {
                 val pkgs = out.lineSequence().map { it.removePrefix("package:").trim() }
                     .filter { it.isNotBlank() }.sorted().toList()
                 ToolResult(
-                    "第三方应用 ${pkgs.size} 个：\n" +
-                        pkgs.take(200).joinToString("\n").ifBlank { "（没有查到）" } +
-                        if (pkgs.size > 200) "\n… 还有 ${pkgs.size - 200} 个" else ""
+                    L("第三方应用 %s 个：\n").format(pkgs.size) +
+                        pkgs.take(200).joinToString("\n").ifBlank { L("（没有查到）") } +
+                        if (pkgs.size > 200) L("\n… 还有 %s 个").format(pkgs.size - 200) else ""
                 )
             }
 
             "app" -> {
                 val pkg = ctx.args.str("package")?.trim().orEmpty()
-                if (pkg.isBlank()) ctx.fail("action=app 需要给 package（包名）。不知道包名可以先用 action=list 查。")
-                if (!PKG_NAME.matches(pkg)) ctx.fail("包名格式不对：$pkg（应该是 com.xxx.yyy 这种）")
+                if (pkg.isBlank()) {
+                    ctx.fail(L("action=app 需要给 package（包名）。不知道包名可以先用 action=list 查。"))
+                }
+                if (!PKG_NAME.matches(pkg)) {
+                    ctx.fail(L("包名格式不对：%s（应该是 com.xxx.yyy 这种）").format(pkg))
+                }
                 val cmd = "monkey -p $pkg -c android.intent.category.LAUNCHER 1 2>&1 | tail -2"
-                val res = exec(ctx, launcher, cmd, summary = "启动应用 $pkg", timeoutMs = 30_000)
+                val res = exec(
+                    ctx, launcher, cmd,
+                    summary = L("启动应用 %s").format(pkg),
+                    timeoutMs = 30_000
+                )
                 val out = (res.stdout + res.stderr).trim()
                 val ok = out.contains("Events injected: 1") || !out.contains("No activities found")
                 if (!ok) {
                     ctx.fail(
-                        "启动 $pkg 失败：\n" + out.take(400) +
-                            "\n\n可能这个包名不存在，或者它没有可启动的界面（是纯后台服务）。"
+                        L("启动 %s 失败：\n").format(pkg) + out.take(400) +
+                            L("\n\n可能这个包名不存在，或者它没有可启动的界面（是纯后台服务）。")
                     )
                 }
                 Thread.sleep(400)
                 val fg = runCatching { foreground(launcher) }.getOrDefault("")
-                ToolResult("已启动 $pkg\n当前前台：$fg\n\n提示：启动后稍等一下再 ui_dump，界面可能还在加载。")
+                ToolResult(
+                    L("已启动 %s\n当前前台：%s\n\n提示：启动后稍等一下再 ui_dump，界面可能还在加载。")
+                        .format(pkg, fg)
+                )
             }
 
-            else -> ctx.fail("不认识的 action：$action（可用 app / home / current / list）")
+            else -> ctx.fail(L("不认识的 action：%s（可用 app / home / current / list）").format(action))
         }
     }
 
@@ -880,7 +969,9 @@ object ToolsUi {
         val text = ctx.args.str("text")
         val desc = ctx.args.str("desc")
         val id = ctx.args.str("id")
-        if (text == null && desc == null && id == null) ctx.fail("至少要给 text / desc / id 之一")
+        if (text == null && desc == null && id == null) {
+            ctx.fail(L("至少要给 text / desc / id 之一"))
+        }
         val disappear = ctx.args.boolOr("disappear", false)
         val timeout = ctx.args.longOr("timeoutMs", 8_000).coerceIn(500L, 120_000L)
         val interval = ctx.args.longOr("intervalMs", 500).coerceIn(200L, 5_000L)
@@ -911,15 +1002,27 @@ object ToolsUi {
             if (present != disappear) {
                 val took = System.currentTimeMillis() - started
                 return@ToolSpec ToolResult(
-                    "「$what」已${if (disappear) "消失" else "出现"}（等了 ${took}ms，查了 $rounds 次）\n" +
-                        (last?.let { "位置：中心(${it.centerX},${it.centerY}) 范围[${it.left},${it.top}][${it.right},${it.bottom}]\n" } ?: "")
+                    L("「%s」已%s（等了 %sms，查了 %s 次）\n").format(
+                        what,
+                        if (disappear) L("消失") else L("出现"),
+                        took,
+                        rounds
+                    ) +
+                        (
+                            last?.let {
+                                L("位置：中心(%s,%s) 范围[%s,%s][%s,%s]\n").format(
+                                    it.centerX, it.centerY, it.left, it.top, it.right, it.bottom
+                                )
+                            } ?: ""
+                        )
                 )
             }
             Thread.sleep(interval)
         }
         ctx.fail(
-            "等了 ${timeout}ms，「$what」还是${if (disappear) "在" else "没出现"}。\n" +
-                "可以用 ui_dump 看看当前屏幕上到底有什么（或者 ui_screenshot 看画面）。"
+            L("等了 %sms，「%s」还是%s。\n")
+                .format(timeout, what, if (disappear) L("在") else L("没出现")) +
+                L("可以用 ui_dump 看看当前屏幕上到底有什么（或者 ui_screenshot 看画面）。")
         )
     }
 }
