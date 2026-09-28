@@ -24,6 +24,9 @@ object UpdateChecker {
     const val REPO_URL = "https://github.com/xtt-xt/MCPBox"
     const val RELEASES_URL = "$REPO_URL/releases"
 
+    /** 说明正文的兜底上限（弹窗里可滚动，正常 Release 正文远小于这个数）。 */
+    private const val NOTES_LIMIT = 20000
+
     data class Info(
         val tag: String,
         val version: String,
@@ -68,11 +71,18 @@ object UpdateChecker {
             )
         }
         val tag = json.optString("tag_name").ifBlank { return Result.Failed(L("没有读到版本号")) }
+        val body = json.optString("body")
         val info = Info(
             tag = tag,
             version = tag.removePrefix("v").trim(),
             url = json.optString("html_url").ifBlank { RELEASES_URL },
-            notes = json.optString("body").take(1200),
+            // 弹窗里的正文是可滚动的，所以**不再截断**（以前砍到 1200 字，滚到底只有一个「已」字）；
+            // 只留一个很高的兜底上限，真超了就在末尾说明一句
+            notes = if (body.length > NOTES_LIMIT) {
+                body.take(NOTES_LIMIT) + L("\n\n…（说明太长，这里只显示前面一部分，完整内容见 Releases 页面）")
+            } else {
+                body
+            },
             publishedAt = json.optString("published_at").take(10)
         )
         return when {

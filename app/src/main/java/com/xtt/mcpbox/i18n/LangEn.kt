@@ -549,8 +549,10 @@ object LangEn {
 
 
 
+
     // ---------------- i18n 第十批（补）：更新弹窗预览改用真实 Release
     "没连上 GitHub：%s" to "GitHub unreachable: %s",
+    "\n\n…（说明太长，这里只显示前面一部分，完整内容见 Releases 页面）" to "\n\n… (the notes are very long; only the beginning is shown here — see the Releases page for the full text)",
     "不管当前是什么版本，直接弹一次更新提示，显示 GitHub 上最新的 Release" to "Shows the update dialog once no matter which version you are on, using the latest release on GitHub",
     "正在检查…取到就用最新 Release 的真实内容" to "Checking… the latest release is used when reachable",
     "用最新 Release %s 预览" to "Previewing with the latest release %s",
