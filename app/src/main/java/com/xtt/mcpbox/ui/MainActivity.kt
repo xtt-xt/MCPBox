@@ -220,56 +220,14 @@ fun AppRoot(
     shownUpdate?.let { info ->
         val previewing = updateInfo == null
         fun closeUpdate() { if (previewing) previewUpdate = null else updateInfo = null }
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { closeUpdate() },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = {
-                androidx.compose.material3.Text(
-                    if (previewing) L("发现新版本 %s（预览）").format(info.tag)
-                    else L("发现新版本 %s").format(info.tag),
-                    fontSize = 20.sp
-                )
+        UpdateAvailableDialog(
+            info = info,
+            previewing = previewing,
+            onDownload = {
+                openUrl(ctx, info.url)
+                closeUpdate()
             },
-            text = {
-                androidx.compose.foundation.layout.Column {
-                    if (previewing) {
-                        androidx.compose.material3.Text(
-                            L("开发者模式预览：忽略版本比较，直接显示 GitHub 上最新的 Release 说明（发布于 %s）。")
-                                .format(info.publishedAt.ifBlank { L("未知") }),
-                            color = Sem.warn,
-                            fontSize = 12.5.sp
-                        )
-                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                    }
-                    androidx.compose.material3.Text(
-                        L("当前版本 %s").format(com.xtt.mcpbox.core.ServerMeta.fullVersion),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.5.sp
-                    )
-                    if (info.notes.isNotBlank()) {
-                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                        androidx.compose.material3.Text(
-                            info.notes.take(600),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.5.sp,
-                            lineHeight = 18.sp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    openUrl(ctx, info.url)
-                    closeUpdate()
-                }) { androidx.compose.material3.Text(L("去下载"), color = MaterialTheme.colorScheme.primary) }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { closeUpdate() }) {
-                    androidx.compose.material3.Text(L("稍后"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+            onDismiss = { closeUpdate() }
         )
     }
 
