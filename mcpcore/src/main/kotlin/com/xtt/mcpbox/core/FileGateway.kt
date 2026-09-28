@@ -121,7 +121,7 @@ class FileGateway(
                 )
             }
         } catch (e: PermissionDeniedException) {
-            json(403, false, e.message ?: "没有获得写入许可")
+            json(403, false, e.message ?: L("没有获得写入许可"))
         }
     }
 
@@ -184,7 +184,7 @@ class FileGateway(
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MCP 文件盒 · 上传</title>
+<title>${L("MCP 文件盒 · 上传")}</title>
 <style>
   :root { color-scheme: dark; }
   body { margin:0; background:#0b0b0d; color:#e8e6ea;
@@ -203,16 +203,16 @@ class FileGateway(
   pre { background:#141416; border-radius:16px; padding:12px; font-size:12px;
         white-space:pre-wrap; word-break:break-all; margin:12px 0 0; }
 </style></head><body>
-<h1>上传到手机</h1>
-<p class="sub">选一个文件 + 填目标路径，直接写进手机存储（会按权限设置弹审批）</p>
+<h1>${L("上传到手机")}</h1>
+<p class="sub">${L("选一个文件 + 填目标路径，直接写进手机存储（会按权限设置弹审批）")}</p>
 <div class="card">
-  <label>目标路径（可以只写到目录，会自动带上原文件名）</label>
+  <label>${L("目标路径（可以只写到目录，会自动带上原文件名）")}</label>
   <input type="text" id="path" value="/storage/emulated/0/xtt/app/mcp/">
-  <label>文件</label>
+  <label>${L("文件")}</label>
   <input type="file" id="file">
-  <button id="go" onclick="up()">开始上传</button>
+  <button id="go" onclick="up()">${L("开始上传")}</button>
   <progress id="bar" value="0" max="100" style="display:none"></progress>
-  <pre id="out">等待中…</pre>
+  <pre id="out">${L("等待中…")}</pre>
 </div>
 <script>
 function up() {
@@ -220,17 +220,17 @@ function up() {
   const p = document.getElementById('path').value.trim();
   const out = document.getElementById('out');
   const bar = document.getElementById('bar');
-  if (!f) { out.textContent = '先选一个文件'; return; }
-  if (!p) { out.textContent = '先填目标路径'; return; }
+  if (!f) { out.textContent = '${L("先选一个文件")}'; return; }
+  if (!p) { out.textContent = '${L("先填目标路径")}'; return; }
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/upload?path=' + encodeURIComponent(p) + '&name=' + encodeURIComponent(f.name));
   xhr.setRequestHeader('Content-Type', f.type || 'application/octet-stream');
   bar.style.display = 'block';
   bar.value = 0;
-  out.textContent = '上传中…';
+  out.textContent = '${L("上传中…")}';
   xhr.upload.onprogress = e => { if (e.lengthComputable) bar.value = e.loaded / e.total * 100; };
   xhr.onload = () => { out.textContent = xhr.responseText; bar.value = 100; };
-  xhr.onerror = () => { out.textContent = '失败：网络错误'; };
+  xhr.onerror = () => { out.textContent = '${L("失败：网络错误")}'; };
   xhr.send(f);
 }
 </script>

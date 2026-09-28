@@ -65,7 +65,7 @@ object WebConsole {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MCP 文件盒 · 控制台</title>
+<title>${L("MCP 文件盒 · 控制台")}</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -100,36 +100,36 @@ object WebConsole {
 </head>
 <body>
 <header>
-  <h1>MCP 文件盒 · 控制台 <span class="muted">v__VERSION__</span></h1>
-  <div class="muted"><span class="dot" id="dot"></span> <span id="stat">连接中…</span></div>
+  <h1>${L("MCP 文件盒 · 控制台")} <span class="muted">v__VERSION__</span></h1>
+  <div class="muted"><span class="dot" id="dot"></span> <span id="stat">${L("连接中…")}</span></div>
 </header>
 <main>
   <div class="card">
-    <h2>连接信息</h2>
-    <div class="muted">MCP 地址（HTTP）：<code id="ep"></code></div>
-    <div class="muted">允许目录：__ROOTS__</div>
-    <div class="muted">访问令牌：<code id="tk"></code>（客户端需带 <code>Authorization: Bearer</code> 或 <code>?token=</code>）</div>
+    <h2>${L("连接信息")}</h2>
+    <div class="muted">${L("MCP 地址（HTTP）：")}<code id="ep"></code></div>
+    <div class="muted">${L("允许目录：")}__ROOTS__</div>
+    <div class="muted">${L("访问令牌：")}<code id="tk"></code>${L("（客户端需带 Authorization: Bearer 或 ?token=）")}</div>
   </div>
 
   <div class="card">
-    <h2>待审批请求 <span class="tag" id="pendCount">0</span></h2>
-    <div id="pendList" class="muted">暂无</div>
+    <h2>${L("待审批请求")} <span class="tag" id="pendCount">0</span></h2>
+    <div id="pendList" class="muted">${L("暂无")}</div>
   </div>
 
   <div class="card">
-    <h2>工具测试</h2>
+    <h2>${L("工具测试")}</h2>
     <div class="row" style="margin-bottom:10px">
       <select id="tool" style="flex:2"></select>
-      <button class="sec" onclick="fillExample()">填充参数</button>
-      <button onclick="run()">执行</button>
+      <button class="sec" onclick="fillExample()">${L("填充参数")}</button>
+      <button onclick="run()">${L("执行")}</button>
     </div>
     <textarea id="args" spellcheck="false">{}</textarea>
-    <pre id="result" style="margin-top:10px">（结果会显示在这里）</pre>
+    <pre id="result" style="margin-top:10px">${L("（结果会显示在这里）")}</pre>
   </div>
 
   <div class="card">
-    <h2>最近日志</h2>
-    <div id="log" class="muted">加载中…</div>
+    <h2>${L("最近日志")}</h2>
+    <div id="log" class="muted">${L("加载中…")}</div>
   </div>
 </main>
 <script>
@@ -208,14 +208,14 @@ async function refreshPending(){
     const list = p.pending || [];
     document.getElementById('pendCount').textContent = list.length;
     const box = document.getElementById('pendList');
-    if (!list.length) { box.innerHTML = '<span class="muted">暂无</span>'; return; }
+    if (!list.length) { box.innerHTML = '<span class="muted">${L("暂无")}</span>'; return; }
     box.innerHTML = list.map(x =>
       '<div class="pend"><div><b>' + x.summary + '</b></div>' +
-      '<div class="muted">工具 ' + x.tool + ' · 权限 ' + x.perm + ' · 来自 ' + (x.client||'?') + '</div>' +
+      '<div class="muted">${L("工具")} ' + x.tool + ' · ${L("权限")} ' + x.perm + ' · ${L("来自")} ' + (x.client||'?') + '</div>' +
       '<div class="row" style="margin-top:8px">' +
-      '<button onclick="approve(\'' + x.id + '\',\'allow_once\')">允许一次</button>' +
-      '<button class="sec" onclick="approve(\'' + x.id + '\',\'allow_always\')">始终允许</button>' +
-      '<button class="warn" onclick="approve(\'' + x.id + '\',\'deny_once\')">拒绝</button>' +
+      '<button onclick="approve(\'' + x.id + '\',\'allow_once\')">${L("允许一次")}</button>' +
+      '<button class="sec" onclick="approve(\'' + x.id + '\',\'allow_always\')">${L("始终允许")}</button>' +
+      '<button class="warn" onclick="approve(\'' + x.id + '\',\'deny_once\')">${L("拒绝")}</button>' +
       '</div></div>').join('');
   } catch(e) {}
 }
@@ -234,7 +234,7 @@ async function refreshLog(){
       return '<div class="logline">' + t + ' ' + tag(e.ok) + ' <span class="muted">[' + e.kind + ']</span> ' +
              (e.tool ? '<b>' + e.tool + '</b> ' : '') + (e.path ? '<span class="muted">' + e.path + '</span> ' : '') +
              e.message + '</div>';
-    }).join('') : '<span class="muted">暂无日志</span>';
+    }).join('') : '<span class="muted">${L("暂无日志")}</span>';
   } catch(e) {}
 }
 

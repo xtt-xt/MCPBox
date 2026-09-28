@@ -542,6 +542,8 @@ object LangEn {
 
 
 
+
+
     // ---------------- i18n 第二批：通知栏 / 前台服务 / Shizuku / 终端 / 更新检查 / 网络
     "停止服务" to "Stop service",
     "打开控制台" to "Open console",
@@ -1438,5 +1440,81 @@ object LangEn {
     "密码不对，再试一次" to "Wrong password, try again",
     "提示：还没单独设置网页密码，这里填 App 里显示的访问令牌（token）就能进。" to "Tip: no web password has been set, so enter the access token shown in the app to get in.",
     "密码可以在 App 的「设置 → 网页控制台 → 访问密码」里改。" to "You can change the password in the app under Settings → Web console → Access password.",
+
+    // ---------------- i18n 第七批：HTTP / RPC 报错
+    "未知客户端" to "Unknown client",
+    "已开启「仅本机访问」：这个服务只接受来自 localhost 的请求。\n" to "Local-only access is on: this service only accepts requests from localhost.\n",
+    "想让局域网里的设备（电脑、其它手机）访问，请在 App 的「设置 → 网页控制台」里关掉它。" to "To let LAN devices (a computer, another phone) reach it, turn this off in the app under Settings → Web console.",
+    "需要 id 和 decision" to "id and decision are required",
+    "未知路径: %s" to "Unknown path: %s",
+    "缺少或错误的访问令牌（token）" to "Missing or wrong access token",
+    "空请求体" to "Empty request body",
+    "JSON 解析失败" to "Failed to parse JSON",
+    "缺少 Mcp-Session-Id，请先 POST initialize" to "Missing Mcp-Session-Id — POST initialize first",
+    "不支持的方法 %s" to "Unsupported method %s",
+    "不支持的方法：%s" to "Unsupported method: %s",
+    "未授权：缺少或错误的 token" to "Unauthorized: missing or wrong token",
+    "会话不存在" to "Session does not exist",
+    "缺少 method" to "Missing method",
+    "请求体不是 JSON 对象" to "The request body is not a JSON object",
+    "缺少 tool" to "Missing tool",
+    "tools/call 缺少参数 name" to "tools/call is missing the name argument",
+    "未知工具：%s（可用 tools/list 查看全部工具）" to "Unknown tool: %s (use tools/list to see them all)",
+    "工具「%s」已在 App 里被禁用（可在「设置 → 工具管理」里启用）" to "Tool \"%s\" is disabled in the app (re-enable it under Settings → Tool management)",
+    "工具包现在由用户在 App 里手动管理，「%s」没有开放给 AI。\n" to "Tool packs are managed manually by the user in the app; \"%s\" is not exposed to the AI.\n",
+    "需要的话请让用户去「权限 → 工具包」勾选好要用的包，" to "If you need it, ask the user to tick the packs they need under Permissions → Tool packs, ",
+    "并打开「让 AI 自己开关工具包」，然后重新连接 MCP 服务。" to "turn on \"Let the AI manage tool packs\", and then reconnect the MCP service.",
+    "工具执行异常：%s: %s" to "Tool execution error: %s: %s",
+
+    // ---------------- i18n 第七批：终端标记与 Shell 提示
+    "不需要额外权限，只能操作应用有权访问的文件" to "No extra permission needed; can only touch files the app can access",
+    "[读取输出失败：%s]" to "[failed to read output: %s]",
+    "[写入失败：%s]" to "[failed to write: %s]",
+    "[超时，已中断]" to "[timed out, interrupted]",
+    "[输出过长已截断]" to "[output too long, truncated]",
+    "[UI] 换用「%s」后端读到了界面结构" to "[UI] switched to the %s backend and read the UI tree",
+    "不可用" to "unavailable",
+    "没有获得写入许可" to "No write permission granted",
+
+    // ---------------- i18n 第八批：设备信息标签
+    "型号" to "Model",
+    "品牌" to "Brand",
+    "Android 版本" to "Android version",
+    "App 版本" to "App version",
+    "主根目录" to "Primary root",
+    "根目录可用" to "Root free",
+    "根目录总计" to "Root total",
+    "外部存储可用" to "External storage free",
+    "电量" to "Battery",
+    "：" to ": ",
+
+    // ---------------- i18n 第八批：网页控制台 / 上传页
+    "MCP 文件盒 · 控制台" to "MCP Box · Console",
+    "连接中…" to "Connecting…",
+    "连接信息" to "Connection info",
+    "MCP 地址（HTTP）：" to "MCP address (HTTP): ",
+    "允许目录：" to "Allowed directories: ",
+    "访问令牌：" to "Access token: ",
+    "（客户端需带 Authorization: Bearer 或 ?token=）" to " (clients must send Authorization: Bearer or ?token=)",
+    "待审批请求" to "Pending approvals",
+    "暂无" to "None",
+    "工具测试" to "Tool test",
+    "填充参数" to "Fill example",
+    "（结果会显示在这里）" to "(the result shows up here)",
+    "最近日志" to "Recent logs",
+    "加载中…" to "Loading…",
+    "工具" to "Tool",
+    "来自" to "from",
+    "暂无日志" to "No logs yet",
+    "MCP 文件盒 · 上传" to "MCP Box · Upload",
+    "上传到手机" to "Upload to the phone",
+    "选一个文件 + 填目标路径，直接写进手机存储（会按权限设置弹审批）" to "Pick a file, enter a target path, and write it straight to the phone (an approval prompt may appear)",
+    "目标路径（可以只写到目录，会自动带上原文件名）" to "Target path (a directory is fine — the original file name is appended)",
+    "开始上传" to "Start upload",
+    "等待中…" to "Waiting…",
+    "先选一个文件" to "Pick a file first",
+    "先填目标路径" to "Enter a target path first",
+    "上传中…" to "Uploading…",
+    "失败：网络错误" to "Failed: network error",
     )
 }

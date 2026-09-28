@@ -66,8 +66,8 @@ object ToolsShell {
         ShellMirror.emit(buildString {
             append(result.stdout)
             if (result.stderr.isNotBlank()) append(result.stderr)
-            if (result.timedOut) append("\n[超时，已中断]\n")
-            if (result.truncated) append("\n[输出过长已截断]\n")
+            if (result.timedOut) append("\n" + L("[超时，已中断]") + "\n")
+            if (result.truncated) append("\n" + L("[输出过长已截断]") + "\n")
         })
         ctx.log.add(
             LogKind.REQUEST, tool = ctx.tool, path = workdir, client = ctx.client,

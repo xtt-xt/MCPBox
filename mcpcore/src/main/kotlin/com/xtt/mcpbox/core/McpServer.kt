@@ -24,7 +24,7 @@ class Session(
     @Volatile var requestCount: Int = 0
 
     fun label(): String =
-        (if (clientName.isBlank()) "未知客户端" else clientName) +
+        (if (clientName.isBlank()) L("未知客户端") else clientName) +
             (if (clientVersion.isBlank()) "" else " $clientVersion")
 }
 
@@ -180,8 +180,8 @@ class McpServer(
         if (config.consoleLocalOnly && !isLoopback(req.remote)) {
             return ex.respondText(
                 403, "text/plain; charset=utf-8",
-                "已开启「仅本机访问」：这个服务只接受来自 localhost 的请求。\n" +
-                    "想让局域网里的设备（电脑、其它手机）访问，请在 App 的「设置 → 网页控制台」里关掉它。",
+                L("已开启「仅本机访问」：这个服务只接受来自 localhost 的请求。\n") +
+                    L("想让局域网里的设备（电脑、其它手机）访问，请在 App 的「设置 → 网页控制台」里关掉它。"),
                 cors
             )
         }
@@ -268,7 +268,7 @@ class McpServer(
                 if (id == null || decision == null) {
                     ex.respondText(
                         400, "application/json; charset=utf-8",
-                        jo("error" to "需要 id 和 decision").toString(), cors
+                        jo("error" to L("需要 id 和 decision")).toString(), cors
                     )
                 } else {
                     val ok = approval.resolve(id, decision)
@@ -280,7 +280,8 @@ class McpServer(
             }
             "/api/call" -> withAuth(req, ex, cors) { handleRestCall(req, ex, cors) }
             else -> ex.respondText(
-                404, "application/json; charset=utf-8", jo("error" to "未知路径: $path").toString(), cors
+                404, "application/json; charset=utf-8",
+                jo("error" to L("未知路径: %s").format(path)).toString(), cors
             )
         }
     }
@@ -382,7 +383,7 @@ class McpServer(
         if (!checkAuth(req)) {
             return ex.respondText(
                 401, "application/json; charset=utf-8",
-                jo("error" to "缺少或错误的访问令牌（token）").toString(),
+                jo("error" to L("缺少或错误的访问令牌（token）")).toString(),
                 cors + mapOf("WWW-Authenticate" to "Bearer")
             )
         }
@@ -415,7 +416,7 @@ class McpServer(
         if (!checkAuth(req)) {
             return ex.respondText(
                 401, "application/json; charset=utf-8",
-                rpcError(null, -32001, "缺少或错误的访问令牌（token）").toString(),
+                rpcError(null, -32001, L("缺少或错误的访问令牌（token）")).toString(),
                 cors + mapOf("WWW-Authenticate" to "Bearer")
             )
         }
@@ -426,13 +427,13 @@ class McpServer(
                 if (body.isBlank()) {
                     return ex.respondText(
                         400, "application/json; charset=utf-8",
-                        rpcError(null, -32700, "空请求体").toString(), cors
+                        rpcError(null, -32700, L("空请求体")).toString(), cors
                     )
                 }
                 val parsed = runCatching { J.parseToJsonElement(body) }.getOrNull()
                     ?: return ex.respondText(
                         200, "application/json; charset=utf-8",
-                        rpcError(null, -32700, "JSON 解析失败").toString(), cors
+                        rpcError(null, -32700, L("JSON 解析失败")).toString(), cors
                     )
                 val wantsSse = when (config.responseMode) {
                     Config.Modes.SSE -> true
@@ -467,7 +468,7 @@ class McpServer(
                 if (session == null) {
                     ex.respondText(
                         400, "application/json; charset=utf-8",
-                        rpcError(null, -32000, "缺少 Mcp-Session-Id，请先 POST initialize").toString(), cors
+                        rpcError(null, -32000, L("缺少 Mcp-Session-Id，请先 POST initialize")).toString(), cors
                     )
                 } else {
                     streamSession(session, ex, cors)
@@ -483,7 +484,7 @@ class McpServer(
             }
             else -> ex.respondText(
                 405, "application/json; charset=utf-8",
-                rpcError(null, -32600, "不支持的方法 ${req.method}").toString(), cors
+                rpcError(null, -32600, L("不支持的方法 %s").format(req.method)).toString(), cors
             )
         }
     }
@@ -513,7 +514,7 @@ class McpServer(
         profile: String = ProfileStore.DEFAULT_ID
     ): Boolean {
         if (!checkAuth(req)) {
-            return ex.respondText(401, "text/plain; charset=utf-8", "未授权：缺少或错误的 token", cors)
+            return ex.respondText(401, "text/plain; charset=utf-8", L("未授权：缺少或错误的 token"), cors)
         }
         val session = Session(
             id = Tokens.newId(),
@@ -547,16 +548,16 @@ class McpServer(
 
     private fun handleLegacyMessages(req: HttpRequest, ex: Exchange, cors: Map<String, String>): Boolean {
         if (!checkAuth(req)) {
-            return ex.respondText(401, "application/json; charset=utf-8", jo("error" to "未授权").toString(), cors)
+            return ex.respondText(401, "application/json; charset=utf-8", jo("error" to L("未授权")).toString(), cors)
         }
         val sessionId = req.query["sessionId"] ?: req.query["session_id"]
         val session = sessionId?.let { sessions[it] }
             ?: return ex.respondText(
-                404, "application/json; charset=utf-8", jo("error" to "会话不存在").toString(), cors
+                404, "application/json; charset=utf-8", jo("error" to L("会话不存在")).toString(), cors
             )
         val parsed = runCatching { J.parseToJsonElement(req.bodyText()) }.getOrNull()
             ?: return ex.respondText(
-                400, "application/json; charset=utf-8", jo("error" to "JSON 解析失败").toString(), cors
+                400, "application/json; charset=utf-8", jo("error" to L("JSON 解析失败")).toString(), cors
             )
         ex.respond(202, null, ByteArray(0), cors)
         val (responses, _) = collectResponses(
@@ -601,7 +602,7 @@ class McpServer(
         val id = msg["id"]
         val isNotification = id == null || id is JsonNull
         if (method == null) {
-            return if (isNotification) null else RpcOut(rpcError(id, -32600, "缺少 method"))
+            return if (isNotification) null else RpcOut(rpcError(id, -32600, L("缺少 method")))
         }
         session?.lastSeen = System.currentTimeMillis()
         session?.let { it.requestCount = it.requestCount + 1 }
@@ -678,7 +679,7 @@ class McpServer(
             "logging/setLevel" -> RpcOut(rpcResult(id, JsonObject(emptyMap())))
             "completion/complete" -> RpcOut(rpcResult(id, jo("completion" to jo("values" to emptyList<Any>()))))
 
-            else -> if (isNotification) null else RpcOut(rpcError(id, -32601, "不支持的方法：$method"))
+            else -> if (isNotification) null else RpcOut(rpcError(id, -32601, L("不支持的方法：%s").format(method)))
         }
     }
 
@@ -689,20 +690,22 @@ class McpServer(
         profile: String = ProfileStore.DEFAULT_ID
     ): JsonObject {
         val name = params.str("name")
-            ?: return toolErrorResult("tools/call 缺少参数 name")
+            ?: return toolErrorResult(L("tools/call 缺少参数 name"))
         val args = params.obj("arguments") ?: JsonObject(emptyMap())
         val spec = tools.firstOrNull { it.name == name }
-            ?: return toolErrorResult("未知工具：$name（可用 tools/list 查看全部工具）")
+            ?: return toolErrorResult(L("未知工具：%s（可用 tools/list 查看全部工具）").format(name))
         if (ToolPolicy.isDisabled(config, name)) {
-            return toolErrorResult("工具「$name」已在 App 里被禁用（可在「设置 → 工具管理」里启用）")
+            return toolErrorResult(
+                L("工具「%s」已在 App 里被禁用（可在「设置 → 工具管理」里启用）").format(name)
+            )
         }
         // 包管理工具：用户没打开「让 AI 自己开关包」时，明确拒绝并说清怎么办。
         // （正常情况下它们根本不在 tools/list 里，这里是防客户端拿着旧缓存来调。）
         if (name in BuiltinPacks.PACK_TOOLS && !config.aiPackControl) {
             return toolErrorResult(
-                "工具包现在由用户在 App 里手动管理，「$name」没有开放给 AI。\n" +
-                    "需要的话请让用户去「权限 → 工具包」勾选好要用的包，" +
-                    "并打开「让 AI 自己开关工具包」，然后重新连接 MCP 服务。"
+                L("工具包现在由用户在 App 里手动管理，「%s」没有开放给 AI。\n").format(name) +
+                    L("需要的话请让用户去「权限 → 工具包」勾选好要用的包，") +
+                    L("并打开「让 AI 自己开关工具包」，然后重新连接 MCP 服务。")
             )
         }
         val ctx = CallContext(
@@ -759,7 +762,9 @@ class McpServer(
                 message = "${e.javaClass.simpleName}: ${e.message}",
                 durationMs = System.currentTimeMillis() - started
             )
-            toolErrorResult("工具执行异常：${e.javaClass.simpleName}: ${e.message}")
+            toolErrorResult(
+                L("工具执行异常：%s: %s").format(e.javaClass.simpleName, e.message ?: "")
+            )
         }
     }
 
@@ -825,11 +830,11 @@ class McpServer(
         val body = runCatching { J.parseToJsonElement(req.bodyText()) as? JsonObject }.getOrNull()
             ?: return ex.respondText(
                 400, "application/json; charset=utf-8",
-                jo("error" to "请求体不是 JSON 对象").toString(), cors
+                jo("error" to L("请求体不是 JSON 对象")).toString(), cors
             )
         val name = body.str("tool") ?: body.str("name")
             ?: return ex.respondText(
-                400, "application/json; charset=utf-8", jo("error" to "缺少 tool").toString(), cors
+                400, "application/json; charset=utf-8", jo("error" to L("缺少 tool")).toString(), cors
             )
         val args = body.obj("arguments") ?: body.obj("args") ?: JsonObject(emptyMap())
         val result = callTool(

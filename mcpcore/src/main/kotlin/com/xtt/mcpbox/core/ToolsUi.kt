@@ -182,7 +182,7 @@ object ToolsUi {
             buildString {
                 append(result.stdout)
                 if (result.stderr.isNotBlank()) append(result.stderr)
-                if (result.timedOut) append("\n[超时，已中断]\n")
+                if (result.timedOut) append("\n" + L("[超时，已中断]") + "\n")
             }
         )
         ctx.log.add(
@@ -316,7 +316,7 @@ object ToolsUi {
                 val idx = text.indexOf("<hierarchy")
                 if (idx >= 0) {
                     if (l.id != launcher.id) {
-                        ShellMirror.emit("\n[UI] 换用「${l.label}」后端读到了界面结构\n")
+                        ShellMirror.emit("\n" + L("[UI] 换用「%s」后端读到了界面结构").format(L(l.label)) + "\n")
                         ctx.log.add(
                             LogKind.SYSTEM, tool = ctx.tool, client = ctx.client,
                             message = L("UI 后端回退：%s 跑不动 uiautomator，改用 %s")

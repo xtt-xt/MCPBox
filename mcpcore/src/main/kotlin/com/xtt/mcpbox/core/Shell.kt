@@ -233,7 +233,7 @@ class ShellRunner {
             launcher.launch(command, cwd, ShellEnv.build())
         } catch (e: Exception) {
             return ShellResult(
-                exitCode = -1, stdout = "", stderr = "启动失败：${e.message}",
+                exitCode = -1, stdout = "", stderr = L("启动失败：%s").format(e.message),
                 timedOut = false, durationMs = 0, backend = launcher.id, command = command
             )
         }
@@ -356,7 +356,9 @@ class ShellRunner {
         val process = try {
             launcher.launch(command, cwd, ShellEnv.build())
         } catch (e: Exception) {
-            return ShellResult(-1, "", "启动失败：${e.message}", false, 0, launcher.id, command)
+            return ShellResult(
+                -1, "", L("启动失败：%s").format(e.message), false, 0, launcher.id, command
+            )
         }
         val outBuf = StringBuilder()
         val errBuf = StringBuilder()
@@ -452,7 +454,7 @@ class ShellSession(
                             onOutput(String(buf, 0, n))
                         }
                     }
-                }.onFailure { onOutput("\n[读取输出失败：${it.message}]\n") }
+                }.onFailure { onOutput("\n" + L("[读取输出失败：%s]").format(it.message) + "\n") }
                 alive = false
                 val code = runCatching { p.exitValue() }.getOrDefault(-1)
                 onExit(code)
@@ -472,7 +474,7 @@ class ShellSession(
                 }
             }, "shell-session-stderr").apply { isDaemon = true; start() }
             // 让用户看到自己处在哪个身份/目录
-            send("echo \"[MCP 文件盒] uid=$(id -u 2>/dev/null) @ $(pwd)\"")
+            send("echo \"[${L("MCP 文件盒")}] uid=$(id -u 2>/dev/null) @ $(pwd)\"")
             true
         } catch (e: Exception) {
             startError = e.message ?: e.javaClass.simpleName
@@ -488,7 +490,7 @@ class ShellSession(
             if (!command.endsWith("\n")) w.write("\n")
             w.flush()
         } catch (e: Exception) {
-            onOutput("\n[写入失败：${e.message}]\n")
+            onOutput("\n" + L("[写入失败：%s]").format(e.message) + "\n")
         }
     }
 

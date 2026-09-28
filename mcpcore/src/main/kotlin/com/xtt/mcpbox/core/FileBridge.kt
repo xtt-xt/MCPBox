@@ -44,7 +44,7 @@ class FileBridge(
         get() = privilegedLauncher() != null
 
     val privilegedLabel: String
-        get() = privilegedLauncher()?.label ?: "不可用"
+        get() = privilegedLauncher()?.label ?: L("不可用")
 
     private fun launcher(): CommandLauncher? =
         privilegedLauncher()?.takeIf { runCatching { it.isAvailable() }.getOrDefault(false) }

@@ -36,7 +36,7 @@ object ToolsRead {
             ?: ctx.fail(L("当前运行环境拿不到设备信息（桌面端测试模式）"))
         val sb = StringBuilder()
         sb.append(L("设备信息\n"))
-        info.forEach { (k, v) -> sb.append("  ").append(k).append("：").append(v).append('\n') }
+        info.forEach { (k, v) -> sb.append("  ").append(L(k)).append(L("：")).append(v).append('\n') }
         ToolResult(sb.toString().trimEnd())
     }
 
