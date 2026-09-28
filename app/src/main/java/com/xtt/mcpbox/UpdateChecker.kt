@@ -107,4 +107,21 @@ object UpdateChecker {
 
     /** 今天是哪天（用来判断「每天第一次」）。 */
     fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+    /**
+     * 开发者模式用：造一份示例更新信息（不联网），用来预览更新弹窗的排版。
+     * 真实检查到新版本时会优先用真实数据，这只在「已经是最新版 / 检查失败」时兜底。
+     */
+    fun sampleInfo(): Info = Info(
+        tag = "v${ServerMeta.version}-preview",
+        version = ServerMeta.version,
+        url = RELEASES_URL,
+        notes = L(
+            "这是开发者模式生成的示例更新说明。\n" +
+                "· 正文长度、换行、以及下面的按钮排版，都可以拿这张弹窗参考；\n" +
+                "· 真检查到新版本时，这里显示的是 GitHub Release 里的说明正文；\n" +
+                "· 点「去下载」会打开 Releases 页面。"
+        ),
+        publishedAt = today()
+    )
 }

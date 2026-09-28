@@ -101,7 +101,8 @@ object AppCore {
             memory = MemoryStore(java.io.File(application.filesDir, "memory/graph.json"))
 
             // 语言：跟随系统时，系统语言不是中文就按英文走
-            com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = prefs.catUnlocked
+            // 彩蛋语言（猫娘语）是否出现在语言列表里，由开发者模式里的「语言菜单」开关决定
+            com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = prefs.languageMenu
             val sysLang = java.util.Locale.getDefault().language
             com.xtt.mcpbox.i18n.Lang.init(
                 ctx = application,

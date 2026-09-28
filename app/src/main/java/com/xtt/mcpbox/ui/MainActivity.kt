@@ -178,11 +178,16 @@ fun AppRoot(
     val tabStateHolder = rememberSaveableStateHolder()
     val screenStateHolder = rememberSaveableStateHolder()
 
-    // 每天第一次打开时检查一次更新（可以在「关于」里关掉）
+    // 每天第一次打开时检查一次更新（可以在「关于」里关掉）；
+    // 开发者模式里的「下次启动强制检查更新」会把它变成无条件检查一次
     var updateInfo by remember { mutableStateOf<com.xtt.mcpbox.UpdateChecker.Info?>(null) }
+    // 开发者模式里「预览更新弹窗」拿到的信息（可能是造的示例），只用来渲染弹窗
+    var previewUpdate by remember { mutableStateOf<com.xtt.mcpbox.UpdateChecker.Info?>(null) }
     LaunchedEffect(Unit) {
         val prefs = AppCore.prefs
-        if (prefs.updateCheckDaily && prefs.lastUpdateCheck != com.xtt.mcpbox.UpdateChecker.today()) {
+        val forced = prefs.forceUpdateCheckNext
+        if (forced || (prefs.updateCheckDaily && prefs.lastUpdateCheck != com.xtt.mcpbox.UpdateChecker.today())) {
+            prefs.forceUpdateCheckNext = false
             val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.xtt.mcpbox.UpdateChecker.check()
             }
@@ -208,15 +213,32 @@ fun AppRoot(
         }
     }
 
-    updateInfo?.let { info ->
+    val shownUpdate = updateInfo ?: previewUpdate
+    shownUpdate?.let { info ->
+        val previewing = updateInfo == null
+        fun closeUpdate() { if (previewing) previewUpdate = null else updateInfo = null }
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { updateInfo = null },
+            onDismissRequest = { closeUpdate() },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { androidx.compose.material3.Text(L("发现新版本 %s").format(info.tag), fontSize = 20.sp) },
+            title = {
+                androidx.compose.material3.Text(
+                    if (previewing) L("发现新版本 %s（预览）").format(info.tag)
+                    else L("发现新版本 %s").format(info.tag),
+                    fontSize = 20.sp
+                )
+            },
             text = {
                 androidx.compose.foundation.layout.Column {
+                    if (previewing) {
+                        androidx.compose.material3.Text(
+                            L("开发者模式预览：这张弹窗是造出来的，不代表真有新版本。"),
+                            color = Sem.warn,
+                            fontSize = 12.5.sp
+                        )
+                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                    }
                     androidx.compose.material3.Text(
                         L("当前版本 %s").format(com.xtt.mcpbox.core.ServerMeta.fullVersion),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -236,11 +258,11 @@ fun AppRoot(
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     openUrl(ctx, info.url)
-                    updateInfo = null
+                    closeUpdate()
                 }) { androidx.compose.material3.Text(L("去下载"), color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { updateInfo = null }) {
+                androidx.compose.material3.TextButton(onClick = { closeUpdate() }) {
                     androidx.compose.material3.Text(L("稍后"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -275,6 +297,8 @@ fun AppRoot(
                         ctx = ctx,
                         revision = revision,
                         onChanged = { revision++ },
+                        onLangChanged = onLangChanged,
+                        onPreviewUpdate = { previewUpdate = it },
                         onBack = { subScreen = "" }
                     )
                     "memory" -> MemoryScreen(

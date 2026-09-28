@@ -9,8 +9,14 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.clickable
@@ -29,10 +35,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +50,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +64,7 @@ import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.UpdateChecker
 import com.xtt.mcpbox.core.ServerMeta
 import com.xtt.mcpbox.core.ShellBackends
+import com.xtt.mcpbox.i18n.Lang
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,22 +81,83 @@ private val CREDITS = listOf(
     Credit("Shizuku", "Apache-2.0", "https://github.com/RikkaApps/Shizuku-API")
 )
 
+private const val ABOUT_PAGE = "about"
+private const val DEV_PAGE = "dev"
+
+/**
+ * 关于页。
+ *
+ * 连点顶部图标 7 次 → 解锁「开发者模式」（关于页里多一张入口卡片）。
+ * 彩蛋语言（猫娘语）不再随解锁直接出现，而是要在开发者模式里打开「语言菜单」开关。
+ */
 @Composable
 fun AboutScreen(
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
+    onLangChanged: () -> Unit,
+    onPreviewUpdate: (UpdateChecker.Info) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(enabled = true) { onBack() }
+    var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
 
+    // 系统返回：在开发者模式里先回关于页，在关于页才回设置
+    BackHandler(enabled = true) {
+        if (page == DEV_PAGE) page = ABOUT_PAGE else onBack()
+    }
+
+    val pages = rememberSaveableStateHolder()
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val entering = targetState == DEV_PAGE
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            )
+        },
+        label = "aboutPage"
+    ) { current ->
+        pages.SaveableStateProvider(current) {
+            if (current == DEV_PAGE) {
+                DevModePage(
+                    ctx = ctx,
+                    onChanged = onChanged,
+                    onLangChanged = onLangChanged,
+                    onPreviewUpdate = onPreviewUpdate,
+                    onBack = { page = ABOUT_PAGE }
+                )
+            } else {
+                AboutHomePage(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onOpenDev = { page = DEV_PAGE },
+                    onBack = onBack
+                )
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ 关于首页 */
+
+@Composable
+private fun AboutHomePage(
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onOpenDev: () -> Unit,
+    onBack: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     var catTaps by remember { mutableStateOf(0) }
     var catTarget by remember { mutableStateOf(1f) }
     val catScale by animateFloatAsState(catTarget, tween(150), label = "catScale")
     var checking by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<UpdateChecker.Result?>(null) }
-    val version = ServerMeta.version
     val full = ServerMeta.fullVersion
 
     fun runCheck() {
@@ -114,7 +187,9 @@ fun AboutScreen(
         // ------------------------------------------------ 应用信息
         Spacer(Modifier.height(6.dp))
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
@@ -122,7 +197,7 @@ fun AboutScreen(
                     .size(84.dp)
                     .clip(RoundedCornerShape(24.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    // 彩蛋：连点 7 次解锁猫娘语（每次点击都有缩放 + 喵声反馈）
+                    // 彩蛋：连点 7 次解锁「开发者模式」（每次点击都有缩放 + 喵声反馈）
                     .graphicsLayer {
                         scaleX = catScale
                         scaleY = catScale
@@ -139,10 +214,13 @@ fun AboutScreen(
                         }
                         if (catTaps >= 7) {
                             catTaps = 0
-                            AppCore.prefs.catUnlocked = true
-                            com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = true
-                            toast(ctx, L("喵～ 猫娘语已解锁"))
-                            onChanged()
+                            if (AppCore.prefs.devModeUnlocked) {
+                                toast(ctx, L("喵～ 开发者模式早就在「开发者」那组里了"))
+                            } else {
+                                AppCore.prefs.devModeUnlocked = true
+                                toast(ctx, L("喵～ 开发者模式已解锁"))
+                                onChanged()
+                            }
                         } else {
                             // 第 1 次「喵」，第 2 次「喵喵」…这样点着就有反馈
                             toast(ctx, L("喵").repeat(catTaps))
@@ -181,7 +259,7 @@ fun AboutScreen(
             )
         }
 
-        // ------------------------------------------------ 开发者 / 更新
+        // ------------------------------------------------ 开发者
         GroupLabel(L("开发者"))
         CardGroup(
             listOfNotNull(
@@ -190,17 +268,28 @@ fun AboutScreen(
                     subtitle = L("个人项目 · 使用 GPL-3.0 许可"),
                     icon = Icons.Filled.Star
                 ),
-                if (AppCore.prefs.catUnlocked) RowSpec(
-                    title = L("喵喵喵"),
-                    subtitle = L("猫娘语已解锁：设置 → 外观 → 语言"),
-                    icon = Icons.Filled.Star
+                // 连点图标 7 次解锁后才出现
+                if (AppCore.prefs.devModeUnlocked) RowSpec(
+                    title = L("开发者模式"),
+                    subtitle = L("调试入口：语言菜单、更新弹窗预览、强制检查更新"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Build,
+                    onClick = onOpenDev,
+                    trailing = {
+                        Icon(
+                            Icons.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 ) else null
             )
         )
 
         GroupLabel(L("更新"))
         CardGroup(
-            listOf(
+            listOfNotNull(
                 RowSpec(
                     title = if (checking) L("正在检查…") else L("检查更新"),
                     subtitle = when (val r = result) {
@@ -309,6 +398,116 @@ fun AboutScreen(
                 KeyValue(L("服务状态"), if (status.running) L("运行中（端口 %s）").format(status.port) else L("已停止"))
                 KeyValue(L("允许目录"), status.roots.joinToString("、"))
             }
+        }
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+/* -------------------------------------------------------------- 开发者模式 */
+
+/**
+ * 开发者模式：连点关于页图标 7 次解锁的调试入口。
+ *
+ * 现在只有彩蛋语言的「语言菜单」开关和两个更新相关的调试项 ——
+ * 以后要加调试功能，往这里塞一组卡片即可（标题写在页面里面，动画/返回键都跟着走）。
+ */
+@Composable
+private fun DevModePage(
+    ctx: Context,
+    onChanged: () -> Unit,
+    onLangChanged: () -> Unit,
+    onPreviewUpdate: (UpdateChecker.Info) -> Unit,
+    onBack: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    val langMenu = AppCore.prefs.languageMenu
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp)
+    ) {
+        PageHeader(
+            title = L("开发者模式"),
+            subtitle = L("调试功能，平时用不到"),
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+        )
+
+        GroupLabel(L("语言"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("语言菜单"),
+                    subtitle = if (langMenu)
+                        L("语言列表里已经出现「猫娘语」：设置 → 外观与语言 → 语言")
+                    else L("打开后语言列表里才会出现彩蛋语言「猫娘语」"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    checked = langMenu
+                ) { on ->
+                    AppCore.prefs.languageMenu = on
+                    Lang.AndroidCatFlag.unlocked = on
+                    // 关掉菜单时如果正用着彩蛋语言，就退回跟随系统，免得下拉找不到当前项
+                    if (!on && AppCore.prefs.appLang == Lang.CAT) {
+                        AppCore.prefs.appLang = "system"
+                        Lang.init(ctx, "system", Lang.systemIsEnglish)
+                        onLangChanged()
+                    }
+                    toast(ctx, if (on) L("语言菜单已打开") else L("语言菜单已关闭"))
+                    onChanged()
+                }
+            )
+        )
+
+        GroupLabel(L("更新"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("预览更新弹窗"),
+                    subtitle = if (busy) L("正在检查…能连上就用真实的新版本信息，否则用示例内容")
+                    else L("不管当前是什么版本，直接弹一次更新提示，用来看弹窗排版"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        if (!busy) {
+                            busy = true
+                            scope.launch {
+                                val r = withContext(Dispatchers.IO) { UpdateChecker.check() }
+                                val real = (r as? UpdateChecker.Result.Newer)?.info
+                                onPreviewUpdate(real ?: UpdateChecker.sampleInfo())
+                                toast(
+                                    ctx,
+                                    if (real != null) L("用真实检查结果预览：%s").format(real.tag)
+                                    else L("没查到新版本，用示例内容预览")
+                                )
+                                busy = false
+                            }
+                        }
+                    }
+                ),
+                RowSpec(
+                    title = L("下次启动强制检查更新"),
+                    subtitle = L("清掉「今天已经检查过」的记录，下次打开 App 必定检查一次（模拟第一次进入）"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        AppCore.prefs.forceUpdateCheckNext = true
+                        AppCore.prefs.lastUpdateCheck = ""
+                        toast(ctx, L("下次打开 App 会强制检查一次更新"))
+                    }
+                )
+            )
+        )
+
+        Spacer(Modifier.height(10.dp))
+        Column(Modifier.padding(horizontal = 22.dp)) {
+            Text(
+                L("这些开关只影响本机，不会改变 AI 能用的工具。"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
         }
         Spacer(Modifier.height(20.dp))
     }

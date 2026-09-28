@@ -30,6 +30,12 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_UPDATE_LAST = "update_check_last"
         const val KEY_APP_LANG = "app_lang"
         const val KEY_CAT = "cat_unlocked"
+        /** 连点关于页图标解锁的「开发者模式」入口。 */
+        const val KEY_DEV_MODE = "dev_mode_unlocked"
+        /** 开发者模式里的「语言菜单」开关（打开后语言列表里才有猫娘语）。 */
+        const val KEY_LANG_MENU = "language_menu"
+        /** 下一次启动无条件检查一次更新（开发者模式用）。 */
+        const val KEY_FORCE_UPDATE = "force_update_check_next"
         const val KEY_FIRST_RUN = "first_run_done"
         /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
         const val KEY_PACK_PROFILE = "pack_profile_view"
@@ -95,10 +101,35 @@ class Prefs(context: Context) : SettingsSource {
         get() = getBoolean(KEY_UPDATE_DAILY, true)
         set(value) = putBoolean(KEY_UPDATE_DAILY, value)
 
-    /** 彩蛋：连点关于页图标 7 次解锁的猫娘语。 */
+    /** 彩蛋：连点关于页图标 7 次解锁的猫娘语（= 语言菜单已开启）。 */
     var catUnlocked: Boolean
         get() = getBoolean(KEY_CAT, false)
         set(value) = putBoolean(KEY_CAT, value)
+
+    /**
+     * 彩蛋：连点关于页图标 7 次解锁「开发者模式」入口。
+     * 默认值取 [catUnlocked] —— 老版本解锁过猫娘语的人，升级后直接算已解锁。
+     */
+    var devModeUnlocked: Boolean
+        get() = getBoolean(KEY_DEV_MODE, catUnlocked)
+        set(value) = putBoolean(KEY_DEV_MODE, value)
+
+    /**
+     * 「语言菜单」开关：打开后语言列表里才会出现彩蛋语言（猫娘语）。
+     * 默认值同样取 [catUnlocked]，兼容老版本「解锁即出现」的行为；
+     * 写入时两个键一起写，[catUnlocked] 保持同步。
+     */
+    var languageMenu: Boolean
+        get() = getBoolean(KEY_LANG_MENU, catUnlocked)
+        set(value) {
+            putBoolean(KEY_LANG_MENU, value)
+            putBoolean(KEY_CAT, value)
+        }
+
+    /** 下一次启动 App 时无条件检查一次更新（哪怕「每天自动检查」是关的）。 */
+    var forceUpdateCheckNext: Boolean
+        get() = getBoolean(KEY_FORCE_UPDATE, false)
+        set(value) = putBoolean(KEY_FORCE_UPDATE, value)
 
     /** 界面语言：system / zh / en / cat / 以及导入语言包的 id。 */
     var appLang: String
