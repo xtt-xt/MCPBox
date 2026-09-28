@@ -18,5 +18,9 @@ keystore/
 # IDE
 .idea/
 *.iml
+
+# Python 工具
+__pycache__/
+*.pyc
 .DS_Store
 release_notes.md

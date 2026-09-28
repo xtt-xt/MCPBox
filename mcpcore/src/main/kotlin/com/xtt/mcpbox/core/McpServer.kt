@@ -771,11 +771,11 @@ class McpServer(
     private fun firstLine(text: String): String = text.split('\n').firstOrNull()?.take(180) ?: ""
 
     private fun instructions(profile: String = ProfileStore.DEFAULT_ID): String = buildString {
-        append("这是运行在手机上的文件管理服务器（MCP 文件盒），可以直接读写手机本地文件。\n")
-        append("根目录：").append(config.roots.joinToString("、")).append('\n')
-        append("路径规则：可写绝对路径；相对路径和 ~ 表示第一个根目录。\n")
-        append("安全机制：涉及写入/删除的操作会实时在手机上弹出审批窗口，被拒绝时不要反复重试。\n")
-        append("删除默认进入回收站，可用 list_trash / restore_trash 找回。\n")
+        append(L("这是运行在手机上的文件管理服务器（MCP 文件盒），可以直接读写手机本地文件。")).append('\n')
+        append(L("根目录：")).append(config.roots.joinToString(L("、"))).append('\n')
+        append(L("路径规则：可写绝对路径；相对路径和 ~ 表示第一个根目录。")).append('\n')
+        append(L("安全机制：涉及写入/删除的操作会实时在手机上弹出审批窗口，被拒绝时不要反复重试。")).append('\n')
+        append(L("删除默认进入回收站，可用 list_trash / restore_trash 找回。")).append('\n')
 
         // 工具包机制：只在「让 AI 自己开关包」打开时才告诉 AI。
         // 默认关 —— 因为客户端只在连接时拉一次 tools/list，AI 激活了也调不到，
@@ -784,30 +784,31 @@ class McpServer(
             val visible = toolsFor(profile).map { it.name }.toSet()
             val inactive = packs.all(customTools.tools.map { it.name })
                 .filter { !it.core && it.id !in profiles.active(profile) && it.tools.any { t -> t !in visible } }
-            append("\n【工具包】你看到的工具是分包的，当前会话（").append(profile).append("）只加载了一部分。\n")
+            append(L("\n【工具包】你看到的工具是分包的，当前会话（%s）只加载了一部分。").format(profile)).append('\n')
             if (inactive.isNotEmpty()) {
-                append("还没激活的包：")
-                append(inactive.joinToString("；") { "${it.title}（${it.id}）—— ${it.description}" })
+                append(L("还没激活的包："))
+                append(inactive.joinToString(L("；")) { "${L(it.title)}（${it.id}）—— ${L(it.description)}" })
                 append('\n')
             }
-            append("要用的工具不在列表里时，先 list_packs 看有哪些包，再用 activate_pack 打开。\n")
-            append("注意：激活之后**需要客户端重新连接才能生效**，这一轮里不一定能用上；")
-            append("实在调不到就请用户去 App 的「权限 → 工具包」里勾选，并重连客户端。\n")
+            append(L("要用的工具不在列表里时，先 list_packs 看有哪些包，再用 activate_pack 打开。")).append('\n')
+            append(L("注意：激活之后**需要客户端重新连接才能生效**，这一轮里不一定能用上；"))
+            append(L("实在调不到就请用户去 App 的「权限 → 工具包」里勾选，并重连客户端。")).append('\n')
         }
 
-        append("\n终端：run_shell 可以执行 Shell 命令（后端 ")
-        append(ShellBackends.pick("auto", config)?.label ?: "无")
-        append("），危险命令同样会弹窗审批，用户可以「始终允许」某条命令。\n")
-        if (customTools.tools.isNotEmpty()) {
-            append("自定义工具：")
-            append(customTools.tools.joinToString("、") { it.name })
-            append("（用户自己定义的操作，可直接调用）。\n")
-        }
-        append("建议流程：server_info 了解环境 → list_dir / search_files 定位 → read_file 查看 → ")
-        append("write_file / edit_file 修改 → notify_user 通知用户。\n")
-        append("当前权限：")
         append(
-            PermKey.entries.joinToString("、") { "${it.title}=${permissions.decide(it, null).action.label}" }
+            L("\n终端：run_shell 可以执行 Shell 命令（后端 %s），危险命令同样会弹窗审批，用户可以「始终允许」某条命令。")
+                .format(ShellBackends.pick("auto", config)?.label ?: L("无")),
+        ).append('\n')
+        if (customTools.tools.isNotEmpty()) {
+            append(L("自定义工具："))
+            append(customTools.tools.joinToString(L("、")) { it.name })
+            append(L("（用户自己定义的操作，可直接调用）。")).append('\n')
+        }
+        append(L("建议流程：server_info 了解环境 → list_dir / search_files 定位 → read_file 查看 → "))
+        append(L("write_file / edit_file 修改 → notify_user 通知用户。")).append('\n')
+        append(L("当前权限："))
+        append(
+            PermKey.entries.joinToString(L("、")) { "${L(it.title)}=${L(permissions.decide(it, null).action.label)}" }
         )
     }
 

@@ -94,7 +94,7 @@ fun SettingsScreen(
                     onSuccess = { (id, count) ->
                         AppCore.prefs.appLang = id
                         com.xtt.mcpbox.i18n.Lang.init(ctx, id, com.xtt.mcpbox.i18n.Lang.systemIsEnglish)
-                        langInfo = "已导入语言包 $id（$count 条译文）"
+                        langInfo = L("已导入语言包 %s（%s 条译文）").format(id, count)
                         onLangChanged()
                     },
                     onFailure = { langInfo = L("导入失败：%s").format(it.message) }

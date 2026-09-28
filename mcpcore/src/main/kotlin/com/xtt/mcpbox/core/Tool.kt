@@ -100,11 +100,17 @@ class ToolSpec(
     fun withMeta(title: String, description: String): ToolSpec =
         ToolSpec(name = name, title = title, description = description, perm = perm, schema = schema, handler = handler)
 
+    /**
+     * 给 AI / 网页控制台看的 JSON。
+     *
+     * 文案在这里统一过一遍 [L]（App 会在启动时注入翻译器）—— 定义处保持中文原文，
+     * 于是 App 的界面侧也能用同一份原文去查词表，不用两头维护。
+     */
     fun toMcpJson(): JsonObject = jo(
         "name" to name,
-        "title" to title,
-        "description" to description,
-        "inputSchema" to schema
+        "title" to L(title),
+        "description" to L(description),
+        "inputSchema" to CoreI18n.translateSchema(schema)
     )
 
     /** 参数名列表（给 UI 展示用）。 */
@@ -114,7 +120,7 @@ class ToolSpec(
         }.getOrDefault(emptyList())
 
     val annotations: JsonObject get() = jo(
-        "title" to title,
+        "title" to L(title),
         "readOnlyHint" to (perm == PermKey.READ || perm == PermKey.SYSTEM),
         "destructiveHint" to (perm == PermKey.DELETE),
         "idempotentHint" to false,

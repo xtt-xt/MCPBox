@@ -108,6 +108,8 @@ object AppCore {
                 langId = prefs.appLang,
                 englishOnly = sysLang != "zh"
             )
+            // 把 mcpcore 的文案也接到同一份词表上（工具标题 / 说明 / 参数说明 / 网页控制台）
+            com.xtt.mcpbox.core.CoreI18n.install { zh -> com.xtt.mcpbox.i18n.Lang.t(zh) }
 
             // Shell 环境 + 三个执行后端
             ShellEnv.home = runCatching { Environment.getExternalStorageDirectory().absolutePath }

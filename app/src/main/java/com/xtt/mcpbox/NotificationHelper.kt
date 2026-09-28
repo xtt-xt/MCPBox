@@ -14,6 +14,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.xtt.mcpbox.core.ApprovalDecision
 import com.xtt.mcpbox.core.ApprovalRequest
+import com.xtt.mcpbox.i18n.L
 import com.xtt.mcpbox.server.ApprovalActionReceiver
 import com.xtt.mcpbox.ui.MainActivity
 
@@ -86,8 +87,8 @@ object NotificationHelper {
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(openApp(context))
-            .addAction(0, "停止服务", stopIntent)
-            .addAction(0, "打开控制台", consoleIntent)
+            .addAction(0, L("停止服务"), stopIntent)
+            .addAction(0, L("打开控制台"), consoleIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
@@ -113,19 +114,19 @@ object NotificationHelper {
         val detail = buildString {
             append(request.summary)
             request.path?.let { append("\n").append(it) }
-            append("\n（").append(request.timeoutMs / 1000).append(" 秒内未处理将自动拒绝）")
+            append(L("\n（%s 秒内未处理将自动拒绝）").format(request.timeoutMs / 1000))
         }
         return NotificationCompat.Builder(context, CH_APPROVAL)
             .setSmallIcon(R.drawable.ic_stat_server)
-            .setContentTitle("AI 请求「${request.perm.title}」")
+            .setContentTitle(L("AI 请求「%s」").format(L(request.perm.title)))
             .setContentText(request.summary)
             .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openApp(context))
-            .addAction(decision(ApprovalDecision.ALLOW_ONCE.id, "允许一次", 10))
-            .addAction(decision(ApprovalDecision.ALLOW_ALWAYS.id, "始终允许", 11))
-            .addAction(decision(ApprovalDecision.DENY_ONCE.id, "拒绝", 12))
+            .addAction(decision(ApprovalDecision.ALLOW_ONCE.id, L("允许一次"), 10))
+            .addAction(decision(ApprovalDecision.ALLOW_ALWAYS.id, L("始终允许"), 11))
+            .addAction(decision(ApprovalDecision.DENY_ONCE.id, L("拒绝"), 12))
             .build()
     }
 

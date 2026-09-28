@@ -3,6 +3,7 @@
 
 package com.xtt.mcpbox
 
+import com.xtt.mcpbox.i18n.L
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.util.Collections
@@ -28,10 +29,10 @@ object NetUtil {
                         val ip = addr.hostAddress ?: continue
                         val label = when {
                             name.startsWith("wlan") -> "Wi-Fi"
-                            name.startsWith("eth") -> "有线/热点"
-                            name.startsWith("ap") || name.contains("softap") -> "热点"
+                            name.startsWith("eth") -> L("有线/热点")
+                            name.startsWith("ap") || name.contains("softap") -> L("热点")
                             ip.startsWith("192.168.") || ip.startsWith("10.") ||
-                                ip.startsWith("172.") -> "局域网"
+                                ip.startsWith("172.") -> L("局域网")
                             else -> name
                         }
                         result.add(ip to label)
@@ -49,7 +50,7 @@ object NetUtil {
         lan.forEach { (ip, label) ->
             out.add(Endpoint(label, ip, buildUrl("http", ip, port, token)))
         }
-        out.add(Endpoint("本机", "127.0.0.1", buildUrl("http", "127.0.0.1", port, token)))
+        out.add(Endpoint(L("本机"), "127.0.0.1", buildUrl("http", "127.0.0.1", port, token)))
         return if (preferLan) out else out.sortedBy { it.host }
     }
 

@@ -18,6 +18,7 @@ import com.xtt.mcpbox.MCPBoxApp
 import com.xtt.mcpbox.NotificationHelper
 import com.xtt.mcpbox.Prefs
 import com.xtt.mcpbox.core.LogKind
+import com.xtt.mcpbox.i18n.L
 
 /**
  * 常驻前台服务：App 退到后台、锁屏、被系统回收后都会把服务器拉起来，
@@ -94,7 +95,7 @@ class McpService : Service() {
             if (!ok) {
                 AppCore.log.add(
                     LogKind.ERROR, ok = false,
-                    message = AppCore.server.lastError ?: "服务器启动失败（端口可能被占用）"
+                    message = AppCore.server.lastError ?: L("服务器启动失败（端口可能被占用）")
                 )
             }
         }
@@ -109,7 +110,7 @@ class McpService : Service() {
         // 从最近任务里划掉 App 也不停服务（用户要求：只有主动关闭才停）
         super.onTaskRemoved(rootIntent)
         if (prefs.shouldRun) {
-            AppCore.log.add(LogKind.SYSTEM, message = "App 被划掉，服务器继续运行")
+            AppCore.log.add(LogKind.SYSTEM, message = L("App 被划掉，服务器继续运行"))
         }
     }
 
@@ -128,7 +129,7 @@ class McpService : Service() {
     private fun startForegroundCompat() {
         val status = AppCore.server.status()
         val notification = NotificationHelper.serviceNotification(
-            this, "MCP 文件盒正在运行", statusText(), AppCore.config.port, AppCore.config.token
+            this, L("MCP 文件盒正在运行"), statusText(), AppCore.config.port, AppCore.config.token
         )
         when {
             Build.VERSION.SDK_INT >= 34 -> startForeground(
@@ -146,12 +147,12 @@ class McpService : Service() {
     private fun statusText(): String {
         val s = AppCore.server.status()
         return if (!s.running) {
-            "启动失败：${s.lastError ?: "未知原因"}"
+            L("启动失败：%s").format(s.lastError ?: L("未知原因"))
         } else buildString {
-            append("端口 ").append(s.port).append(" · 已运行 ").append(s.uptimeText)
-            append(" · 请求 ").append(s.total)
-            if (s.pending > 0) append(" · 待审批 ").append(s.pending)
-            append("\n点开查看地址和权限设置")
+            append(L("端口 %s · 已运行 %s").format(s.port, s.uptimeText))
+            append(L(" · 请求 %s").format(s.total))
+            if (s.pending > 0) append(L(" · 待审批 %s").format(s.pending))
+            append('\n').append(L("点开查看地址和权限设置"))
         }
     }
 
@@ -159,7 +160,7 @@ class McpService : Service() {
         val s = AppCore.server.status()
         NotificationHelper.updateService(
             this,
-            if (s.running) "MCP 文件盒正在运行" else "MCP 文件盒启动失败",
+            if (s.running) L("MCP 文件盒正在运行") else L("MCP 文件盒启动失败"),
             statusText(), AppCore.config.port, AppCore.config.token
         )
     }

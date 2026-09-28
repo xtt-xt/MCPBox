@@ -620,7 +620,7 @@ fun ChoiceDialog(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
     deletable: (Int) -> Boolean = { false },
-    deleteLabel: String = "删除",
+    deleteLabel: String = L("删除"),
     onDelete: ((Int) -> Unit)? = null
 ) {
     Dialog(onDismissRequest = onDismiss) {

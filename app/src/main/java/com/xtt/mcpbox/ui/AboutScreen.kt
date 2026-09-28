@@ -64,7 +64,7 @@ private data class Credit(val name: String, val license: String, val url: String
 private val CREDITS = listOf(
     Credit("AndroidX / Jetpack Compose", "Apache-2.0", "https://developer.android.com/jetpack/androidx"),
     Credit("Kotlin & kotlinx.coroutines", "Apache-2.0", "https://kotlinlang.org"),
-    Credit("Material Components (HCT 取色算法)", "Apache-2.0", "https://github.com/material-components/material-components-android"),
+    Credit(L("Material Components (HCT 取色算法)"), "Apache-2.0", "https://github.com/material-components/material-components-android"),
     Credit("Material Color Utilities", "Apache-2.0", "https://github.com/material-foundation/material-color-utilities"),
     Credit("Shizuku", "Apache-2.0", "https://github.com/RikkaApps/Shizuku-API")
 )
@@ -141,11 +141,11 @@ fun AboutScreen(
                             catTaps = 0
                             AppCore.prefs.catUnlocked = true
                             com.xtt.mcpbox.i18n.Lang.AndroidCatFlag.unlocked = true
-                            toast(ctx, "喵～ 猫娘语已解锁")
+                            toast(ctx, L("喵～ 猫娘语已解锁"))
                             onChanged()
                         } else {
                             // 第 1 次「喵」，第 2 次「喵喵」…这样点着就有反馈
-                            toast(ctx, "喵".repeat(catTaps))
+                            toast(ctx, L("喵").repeat(catTaps))
                         }
                     },
                 contentAlignment = Alignment.Center
@@ -191,8 +191,8 @@ fun AboutScreen(
                     icon = Icons.Filled.Star
                 ),
                 if (AppCore.prefs.catUnlocked) RowSpec(
-                    title = "喵喵喵",
-                    subtitle = "猫娘语已解锁：设置 → 外观 → 语言",
+                    title = L("喵喵喵"),
+                    subtitle = L("猫娘语已解锁：设置 → 外观 → 语言"),
                     icon = Icons.Filled.Star
                 ) else null
             )

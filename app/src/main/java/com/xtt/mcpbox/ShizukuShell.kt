@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import com.xtt.mcpbox.core.CommandLauncher
 import com.xtt.mcpbox.core.LogKind
+import com.xtt.mcpbox.i18n.L
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
 import java.io.File
@@ -25,8 +26,8 @@ class ShizukuLauncher(private val context: Context) : CommandLauncher {
     override val id: String = "shizuku"
     override val label: String = "Shizuku（ADB shell）"
     override val uidLabel: String = "shell (uid 2000)"
-    override val hint: String =
-        "需要先安装并启动 Shizuku，然后在 App 的「终端」页点「申请 Shizuku 授权」"
+    override val hint: String
+        get() = L("需要先安装并启动 Shizuku，然后在 App 的「终端」页点「申请 Shizuku 授权」")
 
     override fun isAvailable(): Boolean = try {
         Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
@@ -47,11 +48,11 @@ class ShizukuLauncher(private val context: Context) : CommandLauncher {
      */
     private fun startOnShell(cmd: Array<String>, cwd: String?, env: Map<String, String>): Process {
         val service = IShizukuService.Stub.asInterface(Shizuku.getBinder())
-            ?: throw IllegalStateException("Shizuku 服务不可用")
+            ?: throw IllegalStateException(L("Shizuku 服务不可用"))
         val envArray = env.entries.map { "${it.key}=${it.value}" }.toTypedArray()
         val remote = service.newProcess(cmd, envArray, cwd?.takeIf { it.isNotBlank() })
-            ?: throw IllegalStateException("Shizuku 拒绝创建进程")
-        val ctor = processCtor ?: throw IllegalStateException("拿不到 ShizukuRemoteProcess 构造函数")
+            ?: throw IllegalStateException(L("Shizuku 拒绝创建进程"))
+        val ctor = processCtor ?: throw IllegalStateException(L("拿不到 ShizukuRemoteProcess 构造函数"))
         return ctor.newInstance(remote) as Process
     }
 
@@ -88,25 +89,28 @@ object ShizukuHelper {
         registered = true
         runCatching {
             Shizuku.addBinderReceivedListenerSticky {
-                AppCore.log.add(LogKind.SYSTEM, message = "Shizuku 服务已连接")
+                AppCore.log.add(LogKind.SYSTEM, message = L("Shizuku 服务已连接"))
                 notifyListeners()
             }
             Shizuku.addBinderDeadListener {
-                AppCore.log.add(LogKind.SYSTEM, ok = false, message = "Shizuku 服务已断开")
+                AppCore.log.add(LogKind.SYSTEM, ok = false, message = L("Shizuku 服务已断开"))
                 notifyListeners()
             }
             Shizuku.addRequestPermissionResultListener { requestCode, grantResult ->
                 if (requestCode != REQUEST_CODE) return@addRequestPermissionResultListener
                 val granted = grantResult == PackageManager.PERMISSION_GRANTED
-                lastResult = if (granted) "已获得 Shizuku 授权" else "被拒绝"
+                lastResult = if (granted) L("已获得 Shizuku 授权") else L("被拒绝")
                 AppCore.log.add(
                     LogKind.SYSTEM, ok = granted,
-                    message = "Shizuku 授权结果：" + (if (granted) "已允许" else "被拒绝")
+                    message = L("Shizuku 授权结果：%s").format(if (granted) L("已允许") else L("被拒绝"))
                 )
                 notifyListeners()
             }
         }.onFailure {
-            AppCore.log.add(LogKind.ERROR, ok = false, message = "注册 Shizuku 监听失败：${it.message}")
+            AppCore.log.add(
+                LogKind.ERROR, ok = false,
+                message = L("注册 Shizuku 监听失败：%s").format(it.message ?: "")
+            )
         }
     }
 
@@ -118,8 +122,8 @@ object ShizukuHelper {
     }.getOrDefault(false)
 
     fun version(): String = runCatching {
-        if (Shizuku.isPreV11()) "旧版本" else "v${Shizuku.getVersion()}"
-    }.getOrDefault("未知")
+        if (Shizuku.isPreV11()) L("旧版本") else "v${Shizuku.getVersion()}"
+    }.getOrDefault(L("未知"))
 
     /** 是否装了 Shizuku 本体（装了但没启动也能提示用户去启动）。 */
     fun isInstalled(context: Context): Boolean = runCatching {
@@ -129,25 +133,25 @@ object ShizukuHelper {
 
     /** 向 Shizuku 申请 shell 权限（必须在有 Activity 的时候调用）。 */
     fun request(): String {
-        if (Shizuku.isPreV11()) return "Shizuku 版本太旧，请升级到 11 以上"
-        if (!isRunning()) return "Shizuku 没有运行，请先打开 Shizuku 应用并启动服务"
-        if (isGranted()) return "已经授权过了"
+        if (Shizuku.isPreV11()) return L("Shizuku 版本太旧，请升级到 11 以上")
+        if (!isRunning()) return L("Shizuku 没有运行，请先打开 Shizuku 应用并启动服务")
+        if (isGranted()) return L("已经授权过了")
         return try {
             if (Shizuku.shouldShowRequestPermissionRationale()) {
-                return "你之前拒绝过，需要到 Shizuku 应用 → 授权管理里手动允许「MCP 文件盒」"
+                return L("你之前拒绝过，需要到 Shizuku 应用 → 授权管理里手动允许「MCP 文件盒」")
             }
             Shizuku.requestPermission(REQUEST_CODE)
-            "已发送授权请求"
+            L("已发送授权请求")
         } catch (e: Throwable) {
-            "申请失败：${e.message}"
+            L("申请失败：%s").format(e.message ?: "")
         }
     }
 
     fun statusText(context: Context): String = when {
-        !isInstalled(context) -> "未安装 Shizuku"
-        !isRunning() -> "Shizuku 未运行"
-        isGranted() -> "已授权（${version()}）"
-        else -> "未授权"
+        !isInstalled(context) -> L("未安装 Shizuku")
+        !isRunning() -> L("Shizuku 未运行")
+        isGranted() -> L("已授权（%s）").format(version())
+        else -> L("未授权")
     }
 
     /** 常用的三分类目录，给终端当默认工作目录。 */

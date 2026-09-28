@@ -4,6 +4,7 @@
 package com.xtt.mcpbox
 
 import com.xtt.mcpbox.core.ServerMeta
+import com.xtt.mcpbox.i18n.L
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -45,22 +46,22 @@ object UpdateChecker {
     /** 阻塞式检查，调用方放到 IO 线程里跑。 */
     fun check(): Result {
         val text = runCatching { fetch() }.getOrElse { e ->
-            return Result.Failed(e.message ?: "网络请求失败")
+            return Result.Failed(e.message ?: L("网络请求失败"))
         }
         val json = runCatching { JSONObject(text) }.getOrElse {
-            return Result.Failed("返回内容看不懂")
+            return Result.Failed(L("返回内容看不懂"))
         }
         if (json.has("message") && !json.has("tag_name")) {
             val msg = json.optString("message")
             return Result.Failed(
                 when {
-                    msg.contains("Not Found") -> "仓库还是私有的，暂时检查不到更新"
-                    msg.contains("rate limit") -> "请求太频繁，过一会儿再试"
+                    msg.contains("Not Found") -> L("仓库还是私有的，暂时检查不到更新")
+                    msg.contains("rate limit") -> L("请求太频繁，过一会儿再试")
                     else -> msg
                 }
             )
         }
-        val tag = json.optString("tag_name").ifBlank { return Result.Failed("没有读到版本号") }
+        val tag = json.optString("tag_name").ifBlank { return Result.Failed(L("没有读到版本号")) }
         val info = Info(
             tag = tag,
             version = tag.removePrefix("v").trim(),
@@ -85,7 +86,7 @@ object UpdateChecker {
             val body = stream?.bufferedReader()?.use { it.readText() } ?: ""
             if (code in 200..299) body
             else if (body.contains("Not Found")) "{\"message\":\"Not Found\"}"
-            else throw IllegalStateException("服务器返回 $code")
+            else throw IllegalStateException(L("服务器返回 %s").format(code))
         } finally {
             conn.disconnect()
         }

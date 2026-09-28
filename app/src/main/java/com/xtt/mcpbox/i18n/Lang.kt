@@ -70,7 +70,7 @@ object Lang {
 
     /** 语言下拉里显示的选项：语言 id → 显示名。 */
     fun languageChoices(): List<Pair<String, String>> = buildList {
-        add("system" to "跟随系统")
+        add("system" to L("跟随系统"))
         add(ZH to "中文")
         add(EN to "English")
         if (packs.containsKey(CAT) || AndroidCatFlag.unlocked) add(CAT to "猫娘语")
@@ -81,7 +81,7 @@ object Lang {
 
     /** 某个语言的显示名（导入的语言包用 JSON 里写的 name）。 */
     fun packDisplayName(id: String): String = when (id) {
-        "system" -> "跟随系统"
+        "system" -> L("跟随系统")
         ZH -> "中文"
         EN -> "English"
         CAT -> "猫娘语"
@@ -153,8 +153,8 @@ object Lang {
         return runCatching {
             val root = JSONObject(json)
             val id = root.optString("lang").ifBlank { langIdHint ?: "custom" }
-            val map = parseEntries(json) ?: throw IllegalArgumentException("没有读到 entries")
-            if (map.isEmpty()) throw IllegalArgumentException("语言包里一条译文都没有")
+            val map = parseEntries(json) ?: throw IllegalArgumentException(L("没有读到 entries"))
+            if (map.isEmpty()) throw IllegalArgumentException(L("语言包里一条译文都没有"))
             packFile(ctx, id).writeText(json)
             packs[id] = map
             runCatching {

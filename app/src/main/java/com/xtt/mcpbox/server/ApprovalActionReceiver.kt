@@ -11,6 +11,7 @@ import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.NotificationHelper
 import com.xtt.mcpbox.core.ApprovalDecision
 import com.xtt.mcpbox.core.LogKind
+import com.xtt.mcpbox.i18n.L
 
 /** 通知栏里的「允许 / 拒绝 / 停止服务」按钮。 */
 class ApprovalActionReceiver : BroadcastReceiver() {
@@ -33,12 +34,13 @@ class ApprovalActionReceiver : BroadcastReceiver() {
                 val ok = AppCore.approval.resolve(id, decision)
                 AppCore.log.add(
                     LogKind.APPROVAL, ok = ok,
-                    message = if (ok) "通过通知栏处理了审批请求（${decision.label}）" else "该审批请求已失效"
+                    message = if (ok) L("通过通知栏处理了审批请求（%s）").format(L(decision.label))
+                    else L("该审批请求已失效")
                 )
                 NotificationHelper.cancelApproval(context)
             }
             ACTION_STOP_SERVICE -> {
-                AppCore.log.add(LogKind.SYSTEM, message = "用户从通知栏停止了服务")
+                AppCore.log.add(LogKind.SYSTEM, message = L("用户从通知栏停止了服务"))
                 McpService.stop(context)
             }
         }
