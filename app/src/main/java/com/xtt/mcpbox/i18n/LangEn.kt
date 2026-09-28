@@ -544,6 +544,7 @@ object LangEn {
 
 
 
+
     // ---------------- i18n 第二批：通知栏 / 前台服务 / Shizuku / 终端 / 更新检查 / 网络
     "停止服务" to "Stop service",
     "打开控制台" to "Open console",
@@ -1516,5 +1517,56 @@ object LangEn {
     "先填目标路径" to "Enter a target path first",
     "上传中…" to "Uploading…",
     "失败：网络错误" to "Failed: network error",
+
+    // ---------------- i18n 第九批：设置页（顶层入口与子页标题）
+    "通用" to "General",
+    "外观与语言" to "Appearance & language",
+    "颜色模式、动态取色、调色板、界面语言与语言包" to "Color mode, dynamic color, palette, app language and language packs",
+    "主题配色、颜色模式与界面语言" to "Theme colors, color mode and UI language",
+    "网络与访问" to "Network & access",
+    "监听端口、局域网访问、响应格式与网页控制台" to "Port, LAN access, response format and web console",
+    "监听端口、局域网与网页控制台" to "Port, LAN and the web console",
+    "安全与审批" to "Security & approval",
+    "访问令牌、审批超时" to "Access token and approval timeout",
+    "访问令牌与审批超时" to "Access token and approval timeout",
+    "命令后端优先级、命令规则、默认超时" to "Shell backend priority, command rules and default timeout",
+    "命令后端、命令规则与默认超时" to "Shell backends, command rules and default timeout",
+    "AI 与工具" to "AI & tools",
+    "工具管理、记忆库、会话状态自动重置" to "Tool manager, memory store and session auto-reset",
+    "工具管理、记忆库与会话状态" to "Tool manager, memory store and session state",
+    "后台与运行" to "Background & runtime",
+    "CPU 唤醒、开机自启、日志与服务控制" to "CPU wake lock, boot start, logs and service control",
+    "保活、日志与服务控制" to "Keep-alive, logs and service control",
+    "主题" to "Theme",
+    "命令执行" to "Command execution",
+    "超时" to "Timeout",
+    "工具与记忆" to "Tools & memory",
+    "会话" to "Session",
+    "后台" to "Background",
+
+    // ---------------- i18n 第九批：记忆库导入导出
+    "导入导出" to "Import / export",
+    "导入方式" to "Import mode",
+    "合并（推荐）：保留现有内容" to "Merge (recommended): keep what is already there",
+    "覆盖：清空后整份替换" to "Replace: wipe everything, then write the file as-is",
+    "覆盖整个记忆库？" to "Replace the whole memory store?",
+    "当前 %s 个实体 · %s 条关系会被全部清空，然后写入文件里的内容。这一步不能撤销。" to "The current %s entities and %s relations will be deleted, then the file's contents are written in. This cannot be undone.",
+    "已导出 %s 个实体 · %s 条关系" to "Exported %s entities and %s relations",
+    "不是合法的记忆文件" to "not a valid memory file",
+    "记忆：导出全库" to "Memory: export all",
+    "把整个记忆库导出成一个 JSON 文件（实体 + 关系 + 观察），用来备份或搬到别的设备。path 省略时自动命名到 根目录/xtt/memory/memory-<时间>.json。" to "Export the whole memory store to a JSON file (entities + relations + observations), for backup or moving to another device. If path is omitted the file is auto-named under <root>/xtt/memory/memory-<time>.json.",
+    "导出到的文件路径，省略则写到 根目录/xtt/memory/" to "Path to export to; defaults to <root>/xtt/memory/",
+    "记忆：导入全库" to "Memory: import all",
+    "从 JSON 文件导入记忆库（memory_export 导出的格式，也可以是只带 entities / relations 的 JSON）。mode=merge（默认、安全）合并：同名实体只补空着的类型 / 分区，观察去重后追加，绝不覆盖已有观察，关系重复的跳过；mode=replace 覆盖：先清空整个记忆库，再写入文件里的内容。" to "Import the memory store from a JSON file (the format memory_export writes; a JSON with just entities / relations works too). mode=merge (default, safe): for entities with the same name only blank types/folders are filled in, observations are de-duplicated and appended, existing observations are never overwritten, duplicate relations are skipped. mode=replace: wipe the whole store first, then write the file's contents in.",
+    "merge = 合并（默认，安全）；replace = 清空后整份覆盖" to "merge = combine (default, safe); replace = wipe the store and write the file in",
+    "导出记忆库（%s 个实体 · %s 条关系）到 %s" to "Export memory store (%s entities, %s relations) to %s",
+    "已导出记忆库：%s 个实体 · %s 条关系 · %s 条观察\n文件：%s\n大小：%s" to "Exported the memory store: %s entities, %s relations, %s observations\nFile: %s\nSize: %s",
+    "用 %s 覆盖整个记忆库" to "Replace the whole memory store with %s",
+    "从 %s 合并导入记忆库" to "Merge %s into the memory store",
+    "解析失败：%s" to "Parse failed: %s",
+    "已覆盖导入：清空原库后写入 %s 个实体、%s 条关系。" to "Replaced the store: wrote %s entities and %s relations.",
+    "合并导入完成：新增实体 %s · 补全既有实体 %s · 新增观察 %s · 新增关系 %s（跳过重复关系 %s）。" to "Merge import done: %s new entities, %s existing entities completed, %s new observations, %s new relations (%s duplicate relations skipped).",
+    "当前：%s 个实体 · %s 条关系" to "Now: %s entities · %s relations",
+    "\n当前：%s 个实体 · %s 条关系" to "\nNow: %s entities, %s relations",
     )
 }

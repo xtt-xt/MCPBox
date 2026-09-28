@@ -4,6 +4,7 @@
 package com.xtt.mcpbox.core
 
 import kotlinx.serialization.json.JsonObject
+import java.io.File
 
 /**
  * 记忆库工具：让 AI 自己维护一份跨对话的长期记忆。
@@ -22,6 +23,8 @@ object ToolsMemory {
         searchNodes(store),
         openNodes(store),
         memoryStats(store),
+        memoryExport(store),
+        memoryImport(store),
         deleteEntities(store),
         deleteRelations(store),
         deleteObservations(store)
@@ -305,6 +308,89 @@ object ToolsMemory {
         ctx.guard(PermKey.MEMORY, null, L("查看记忆库统计"))
         ToolResult(store.statsText())
     }
+
+    // -------------------------------------------------------------- memory_export
+
+    private fun memoryExport(store: MemoryStore) = ToolSpec(
+        name = "memory_export",
+        title = "记忆：导出全库",
+        description = "把整个记忆库导出成一个 JSON 文件（实体 + 关系 + 观察），用来备份或搬到别的设备。" +
+            "path 省略时自动命名到 根目录/xtt/memory/memory-<时间>.json。",
+        perm = PermKey.MEMORY,
+        schema = Schema.obj(
+            mapOf("path" to Schema.str("导出到的文件路径，省略则写到 根目录/xtt/memory/"))
+        )
+    ) { ctx ->
+        val defaultPath = File(ctx.sandbox.primaryRoot(), "xtt/memory/memory-${stamp()}.json").path
+        val file = ctx.path("path", default = defaultPath)
+        if (file.isDirectory) ctx.fail(L("目标是一个目录：%s").format(file.path))
+        val json = store.exportJson()
+        ctx.guard(
+            PermKey.MEMORY, file,
+            L("导出记忆库（%s 个实体 · %s 条关系）到 %s")
+                .format(store.graph.entities.size, store.graph.relations.size, file.name),
+            file.path,
+            json.length.toLong()
+        )
+        file.parentFile?.mkdirs()
+        file.writeText(json)
+        ToolResult(
+            L("已导出记忆库：%s 个实体 · %s 条关系 · %s 条观察\n文件：%s\n大小：%s").format(
+                store.graph.entities.size,
+                store.graph.relations.size,
+                store.graph.entities.sumOf { it.observations.size },
+                file.path,
+                ctx.sandbox.humanSize(file.length())
+            )
+        )
+    }
+
+    // -------------------------------------------------------------- memory_import
+
+    private fun memoryImport(store: MemoryStore) = ToolSpec(
+        name = "memory_import",
+        title = "记忆：导入全库",
+        description = "从 JSON 文件导入记忆库（memory_export 导出的格式，也可以是只带 entities / relations 的 JSON）。" +
+            "mode=merge（默认、安全）合并：同名实体只补空着的类型 / 分区，观察去重后追加，绝不覆盖已有观察，关系重复的跳过；" +
+            "mode=replace 覆盖：先清空整个记忆库，再写入文件里的内容。",
+        perm = PermKey.MEMORY,
+        schema = Schema.obj(
+            mapOf(
+                "path" to Schema.str("JSON 文件路径"),
+                "mode" to Schema.str(
+                    "merge = 合并（默认，安全）；replace = 清空后整份覆盖",
+                    "merge",
+                    listOf("merge", "replace")
+                )
+            ),
+            listOf("path")
+        )
+    ) { ctx ->
+        val file = ctx.path(mustExist = true)
+        if (file.isDirectory) ctx.fail(L("这是一个目录：%s").format(file.path))
+        if (file.length() > 16L * 1024 * 1024) {
+            ctx.fail(L("文件太大（%s）").format(ctx.sandbox.humanSize(file.length())))
+        }
+        val replace = ctx.args.str("mode").equals("replace", ignoreCase = true)
+        ctx.guard(
+            PermKey.MEMORY, file,
+            if (replace) L("用 %s 覆盖整个记忆库").format(file.name)
+            else L("从 %s 合并导入记忆库").format(file.name),
+            L("文件：%s\n大小：%s").format(file.path, ctx.sandbox.humanSize(file.length())),
+            file.length()
+        )
+        val result = runCatching { store.importJson(file.readText(), merge = !replace) }
+            .getOrElse { e -> ctx.fail(L("解析失败：%s").format(e.message ?: L("不是合法的记忆文件"))) }
+        ToolResult(
+            result.describe() +
+                L("\n当前：%s 个实体 · %s 条关系")
+                    .format(store.graph.entities.size, store.graph.relations.size)
+        )
+    }
+
+    /** 出现在默认文件名里的时间戳，如 20260928-2019。 */
+    private fun stamp(): String =
+        java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
 
     // ------------------------------------------------------------ delete_entities
 

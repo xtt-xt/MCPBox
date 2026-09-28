@@ -349,6 +349,125 @@ class MemoryStore(private val file: File? = null) {
         return removed
     }
 
+    // --------------------------------------------------------------- 导入 / 导出
+
+    /** 导出成 JSON（实体 + 关系，含观察）。格式就是 [MemoryGraph] 本身。 */
+    fun exportJson(): String = JSON.encodeToString(MemoryGraph.serializer(), graph)
+
+    /**
+     * 导入结果。[replaced] = true 表示整库替换（不是合并）。
+     */
+    data class ImportResult(
+        val entitiesAdded: Int = 0,
+        val entitiesMerged: Int = 0,
+        val observationsAdded: Int = 0,
+        val relationsAdded: Int = 0,
+        val relationsSkipped: Int = 0,
+        val replaced: Boolean = false
+    ) {
+        /** 给工具 / 界面用的一句可读总结。 */
+        fun describe(): String = if (replaced) {
+            L("已覆盖导入：清空原库后写入 %s 个实体、%s 条关系。").format(entitiesAdded, relationsAdded)
+        } else {
+            L("合并导入完成：新增实体 %s · 补全既有实体 %s · 新增观察 %s · 新增关系 %s（跳过重复关系 %s）。")
+                .format(entitiesAdded, entitiesMerged, observationsAdded, relationsAdded, relationsSkipped)
+        }
+    }
+
+    /**
+     * 合并导入时的分区取舍：原来只是「未分类」（等于没填）就听导入文件的，
+     * 用户显式选过的分区一律不动。
+     */
+    private fun mergeFolder(old: String, incoming: String): String {
+        val o = old.trim()
+        if (o.isNotBlank() && o != MemoryEntity.DEFAULT_FOLDER) return o
+        return incoming.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER }
+    }
+
+    /**
+     * 从 JSON 导入。
+     *
+     * - `merge = true`：合并模式 —— 不删任何东西。同名实体只补空着的 type / folder，
+     *   观察去重后追加；关系三元组重复的跳过。
+     * - `merge = false`：覆盖模式 —— 先清空整库，再用文件里的内容替换。
+     *
+     * 解析失败（不是合法 JSON / 结构不对）会抛异常，由调用方兜住。
+     */
+    fun importJson(text: String, merge: Boolean = true): ImportResult {
+        val incoming = JSON.decodeFromString(MemoryGraph.serializer(), text.trim())
+        val result: ImportResult
+        synchronized(lock) {
+            if (!merge) {
+                val ents = incoming.entities
+                    .filter { it.name.isNotBlank() }
+                    .map { it.copy(folder = it.folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER }) }
+                val rels = incoming.relations.filter { it.from.isNotBlank() && it.to.isNotBlank() }
+                graph = MemoryGraph(ents, rels, graph.revision + 1)
+                result = ImportResult(ents.size, 0, 0, rels.size, 0, replaced = true)
+            } else {
+                val now = System.currentTimeMillis()
+                var added = 0
+                var merged = 0
+                var obsAdded = 0
+                // 用 LinkedHashMap 保证顺序：老实体原样在前，新增的按文件顺序追加
+                val byName = LinkedHashMap<String, MemoryEntity>()
+                graph.entities.forEach { byName[it.name] = it }
+                incoming.entities.forEach { inc ->
+                    val name = inc.name.trim()
+                    if (name.isEmpty()) return@forEach
+                    val old = byName[name]
+                    if (old == null) {
+                        byName[name] = inc.copy(
+                            name = name,
+                            type = inc.type.trim(),
+                            folder = inc.folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER },
+                            observations = inc.observations.map { o -> o.trim() }.filter { o -> o.isNotEmpty() }.distinct(),
+                            createdAt = if (inc.createdAt > 0L) inc.createdAt else now,
+                            updatedAt = now
+                        )
+                        added++
+                    } else {
+                        // 已存在：只在原来空着的时候补 type / folder，观察去重后追加，绝不删旧的
+                        val fresh = inc.observations.map { o -> o.trim() }
+                            .filter { o -> o.isNotEmpty() }
+                            .distinct()
+                            .filter { o -> o !in old.observations }
+                        obsAdded += fresh.size
+                        byName[name] = old.copy(
+                            type = old.type.ifBlank { inc.type.trim() },
+                            folder = mergeFolder(old.folder, inc.folder),
+                            observations = old.observations + fresh,
+                            updatedAt = now
+                        )
+                        merged++
+                    }
+                }
+                var rels = graph.relations
+                var relAdded = 0
+                var relSkipped = 0
+                incoming.relations.forEach { r ->
+                    val from = r.from.trim()
+                    val to = r.to.trim()
+                    if (from.isEmpty() || to.isEmpty()) return@forEach
+                    if (rels.any { it.from == from && it.to == to && it.type == r.type }) {
+                        relSkipped++
+                    } else {
+                        rels = rels + r.copy(from = from, to = to)
+                        relAdded++
+                    }
+                }
+                graph = graph.copy(
+                    entities = byName.values.toList(),
+                    relations = rels,
+                    revision = graph.revision + 1
+                )
+                result = ImportResult(added, merged, obsAdded, relAdded, relSkipped, replaced = false)
+            }
+        }
+        commit()
+        return result
+    }
+
     // -------------------------------------------------------------------- 统计
 
     fun folders(): List<Pair<String, Int>> = graph.entities

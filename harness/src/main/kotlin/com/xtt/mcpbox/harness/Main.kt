@@ -1341,6 +1341,92 @@ fun main() {
         config.shellTimeoutMs = 0L
         val (infInfoOk, infInfoText) = call("shell_info", "{}")
         check("shell_info 显示「不限制」", infInfoOk && infInfoText.contains("不限制"), infInfoText.take(200))
+        println("\n[46] 记忆库导入导出")
+
+        // —— 存储层：导出 → 覆盖导入（往返）
+        val memA = MemoryStore(null)
+        memA.createEntities(
+            listOf(
+                Triple("项目：甲", "项目", "projects"),
+                Triple("工具：乙", "工具", "tools")
+            )
+        )
+        memA.addObservations("项目：甲", listOf("一条观察", "又一条观察"))
+        memA.createRelations(listOf(Triple("工具：乙", "项目：甲", "USES")))
+        val dump = memA.exportJson()
+        check("导出的是 JSON", dump.contains("\"entities\"") && dump.contains("又一条观察"), dump.take(120))
+
+        val memB = MemoryStore(null)
+        val rt = memB.importJson(dump, merge = false)
+        check("覆盖导入：结果标记为 replaced", rt.replaced)
+        check("覆盖导入：实体数一致", memB.graph.entities.size == 2, "${memB.graph.entities.size}")
+        check("覆盖导入：观察带过来了", memB.entity("项目：甲")?.observations?.size == 2)
+        check("覆盖导入：关系带过来了", memB.graph.relations.size == 1)
+
+        // —— 合并导入：不覆盖已有内容，只补空字段 / 去重追加观察
+        val memC = MemoryStore(null)
+        memC.createEntities(listOf(Triple("项目：甲", "", "")))
+        memC.addObservations("项目：甲", listOf("原有观察"))
+        val mg = memC.importJson(dump, merge = true)
+        check(
+            "合并：同名实体算「补全」而不是新建",
+            mg.entitiesAdded == 1 && mg.entitiesMerged == 1,
+            "新增 ${mg.entitiesAdded} / 补全 ${mg.entitiesMerged}"
+        )
+        check("合并：原有观察没被覆盖", memC.entity("项目：甲")?.observations?.contains("原有观察") == true)
+        check(
+            "合并：新观察去重后追加（1 旧 + 2 新）",
+            memC.entity("项目：甲")?.observations?.size == 3,
+            "${memC.entity("项目：甲")?.observations?.size}"
+        )
+        check(
+            "合并：原来空着的类型 / 分区被补上",
+            memC.entity("项目：甲")?.type == "项目" && memC.entity("项目：甲")?.folder == "projects",
+            "${memC.entity("项目：甲")?.type} / ${memC.entity("项目：甲")?.folder}"
+        )
+        check("合并：关系也加进来了", memC.graph.relations.size == 1)
+        val again = memC.importJson(dump, merge = true)
+        check(
+            "合并：再导入一次不会产生重复数据",
+            again.entitiesAdded == 0 && again.relationsAdded == 0 &&
+                memC.entity("项目：甲")?.observations?.size == 3,
+            "新增 ${again.entitiesAdded} / 关系 ${again.relationsAdded}"
+        )
+        check("合并：非法 JSON 会抛异常", runCatching { memC.importJson("{ 不是 json", true) }.isFailure)
+
+        // —— 走 MCP：memory_export / memory_import
+        answer("记忆", ApprovalDecision.ALLOW_ALWAYS)
+        // 上一段把记忆库清空了，这里自己铺一份数据
+        server.memory.createEntities(
+            listOf(
+                Triple("项目：甲", "项目", "projects"),
+                Triple("工具：乙", "工具", "tools")
+            )
+        )
+        server.memory.addObservations("项目：甲", listOf("一条观察"))
+        server.memory.createRelations(listOf(Triple("工具：乙", "项目：甲", "USES")))
+        val (okEx, exText) = call("memory_export", """{"path":"xtt/memory/backup.json"}""")
+        check("memory_export 成功", okEx, exText.take(200))
+        val backup = File(root, "xtt/memory/backup.json")
+        check("导出文件真的写出来了", backup.isFile && backup.length() > 0, backup.path)
+        check("导出内容含实体名", backup.isFile && backup.readText().contains("项目：甲"))
+
+        server.memory.deleteEntities(server.memory.graph.entities.map { it.name })
+        check("清空后记忆库是空的", server.memory.graph.entities.isEmpty())
+
+        val (okImp, impText) = call("memory_import", """{"path":"xtt/memory/backup.json","mode":"replace"}""")
+        check("memory_import（覆盖）成功", okImp, impText.take(240))
+        check("覆盖导入后实体回来了", server.memory.graph.entities.size == 2, "${server.memory.graph.entities.size}")
+        check("覆盖导入后关系也回来了", server.memory.graph.relations.size == 1)
+
+        val (okImp2, impText2) = call("memory_import", """{"path":"xtt/memory/backup.json"}""")
+        check("memory_import（不给 mode 时默认合并）成功", okImp2, impText2.take(240))
+        check("合并导入不会重复加实体", server.memory.graph.entities.size == 2, "${server.memory.graph.entities.size}")
+
+        File(root, "xtt/bad-memory.json").writeText("这不是 JSON")
+        val (okBadImp, badImpText) = call("memory_import", """{"path":"xtt/bad-memory.json"}""")
+        check("导入非法文件会报错", !okBadImp, badImpText.take(200))
+
         config.shellTimeoutMs = 60_000L
     } finally {
         server.stop()

@@ -165,6 +165,9 @@ fun AppRoot(
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
     var subScreen by rememberSaveable { mutableStateOf("") }
+    // 设置页停在哪个子页。**故意放在 key(langRev) 之外**：切语言/主题会重建整棵树，
+    // 状态放在里面的话用户会被从子页甩回设置首页
+    var settingsPage by rememberSaveable { mutableStateOf("") }
     var revision by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf(AppCore.server.status()) }
     var logs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
@@ -353,6 +356,8 @@ fun AppRoot(
                     ctx = ctx,
                     status = status,
                     revision = revision,
+                    page = settingsPage,
+                    onPage = { settingsPage = it },
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
                     onOpenTools = { subScreen = "tools" },

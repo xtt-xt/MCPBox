@@ -5,36 +5,43 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -45,24 +52,40 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
-import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.ServerMeta
 
+/**
+ * 设置页：**顶层只放入口，具体开关在各自的子页**（见 SettingsPages.kt）。
+ *
+ * 四件必修都在这里做齐：
+ *  ① 子页进出场动画（进入滑 1/3 屏宽，返回反向）
+ *  ② 子页接 [BackHandler]，顶层不接（顶层再按返回就该退出应用）
+ *  ③ 标题属于各自的页面：顶层用「设置」，子页用各自的 `PageHeader`
+ *  ④ 每页滚动位置用 [rememberSaveableStateHolder] 按 key 保留
+ *
+ * 当前停在哪一页由外部传入（[page] / [onPage]）—— 这样切语言、切主题触发整棵树重建时，
+ * 不会把用户从子页里甩回设置首页。
+ */
 @Composable
 fun SettingsScreen(
     ctx: Context,
     status: McpServer.ServerStatus,
     revision: Int,
+    page: String,
+    onPage: (String) -> Unit,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onOpenTools: () -> Unit,
@@ -73,13 +96,11 @@ fun SettingsScreen(
 ) {
     var showPort by remember { mutableStateOf(false) }
     var showReset by remember { mutableStateOf(false) }
-    var showToken by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
     var passwordText by remember { mutableStateOf("") }
     var showSeed by remember { mutableStateOf(false) }
     var showLang by remember { mutableStateOf(false) }
     var langInfo by remember { mutableStateOf("") }
-    val langChoices = com.xtt.mcpbox.i18n.Lang.languageChoices()
     val importLang = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -102,515 +123,77 @@ fun SettingsScreen(
             }
         }
     }
-    var shellTimeoutState by remember(revision) {
-        mutableStateOf(
-            (AppCore.config.shellTimeoutMs / 1000).takeIf { it > 0L }
-                ?: AppCore.prefs.shellTimeoutLastSec
-        )
-    }
-    // 「不限时」时 timeoutMs = 0，滑块要拿上次的有限值来显示，否则滑块会落到范围外面
-    var timeoutState by remember(revision) {
-        mutableStateOf(
-            (AppCore.config.approvalTimeoutMs / 1000).takeIf { it > 0L }
-                ?: AppCore.prefs.approvalTimeoutLastSec
-        )
-    }
-    val approvalUnlimited = AppCore.config.approvalTimeoutMs <= 0L
-    val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
-    var ttlMinutesState by remember(revision) { mutableStateOf(AppCore.config.profileTtlMinutes) }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 20.dp)
-    ) {
-        PageHeader(title = L("设置"), subtitle = "${ServerMeta.fullVersion} · ${AppCore.deviceLabel()}")
+    val back = { onPage("") }
 
-        // ---------------------------------------------------------- 外观
-        GroupLabel(L("外观"))
-        val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
-        CardGroup(
-            listOfNotNull(
-                switchSpec(
-                    title = L("动态取色"),
-                    subtitle = if (sdkOk) L("用系统壁纸的强调色当种子，Material You 原版配色")
-                    else L("需要 Android 12 及以上，当前系统不支持"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Star,
-                    checked = AppCore.prefs.dynamicColor
-                ) { on ->
-                    if (sdkOk) {
-                        AppCore.prefs.dynamicColor = on
-                        onThemeChanged()
-                    }
-                },
-                // 动态取色开着的时候，种子色不起作用，就不显示了
-                if (!AppCore.prefs.dynamicColor) RowSpec(
-                    title = L("种子颜色"),
-                    subtitle = L("整套配色都由这个颜色派生"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Create,
-                    onClick = { showSeed = true },
-                    trailing = {
-                        Box(
-                            Modifier
-                                .size(26.dp)
-                                .clip(CircleShape)
-                                .background(Color(AppCore.prefs.seedColor))
-                        )
-                    }
-                ) else null,
-                dropdownSpec(
-                    title = L("调色板样式"),
-                    subtitle = L("同一个种子色，算法不同味道不同"),
-                    icon = Icons.Filled.Star,
-                    options = PaletteStyle.entries.map { L(it.label) },
-                    selectedIndex = PaletteStyle.entries.indexOf(PaletteStyle.of(AppCore.prefs.paletteStyle))
-                ) { index ->
-                    AppCore.prefs.paletteStyle = PaletteStyle.entries[index].id
-                    onThemeChanged()
-                },
-                dropdownSpec(
-                    title = L("颜色模式"),
-                    subtitle = L("深色 / 浅色 / 跟随系统"),
-                    icon = Icons.Filled.Star,
-                    options = DarkMode.entries.map { L(it.label) },
-                    selectedIndex = DarkMode.entries.indexOf(DarkMode.of(AppCore.prefs.darkMode))
-                ) { index ->
-                    AppCore.prefs.darkMode = DarkMode.entries[index].id
-                    onThemeChanged()
-                },
-                dropdownSpec(
-                    title = L("语言"),
-                    subtitle = L("中文 / English，也可以导入别人做的语言包"),
-                    icon = Icons.Filled.Info,
-                    options = langChoices.map { it.second },
-                    selectedIndex = langChoices
-                        .indexOfFirst { it.first == AppCore.prefs.appLang }
-                        .coerceAtLeast(0)
-                ) { index ->
-                    AppCore.prefs.appLang = langChoices[index].first
-                    com.xtt.mcpbox.i18n.Lang.init(
-                        ctx, AppCore.prefs.appLang, com.xtt.mcpbox.i18n.Lang.systemIsEnglish
-                    )
-                    onLangChanged()
-                },
-                RowSpec(
-                    title = L("语言包"),
-                    subtitle = L("导出模板去翻译，或者导入别人填好的"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Info,
-                    onClick = { langInfo = ""; showLang = true }
+    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）
+    BackHandler(enabled = page.isNotEmpty()) { back() }
+
+    // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
+    val pageStates = rememberSaveableStateHolder()
+
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            val entering = targetState.isNotEmpty()
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            )
+        },
+        label = "settingsPage"
+    ) { current ->
+        // 顶层是空串，给它一个固定名字当 key
+        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
+            when (current) {
+                "appearance" -> AppearanceSettingsPage(
+                    ctx = ctx,
+                    onThemeChanged = onThemeChanged,
+                    onLangChanged = onLangChanged,
+                    onOpenSeed = { showSeed = true },
+                    onOpenLangPack = { langInfo = ""; showLang = true },
+                    onBack = back
                 )
-            )
-        )
-
-        // ---------------------------------------------------------- 网络
-        GroupLabel(L("网络"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("监听端口"),
-                    subtitle = if (status.running) L("正在监听 %s").format(status.port)
-                    else L("当前设置 %s").format(AppCore.config.port),
-                    icon = Icons.Filled.Share,
-                    trailing = {
-                        PillButton(L("修改"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
-                            showPort = true
-                        }
-                    }
-                ),
-                switchSpec(
-                    title = L("允许局域网访问"),
-                    subtitle = if (AppCore.config.bindAll) L("同一 Wi-Fi 下的电脑/平板也能连")
-                    else L("只允许本机 127.0.0.1"),
-                    icon = Icons.Filled.Share,
-                    checked = AppCore.config.bindAll
-                ) {
-                    AppCore.config.bindAll = it
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                dropdownSpec(
-                    title = L("响应格式"),
-                    subtitle = L("自动最省心，不兼容时再手动切"),
-                    icon = Icons.Filled.Refresh,
-                    options = listOf(L("自动"), "JSON", "SSE"),
-                    selectedIndex = listOf(Config.Modes.AUTO, Config.Modes.JSON, Config.Modes.SSE)
-                        .indexOf(AppCore.config.responseMode).coerceAtLeast(0)
-                ) { index ->
-                    AppCore.config.responseMode =
-                        listOf(Config.Modes.AUTO, Config.Modes.JSON, Config.Modes.SSE)[index]
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-
-        // ------------------------------------------------------ 网页控制台
-        GroupLabel(L("网页控制台"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("仅本机访问"),
-                    subtitle = if (AppCore.config.consoleLocalOnly) {
-                        L("只响应 localhost（127.0.0.1），局域网设备一律被拒")
-                    } else {
-                        L("局域网里的设备也能打开网页（靠令牌保护）")
-                    },
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Lock,
-                    checked = AppCore.config.consoleLocalOnly
-                ) { on ->
-                    AppCore.config.consoleLocalOnly = on
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                switchSpec(
-                    title = L("密码保护"),
-                    subtitle = if (AppCore.config.consoleAuthEnabled) {
-                        L("打开网页要先登录；程序用 token 调用不受影响")
-                    } else {
-                        L("打开网页不需要密码")
-                    },
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Lock,
-                    checked = AppCore.config.consoleAuthEnabled
-                ) { on ->
-                    AppCore.config.consoleAuthEnabled = on
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("访问密码"),
-                    subtitle = if (AppCore.config.consolePassword.isBlank()) {
-                        L("还没设置，默认拿访问令牌当密码")
-                    } else {
-                        L("已设置（%s 位）").format(AppCore.config.consolePassword.length)
-                    },
-                    icon = Icons.Filled.Create,
-                    onClick = {
+                "network" -> NetworkSettingsPage(
+                    status = status,
+                    onChanged = onChanged,
+                    onOpenPort = { showPort = true },
+                    onOpenPassword = {
                         passwordText = AppCore.config.consolePassword
                         showPassword = true
-                    }
+                    },
+                    onBack = back
                 )
-            )
-        )
-
-        // ---------------------------------------------------------- 安全
-        GroupLabel(L("安全"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("启用访问令牌"),
-                    subtitle = if (AppCore.config.tokenEnabled) L("客户端需要带 token 才能连接")
-                    else L("任何设备都能连（不推荐）"),
-                    icon = Icons.Filled.Lock,
-                    checked = AppCore.config.tokenEnabled
-                ) {
-                    AppCore.config.tokenEnabled = it
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-        Spacer(Modifier.height(7.dp))
-        CardColumn {
-            CardBox {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(L("访问令牌"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
-                        Text(
-                            if (showToken) AppCore.config.token else "•".repeat(14),
-                            color = if (showToken) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    RowIconButton(
-                        onClick = { showToken = !showToken },
-                        icon = Icons.Filled.Star,
-                        desc = if (showToken) L("隐藏") else L("显示")
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton(
-                        L("复制"), Modifier.weight(1f), outlined = true,
-                        color = MaterialTheme.colorScheme.primary, compact = true
-                    ) {
-                        copyText(ctx, AppCore.config.token, L("令牌已复制"))
-                    }
-                    PillButton(
-                        L("重置"), Modifier.weight(1f), outlined = true, color = Sem.warn, compact = true
-                    ) {
-                        AppCore.config.newToken()
-                        AppCore.saveConfig()
-                        onChanged()
-                        toast(ctx, L("已生成新令牌，旧配置需要更新"))
-                    }
-                }
+                "security" -> SecuritySettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "shell" -> ShellSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "ai" -> AiSettingsPage(
+                    status = status,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onOpenTools = onOpenTools,
+                    onOpenMemory = onOpenMemory,
+                    onBack = back
+                )
+                "background" -> BackgroundSettingsPage(
+                    onChanged = onChanged,
+                    onRestartService = onRestartService,
+                    onOpenReset = { showReset = true },
+                    onBack = back
+                )
+                else -> SettingsHomePage(onPage = onPage, onOpenAbout = onOpenAbout)
             }
         }
-        Spacer(Modifier.height(7.dp))
-        // 滑块行 + 「不限时」开关同属一组：首尾圆角、中间直角，视觉上连成一体
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("审批超时"),
-                    subtitle = if (approvalUnlimited) L("不限制 · 弹窗不会自动消失，AI 一直等你")
-                    else L("%s 秒 · 超时自动拒绝").format(timeoutState),
-                    subtitleColor = if (approvalUnlimited) Sem.warn else null,
-                    content = {
-                        Slider(
-                            value = timeoutState.toFloat(),
-                            onValueChange = { timeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.approvalTimeoutMs = timeoutState * 1000
-                                AppCore.prefs.approvalTimeoutLastSec = timeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 15f..600f,
-                            steps = 38,
-                            // 不限时时滑块变灰：值仍然显示着上次的秒数，但说了不算
-                            enabled = !approvalUnlimited
-                        )
-                    }
-                ),
-                switchSpec(
-                    title = L("审批不限时"),
-                    subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复（上面的秒数失效）"),
-                    icon = Icons.Filled.Warning,
-                    checked = approvalUnlimited
-                ) { on ->
-                    if (on) {
-                        if (AppCore.config.approvalTimeoutMs > 0L) {
-                            AppCore.prefs.approvalTimeoutLastSec =
-                                AppCore.config.approvalTimeoutMs / 1000
-                        }
-                        AppCore.config.approvalTimeoutMs = 0L
-                    } else {
-                        timeoutState = AppCore.prefs.approvalTimeoutLastSec.coerceIn(15L, 600L)
-                        AppCore.config.approvalTimeoutMs = timeoutState * 1000
-                    }
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-
-        // ---------------------------------------------------------- 终端与命令
-        GroupLabel(L("终端与命令"))
-        CardGroup(
-            listOf(
-                dropdownSpec(
-                    title = L("命令后端优先级"),
-                    subtitle = L("auto 时依次尝试；Shizuku 要先去「终端」页授权"),
-                    icon = Icons.Filled.Share,
-                    options = listOf(L("Shizuku→Root→应用"), L("Root→Shizuku→应用"), L("只用应用沙箱")),
-                    selectedIndex = listOf("shizuku,root,app", "root,shizuku,app", "app")
-                        .indexOf(AppCore.config.shellPreference).coerceAtLeast(0)
-                ) { index ->
-                    AppCore.config.shellPreference =
-                        listOf("shizuku,root,app", "root,shizuku,app", "app")[index]
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("命令规则"),
-                    subtitle = L("%s 条 · 在「权限」页里管理").format(AppCore.permissions.commandRules().size),
-                    icon = Icons.Filled.Lock
-                )
-            )
-        )
-        Spacer(Modifier.height(7.dp))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("命令默认超时"),
-                    subtitle = if (shellUnlimited) L("不限制 · 命令一直跑到自己结束")
-                    else L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
-                    subtitleColor = if (shellUnlimited) Sem.warn else null,
-                    content = {
-                        Slider(
-                            value = shellTimeoutState.toFloat(),
-                            onValueChange = { shellTimeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
-                                AppCore.prefs.shellTimeoutLastSec = shellTimeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 10f..300f,
-                            steps = 28,
-                            enabled = !shellUnlimited
-                        )
-                    }
-                ),
-                switchSpec(
-                    title = L("命令不限时"),
-                    subtitle = L("打开后 AI 执行的命令会一直跑到自己结束，不会中途被掐断（上面的秒数失效）"),
-                    subtitleMaxLines = 3,
-                    icon = Icons.Filled.Warning,
-                    checked = shellUnlimited
-                ) { on ->
-                    if (on) {
-                        if (AppCore.config.shellTimeoutMs > 0L) {
-                            AppCore.prefs.shellTimeoutLastSec = AppCore.config.shellTimeoutMs / 1000
-                        }
-                        AppCore.config.shellTimeoutMs = 0L
-                    } else {
-                        shellTimeoutState = AppCore.prefs.shellTimeoutLastSec.coerceIn(10L, 300L)
-                        AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
-                    }
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-
-        // ---------------------------------------------------------- AI 工具
-        GroupLabel(L("AI 工具"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("工具管理"),
-                    subtitle = L("共 %s 个 · 可单独启用/禁用、设权限（跟随 / 允许 / 询问 / 拒绝）；右上角 + 新建自定义工具").format(status.toolCount),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Build,
-                    onClick = onOpenTools
-                ),
-                RowSpec(
-                    title = L("记忆库"),
-                    subtitle = L("给 AI 的长期记忆：%s 个实体 · %s 条关系")
-                        .format(AppCore.memory.graph.entities.size, AppCore.memory.graph.relations.size),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Star,
-                    onClick = onOpenMemory
-                ),
-                switchSpec(
-                    title = L("会话状态自动重置"),
-                    subtitle = if (AppCore.config.profileTtlEnabled)
-                        L("超过 %s 分钟没请求就回到默认工具包（新对话更干净）")
-                            .format(AppCore.config.profileTtlMinutes)
-                    else L("不自动重置，激活状态一直保持到手动改"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Refresh,
-                    checked = AppCore.config.profileTtlEnabled
-                ) {
-                    AppCore.config.profileTtlEnabled = it
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                if (AppCore.config.profileTtlEnabled) RowSpec(
-                    title = L("重置间隔"),
-                    subtitle = L("%s 分钟没动静就重置").format(ttlMinutesState),
-                    icon = Icons.Filled.Refresh,
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Slider(
-                                value = ttlMinutesState.toFloat(),
-                                onValueChange = { ttlMinutesState = it.toInt() },
-                                onValueChangeFinished = {
-                                    AppCore.config.profileTtlMinutes = ttlMinutesState
-                                    AppCore.saveConfig()
-                                    onChanged()
-                                },
-                                valueRange = 5f..240f,
-                                modifier = Modifier.width(160.dp)
-                            )
-                        }
-                    }
-                ) else null
-            ).filterNotNull()
-        )
-        Spacer(Modifier.height(7.dp))
-
-        // ---------------------------------------------------------- 后台运行
-        GroupLabel(L("后台运行"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("保持 CPU 唤醒"),
-                    subtitle = L("长时间会话更稳定，会稍微费电"),
-                    icon = Icons.Filled.Warning,
-                    checked = AppCore.prefs.keepAwake
-                ) {
-                    AppCore.prefs.keepAwake = it
-                    onChanged()
-                },
-                switchSpec(
-                    title = L("开机自动启动"),
-                    subtitle = L("重启手机后自动把服务器打开"),
-                    icon = Icons.Filled.Refresh,
-                    checked = AppCore.prefs.autoStartBoot
-                ) {
-                    AppCore.prefs.autoStartBoot = it
-                    onChanged()
-                },
-                switchSpec(
-                    title = L("审批时点亮屏幕"),
-                    subtitle = L("有请求时亮屏，方便马上看到弹窗"),
-                    icon = Icons.Filled.Notifications,
-                    checked = AppCore.prefs.wakeScreenOnApproval
-                ) {
-                    AppCore.prefs.wakeScreenOnApproval = it
-                    AppCore.overlay?.wakeScreenOnApproval = it
-                    onChanged()
-                },
-                switchSpec(
-                    title = L("记录日志"),
-                    subtitle = L("保留最近 800 条调用/审批记录"),
-                    icon = Icons.Filled.Info,
-                    checked = AppCore.config.logEnabled
-                ) {
-                    AppCore.config.logEnabled = it
-                    AppCore.log.enabled = it
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-
-        Spacer(Modifier.height(7.dp))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("重启服务器"),
-                    subtitle = L("改完端口或想重新开始会话时用"),
-                    icon = Icons.Filled.Settings,
-                    onClick = onRestartService
-                )
-            )
-        )
-        Spacer(Modifier.height(7.dp))
-        CardColumn {
-            PillButton(L("重置全部设置"), Modifier.fillMaxWidth(), outlined = true, color = Sem.bad) {
-                showReset = true
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        // ---------------------------------------------------------- 关于
-        GroupLabel(L("关于"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("关于"),
-                    subtitle = L("%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.fullVersion),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Info,
-                    onClick = onOpenAbout
-                )
-            )
-        )
-
-        Spacer(Modifier.height(24.dp))
     }
 
     if (showPort) {
@@ -838,7 +421,9 @@ fun SettingsScreen(
                     Spacer(Modifier.height(14.dp))
                     SEED_PRESETS.chunked(6).forEach { row ->
                         Row(
-                            Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             row.forEach { c ->
@@ -958,8 +543,106 @@ fun SettingsScreen(
     }
 }
 
+/* ------------------------------------------------------------------ 设置首页 */
+
+/**
+ * 顶层只放入口行 —— 一眼扫得完，加功能只是多一行。
+ * 高频的「看状态」留在首页里（版本号写在标题下方）。
+ */
 @Composable
-private fun RowIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String) {
+private fun SettingsHomePage(onPage: (String) -> Unit, onOpenAbout: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp)
+    ) {
+        PageHeader(
+            title = L("设置"),
+            subtitle = "${ServerMeta.fullVersion} · ${AppCore.deviceLabel()}"
+        )
+
+        GroupLabel(L("通用"))
+        CardGroup(
+            listOf(
+                entrySpec(
+                    L("外观与语言"),
+                    L("颜色模式、动态取色、调色板、界面语言与语言包"),
+                    Icons.Filled.Star
+                ) { onPage("appearance") },
+                entrySpec(
+                    L("网络与访问"),
+                    L("监听端口、局域网访问、响应格式与网页控制台"),
+                    Icons.Filled.Share
+                ) { onPage("network") },
+                entrySpec(
+                    L("安全与审批"),
+                    L("访问令牌、审批超时"),
+                    Icons.Filled.Lock
+                ) { onPage("security") },
+                entrySpec(
+                    L("终端与命令"),
+                    L("命令后端优先级、命令规则、默认超时"),
+                    Icons.Filled.Build
+                ) { onPage("shell") }
+            )
+        )
+
+        GroupLabel(L("应用"))
+        CardGroup(
+            listOf(
+                entrySpec(
+                    L("AI 与工具"),
+                    L("工具管理、记忆库、会话状态自动重置"),
+                    Icons.Filled.Info
+                ) { onPage("ai") },
+                entrySpec(
+                    L("后台与运行"),
+                    L("CPU 唤醒、开机自启、日志与服务控制"),
+                    Icons.Filled.Refresh
+                ) { onPage("background") },
+                entrySpec(
+                    L("关于"),
+                    L("%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.fullVersion),
+                    Icons.Filled.Info
+                ) { onOpenAbout() }
+            )
+        )
+
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+/** 顶层入口行：图标 + 标题 + 一句「里面有什么」 + 右侧箭头。 */
+private fun entrySpec(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) = RowSpec(
+    title = title,
+    subtitle = subtitle,
+    subtitleMaxLines = 2,
+    icon = icon,
+    onClick = onClick,
+    trailing = {
+        Icon(
+            Icons.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+)
+
+/* ------------------------------------------------------------------ 小组件 */
+
+@Composable
+internal fun RowIconButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String
+) {
     RoundIconButton(icon, desc, size = 40, onClick = onClick)
 }
 

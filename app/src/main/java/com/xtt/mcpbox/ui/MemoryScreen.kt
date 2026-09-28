@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -75,6 +76,119 @@ fun MemoryScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf("list") }
+    var showMenu by remember { mutableStateOf(false) }
+    // 待导入的 JSON 文本（先选文件，再选导入方式）
+    var pendingImport by remember { mutableStateOf<String?>(null) }
+    var askMode by remember { mutableStateOf(false) }
+    var askReplace by remember { mutableStateOf(false) }
+
+    fun doImport(text: String, merge: Boolean) {
+        runCatching { AppCore.memory.importJson(text, merge) }.fold(
+            onSuccess = { r ->
+                toast(ctx, r.describe())
+                onChanged()
+            },
+            onFailure = { toast(ctx, L("导入失败：%s").format(it.message ?: L("不是合法的记忆文件"))) }
+        )
+    }
+
+    // 导出：系统文件选择器自己挑位置，默认给个带时间戳的文件名
+    val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            val text = AppCore.memory.exportJson()
+            val ok = runCatching {
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            }.isSuccess
+            val g = AppCore.memory.graph
+            toast(
+                ctx,
+                if (ok) L("已导出 %s 个实体 · %s 条关系").format(g.entities.size, g.relations.size)
+                else L("导出失败")
+            )
+        }
+    }
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            if (text.isNullOrBlank()) {
+                toast(ctx, L("读不到文件内容"))
+            } else {
+                pendingImport = text
+                askMode = true
+            }
+        }
+    }
+
+    if (showMenu) {
+        ChoiceDialog(
+            title = L("记忆库"),
+            options = listOf(L("导出到文件"), L("从文件导入")),
+            selected = -1,
+            onDismiss = { showMenu = false },
+            onSelect = { index ->
+                showMenu = false
+                if (index == 0) exportLauncher.launch("mcpbox-memory-${memoryStamp()}.json")
+                else importLauncher.launch(arrayOf("application/json", "*/*"))
+            }
+        )
+    }
+
+    if (askMode) {
+        ChoiceDialog(
+            title = L("导入方式"),
+            options = listOf(L("合并（推荐）：保留现有内容"), L("覆盖：清空后整份替换")),
+            selected = 0,
+            onDismiss = { askMode = false; pendingImport = null },
+            onSelect = { index ->
+                askMode = false
+                if (index == 0) {
+                    pendingImport?.let { doImport(it, merge = true) }
+                    pendingImport = null
+                } else {
+                    askReplace = true
+                }
+            }
+        )
+    }
+
+    if (askReplace) {
+        AlertDialog(
+            onDismissRequest = { askReplace = false; pendingImport = null },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("覆盖整个记忆库？"), fontSize = 20.sp) },
+            text = {
+                Text(
+                    L("当前 %s 个实体 · %s 条关系会被全部清空，然后写入文件里的内容。这一步不能撤销。")
+                        .format(
+                            AppCore.memory.graph.entities.size,
+                            AppCore.memory.graph.relations.size
+                        ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    askReplace = false
+                    pendingImport?.let { doImport(it, merge = false) }
+                    pendingImport = null
+                }) { Text(L("覆盖"), color = Sem.bad) }
+            },
+            dismissButton = {
+                TextButton(onClick = { askReplace = false; pendingImport = null }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
 
     AnimatedContent(
         targetState = page,
@@ -104,7 +218,8 @@ fun MemoryScreen(
                 revision = revision,
                 onChanged = onChanged,
                 onBack = onBack,
-                onOpen = { page = "detail:$it" }
+                onOpen = { page = "detail:$it" },
+                onMore = { showMenu = true }
             )
         }
     }
@@ -118,7 +233,8 @@ private fun MemoryListPage(
     revision: Int,
     onChanged: () -> Unit,
     onBack: () -> Unit,
-    onOpen: (String) -> Unit
+    onOpen: (String) -> Unit,
+    onMore: () -> Unit
 ) {
     BackHandler(enabled = true) { onBack() }
 
@@ -194,6 +310,8 @@ private fun MemoryListPage(
                 .format(graph.entities.size, graph.relations.size, folders.size),
             actions = {
                 RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = { showNew = true })
+                Spacer(Modifier.width(8.dp))
+                RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = onMore)
                 Spacer(Modifier.width(8.dp))
                 RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
             }
@@ -748,3 +866,7 @@ private fun TextInputDialog(
         }
     }
 }
+
+/** 导出文件名里的时间戳，如 20260928-2019。 */
+private fun memoryStamp(): String =
+    java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
