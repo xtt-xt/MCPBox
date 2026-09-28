@@ -465,17 +465,20 @@ object ToolsWrite {
         perm = PermKey.SYSTEM,
         schema = Schema.obj(
             mapOf(
-                "title" to Schema.str("通知标题", "MCP 文件盒"),
+                "title" to Schema.str("通知标题", L("MCP 文件盒")),
                 "message" to Schema.str("通知内容")
             ),
             listOf("message")
         )
     ) { ctx ->
-        val message = ctx.args.str("message") ?: ctx.fail("缺少 message")
-        val title = ctx.args.str("title") ?: "MCP 文件盒"
+        val message = ctx.args.str("message") ?: ctx.fail(L("缺少 message"))
+        val title = ctx.args.str("title") ?: L("MCP 文件盒")
         ctx.guard(PermKey.SYSTEM, null, L("发送通知给用户"))
         val ok = ctx.host?.notify(title, message) ?: false
-        ToolResult(if (ok) "已发送通知：$title - $message" else "通知发送失败（可能缺少通知权限）")
+        ToolResult(
+            if (ok) L("已发送通知：%s - %s").format(title, message)
+            else L("通知发送失败（可能缺少通知权限）")
+        )
     }
 
     private fun isInside(parent: File, child: File): Boolean {

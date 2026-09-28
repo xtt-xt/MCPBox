@@ -18,18 +18,18 @@ object WebConsole {
 
     /** 登录页：跟 App 里的深色卡片风格保持一致。 */
     fun loginPage(error: Boolean = false, passwordIsToken: Boolean = false): String {
-        val errBox = if (error) """<div class="err">密码不对，再试一次</div>""" else ""
+        val errBox = if (error) """<div class="err">""" + L("密码不对，再试一次") + "</div>" else ""
         val hint = if (passwordIsToken) {
-            "提示：还没单独设置网页密码，这里填 App 里显示的访问令牌（token）就能进。"
+            L("提示：还没单独设置网页密码，这里填 App 里显示的访问令牌（token）就能进。")
         } else {
-            "密码可以在 App 的「设置 → 网页控制台 → 访问密码」里改。"
+            L("密码可以在 App 的「设置 → 网页控制台 → 访问密码」里改。")
         }
         return """
 <!DOCTYPE html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MCP 文件盒 · 登录</title>
+<title>${L("MCP 文件盒 · 登录")}</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -48,11 +48,11 @@ object WebConsole {
   .hint { color:#9e9ea7; font-size:12px; margin-top:14px; line-height:1.5; }
 </style></head><body>
 <form class="card" method="post" action="/login">
-  <h1>MCP 文件盒</h1>
-  <p class="sub">网页控制台开了密码保护，输入密码才能进。</p>
+  <h1>${L("MCP 文件盒")}</h1>
+  <p class="sub">${L("网页控制台开了密码保护，输入密码才能进。")}</p>
   $errBox
-  <input type="password" name="password" placeholder="访问密码" autofocus autocomplete="current-password">
-  <button type="submit">进入控制台</button>
+  <input type="password" name="password" placeholder="${L("访问密码")}" autofocus autocomplete="current-password">
+  <button type="submit">${L("进入控制台")}</button>
   <p class="hint">$hint</p>
 </form>
 </body></html>

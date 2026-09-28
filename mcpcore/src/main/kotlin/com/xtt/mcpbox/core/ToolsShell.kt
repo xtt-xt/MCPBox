@@ -41,11 +41,12 @@ object ToolsShell {
     ): ShellResult {
         val launcher = ShellBackends.pick(backendPref, ctx.config)
             ?: ctx.fail(
-                "没有可用的 Shell 后端。\n" +
-                    "应用沙箱后端应该总是可用；如果用 Shizuku，请先在 App 的「终端」页申请授权。"
+                L("没有可用的 Shell 后端。\n") +
+                    L("应用沙箱后端应该总是可用；如果用 Shizuku，请先在 App 的「终端」页申请授权。")
             )
         val workdir = cwd?.takeIf { it.isNotBlank() }?.let {
-            runCatching { ctx.sandbox.resolve(it).path }.getOrElse { ctx.fail(it.message ?: "工作目录不合法") }
+            runCatching { ctx.sandbox.resolve(it).path }
+                .getOrElse { ctx.fail(it.message ?: L("工作目录不合法")) }
         }
         ctx.guard(
             perm = PermKey.SHELL,
@@ -71,8 +72,10 @@ object ToolsShell {
         ctx.log.add(
             LogKind.REQUEST, tool = ctx.tool, path = workdir, client = ctx.client,
             ok = result.ok,
-            message = (if (result.ok) "命令执行成功" else "命令失败（退出码 ${result.exitCode}）") +
-                "：" + command.take(120),
+            message = (
+                if (result.ok) L("命令执行成功")
+                else L("命令失败（退出码 %s）").format(result.exitCode)
+            ) + "：" + command.take(120),
             durationMs = result.durationMs
         )
         return result
@@ -98,7 +101,7 @@ object ToolsShell {
         )
     ) { ctx ->
         val command = ctx.args.str("command")?.trim().orEmpty()
-        if (command.isBlank()) ctx.fail("命令不能为空")
+        if (command.isBlank()) ctx.fail(L("命令不能为空"))
         val timeout = ctx.args.longOr("timeoutMs", ctx.config.shellTimeoutMs)
             .let { if (it <= 0L) 0L else it.coerceIn(1_000L, 1_800_000L) }
         val result = execute(
@@ -166,12 +169,17 @@ object ToolsShell {
         val arr = ctx.args.arr(key) ?: return emptyList()
         return runCatching {
             J.decodeFromJsonElement(ListSerializer(CustomToolParam.serializer()), arr)
-        }.getOrElse { ctx.fail("params 格式不对，需要 [{name, type, description, required}]：${it.message}") }
+        }.getOrElse {
+            ctx.fail(
+                L("params 格式不对，需要 [{name, type, description, required}]：%s")
+                    .format(it.message)
+            )
+        }
     }
 
     private fun buildTool(ctx: CallContext, existing: CustomTool?): CustomTool {
         val name = (ctx.args.str("name") ?: existing?.name ?: "").trim()
-        if (name.isBlank()) ctx.fail("缺少 name")
+        if (name.isBlank()) ctx.fail(L("缺少 name"))
         val command = ctx.args.str("command") ?: existing?.command ?: ""
         return CustomTool(
             id = existing?.id ?: "",
