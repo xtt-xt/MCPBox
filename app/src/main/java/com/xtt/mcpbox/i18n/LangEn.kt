@@ -546,6 +546,20 @@ object LangEn {
 
 
 
+
+
+
+    // ---------------- i18n 第十批（补）：更新弹窗预览改用真实 Release
+    "没连上 GitHub：%s" to "GitHub unreachable: %s",
+    "不管当前是什么版本，直接弹一次更新提示，显示 GitHub 上最新的 Release" to "Shows the update dialog once no matter which version you are on, using the latest release on GitHub",
+    "正在检查…取到就用最新 Release 的真实内容" to "Checking… the latest release is used when reachable",
+    "用最新 Release %s 预览" to "Previewing with the latest release %s",
+    "没连上 GitHub，用示例内容预览" to "GitHub unreachable; previewing with sample text",
+    "清掉「今天已经检查过」的记录，下次打开 App 必定检查一次；查到最新 Release 就弹窗（模拟第一次进入）" to "Clears today's check record, so the next launch always checks once and shows the dialog if a release is found (mimics a first run)",
+    "开发者模式预览：忽略版本比较，直接显示 GitHub 上最新的 Release 说明（发布于 %s）。" to "Developer mode preview: version comparison is skipped, so this is the latest release on GitHub (published %s).",
+    "未知" to "unknown",
+    "没连上 GitHub，这是本机生成的示例更新说明。\n· 正文长度、换行、以及下面的按钮排版，都可以拿这张弹窗参考；\n· 联网后这里会显示 GitHub Release 里的说明正文；\n· 点「去下载」会打开 Releases 页面。" to "GitHub is unreachable, so these are sample release notes generated on this device.\n· Use this dialog as a reference for the body length, line breaks and the button layout below;\n· With a connection this area shows the body from the GitHub Release;\n· Tapping 「Download」 opens the Releases page.",
+
     // ---------------- i18n 第十批：开发者模式（关于页）
     "开发者模式" to "Developer mode",
     "调试入口：语言菜单、更新弹窗预览、强制检查更新" to "Debug entry: language menu, update-dialog preview, forced update check",
@@ -607,7 +621,6 @@ object LangEn {
     "Shizuku 未运行" to "Shizuku isn't running",
     "已授权（%s）" to "Authorized (%s)",
     "未授权" to "Not authorized",
-    "未知" to "Unknown",
     "没有可用的 Shell 后端" to "No shell backend available",
     "终端已启动（%s）" to "Terminal started (%s)",
     "终端启动失败：%s" to "Terminal failed to start: %s",

@@ -43,8 +43,14 @@ object UpdateChecker {
         data class Failed(val reason: String) : Result()
     }
 
-    /** 阻塞式检查，调用方放到 IO 线程里跑。 */
-    fun check(): Result {
+    /**
+     * 阻塞式检查，调用方放到 IO 线程里跑。
+     *
+     * @param ignoreVersion 开发者模式用：**不比较版本**，把 GitHub 上最新一条 Release
+     *   直接当成「新版本」返回 —— 这样即使本地版本号和最新 tag 一致（版本名只在发版时变），
+     *   也能看到真实的最新版本号与说明正文。
+     */
+    fun check(ignoreVersion: Boolean = false): Result {
         val text = runCatching { fetch() }.getOrElse { e ->
             return Result.Failed(e.message ?: L("网络请求失败"))
         }
@@ -69,7 +75,11 @@ object UpdateChecker {
             notes = json.optString("body").take(1200),
             publishedAt = json.optString("published_at").take(10)
         )
-        return if (compare(info.version, ServerMeta.version) > 0) Result.Newer(info) else Result.UpToDate
+        return when {
+            compare(info.version, ServerMeta.version) > 0 -> Result.Newer(info)
+            ignoreVersion -> Result.Newer(info)
+            else -> Result.UpToDate
+        }
     }
 
     private fun fetch(): String {
@@ -109,17 +119,17 @@ object UpdateChecker {
     fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 
     /**
-     * 开发者模式用：造一份示例更新信息（不联网），用来预览更新弹窗的排版。
-     * 真实检查到新版本时会优先用真实数据，这只在「已经是最新版 / 检查失败」时兜底。
+     * 开发者模式用：连不上 GitHub 时的兜底示例，保证「预览更新弹窗」这条路永远有东西可看。
+     * 能连上就用真实的最新 Release，不会走到这里。
      */
     fun sampleInfo(): Info = Info(
-        tag = "v${ServerMeta.version}-preview",
+        tag = "v${ServerMeta.version}-sample",
         version = ServerMeta.version,
         url = RELEASES_URL,
         notes = L(
-            "这是开发者模式生成的示例更新说明。\n" +
+            "没连上 GitHub，这是本机生成的示例更新说明。\n" +
                 "· 正文长度、换行、以及下面的按钮排版，都可以拿这张弹窗参考；\n" +
-                "· 真检查到新版本时，这里显示的是 GitHub Release 里的说明正文；\n" +
+                "· 联网后这里会显示 GitHub Release 里的说明正文；\n" +
                 "· 点「去下载」会打开 Releases 页面。"
         ),
         publishedAt = today()

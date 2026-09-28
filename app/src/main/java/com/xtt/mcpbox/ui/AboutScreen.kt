@@ -466,21 +466,27 @@ private fun DevModePage(
             listOf(
                 RowSpec(
                     title = L("预览更新弹窗"),
-                    subtitle = if (busy) L("正在检查…能连上就用真实的新版本信息，否则用示例内容")
-                    else L("不管当前是什么版本，直接弹一次更新提示，用来看弹窗排版"),
+                    subtitle = if (busy) L("正在检查…取到就用最新 Release 的真实内容")
+                    else L("不管当前是什么版本，直接弹一次更新提示，显示 GitHub 上最新的 Release"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     onClick = {
                         if (!busy) {
                             busy = true
                             scope.launch {
-                                val r = withContext(Dispatchers.IO) { UpdateChecker.check() }
-                                val real = (r as? UpdateChecker.Result.Newer)?.info
-                                onPreviewUpdate(real ?: UpdateChecker.sampleInfo())
+                                // 忽略版本比较：版本名只在发版时变，否则永远比不过最新 tag
+                                val r = withContext(Dispatchers.IO) {
+                                    UpdateChecker.check(ignoreVersion = true)
+                                }
+                                val info = (r as? UpdateChecker.Result.Newer)?.info
+                                onPreviewUpdate(info ?: UpdateChecker.sampleInfo())
                                 toast(
                                     ctx,
-                                    if (real != null) L("用真实检查结果预览：%s").format(real.tag)
-                                    else L("没查到新版本，用示例内容预览")
+                                    when {
+                                        info != null -> L("用最新 Release %s 预览").format(info.tag)
+                                        r is UpdateChecker.Result.Failed -> L("没连上 GitHub：%s").format(r.reason)
+                                        else -> L("没连上 GitHub，用示例内容预览")
+                                    }
                                 )
                                 busy = false
                             }
@@ -489,7 +495,7 @@ private fun DevModePage(
                 ),
                 RowSpec(
                     title = L("下次启动强制检查更新"),
-                    subtitle = L("清掉「今天已经检查过」的记录，下次打开 App 必定检查一次（模拟第一次进入）"),
+                    subtitle = L("清掉「今天已经检查过」的记录，下次打开 App 必定检查一次；查到最新 Release 就弹窗（模拟第一次进入）"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     onClick = {

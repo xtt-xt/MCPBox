@@ -8,6 +8,29 @@
 """
 
 GROUPS = [
+    ("i18n 第十批（补）：更新弹窗预览改用真实 Release", {
+        "没连上 GitHub：%s": "GitHub unreachable: %s",
+        "不管当前是什么版本，直接弹一次更新提示，显示 GitHub 上最新的 Release":
+            "Shows the update dialog once no matter which version you are on, using the latest release on GitHub",
+        "正在检查…取到就用最新 Release 的真实内容":
+            "Checking\u2026 the latest release is used when reachable",
+        "用最新 Release %s 预览": "Previewing with the latest release %s",
+        "没连上 GitHub，用示例内容预览": "GitHub unreachable; previewing with sample text",
+        "清掉「今天已经检查过」的记录，下次打开 App 必定检查一次；查到最新 Release 就弹窗（模拟第一次进入）":
+            "Clears today's check record, so the next launch always checks once and shows the dialog if a release is found (mimics a first run)",
+        "开发者模式预览：忽略版本比较，直接显示 GitHub 上最新的 Release 说明（发布于 %s）。":
+            "Developer mode preview: version comparison is skipped, so this is the latest release on GitHub (published %s).",
+        "未知": "unknown",
+        "没连上 GitHub，这是本机生成的示例更新说明。\n" +
+        "· 正文长度、换行、以及下面的按钮排版，都可以拿这张弹窗参考；\n" +
+        "· 联网后这里会显示 GitHub Release 里的说明正文；\n" +
+        "· 点「去下载」会打开 Releases 页面。":
+            "GitHub is unreachable, so these are sample release notes generated on this device.\n" +
+            "\u00b7 Use this dialog as a reference for the body length, line breaks and the button layout below;\n" +
+            "\u00b7 With a connection this area shows the body from the GitHub Release;\n" +
+            "\u00b7 Tapping \u300cDownload\u300d opens the Releases page.",
+    }),
+
     ("i18n 第十批：开发者模式（关于页）", {
         "开发者模式": "Developer mode",
         "调试入口：语言菜单、更新弹窗预览、强制检查更新":
@@ -50,4 +73,13 @@ GROUPS = [
     }),
 ]
 
-STALE_KEYS = []
+STALE_KEYS = [
+    # 第十批第一版的两条（预览弹窗改用真实 Release 后不再出现）
+    "开发者模式预览：这张弹窗是造出来的，不代表真有新版本。",
+    "不管当前是什么版本，直接弹一次更新提示，用来看弹窗排版",
+    "正在检查…能连上就用真实的新版本信息，否则用示例内容",
+    "用真实检查结果预览：%s",
+    "没查到新版本，用示例内容预览",
+    "清掉「今天已经检查过」的记录，下次打开 App 必定检查一次（模拟第一次进入）",
+    "发现新版本 %s（预览）",
+]

@@ -188,11 +188,14 @@ fun AppRoot(
         val forced = prefs.forceUpdateCheckNext
         if (forced || (prefs.updateCheckDaily && prefs.lastUpdateCheck != com.xtt.mcpbox.UpdateChecker.today())) {
             prefs.forceUpdateCheckNext = false
-            val r = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.xtt.mcpbox.UpdateChecker.check()
+            // 强制检查时忽略版本比较（本地 versionName 只在发版时变，否则永远比不过最新 tag），
+            // 这样「模拟第一次进入」才真的看得到弹窗
+            val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val r = com.xtt.mcpbox.UpdateChecker.check(ignoreVersion = forced)
+                (r as? com.xtt.mcpbox.UpdateChecker.Result.Newer)?.info
             }
             prefs.lastUpdateCheck = com.xtt.mcpbox.UpdateChecker.today()
-            if (r is com.xtt.mcpbox.UpdateChecker.Result.Newer) updateInfo = r.info
+            if (info != null) updateInfo = info
         }
     }
 
@@ -233,7 +236,8 @@ fun AppRoot(
                 androidx.compose.foundation.layout.Column {
                     if (previewing) {
                         androidx.compose.material3.Text(
-                            L("开发者模式预览：这张弹窗是造出来的，不代表真有新版本。"),
+                            L("开发者模式预览：忽略版本比较，直接显示 GitHub 上最新的 Release 说明（发布于 %s）。")
+                                .format(info.publishedAt.ifBlank { L("未知") }),
                             color = Sem.warn,
                             fontSize = 12.5.sp
                         )
