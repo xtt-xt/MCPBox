@@ -361,34 +361,12 @@ internal fun SecuritySettingsPage(
 
         GroupLabel(L("审批"))
         Spacer(Modifier.height(0.dp))
-        // 滑块行 + 「不限时」开关同属一组：首尾圆角、中间直角，视觉上连成一体
+        // 开关放上面：打开「不限时」后下面的秒数行会带动画收起来
         CardGroup(
             listOf(
-                RowSpec(
-                    title = L("审批超时"),
-                    subtitle = if (approvalUnlimited) L("不限制 · 弹窗不会自动消失，AI 一直等你")
-                    else L("%s 秒 · 超时自动拒绝").format(timeoutState),
-                    subtitleColor = if (approvalUnlimited) Sem.warn else null,
-                    content = {
-                        Slider(
-                            value = timeoutState.toFloat(),
-                            onValueChange = { timeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.approvalTimeoutMs = timeoutState * 1000
-                                AppCore.prefs.approvalTimeoutLastSec = timeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 15f..600f,
-                            steps = 38,
-                            // 不限时时滑块变灰：值仍然显示着上次的秒数，但说了不算
-                            enabled = !approvalUnlimited
-                        )
-                    }
-                ),
                 switchSpec(
                     title = L("审批不限时"),
-                    subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复（上面的秒数失效）"),
+                    subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复"),
                     icon = Icons.Filled.Warning,
                     checked = approvalUnlimited
                 ) { on ->
@@ -404,7 +382,26 @@ internal fun SecuritySettingsPage(
                     }
                     AppCore.saveConfig()
                     onChanged()
-                }
+                },
+                RowSpec(
+                    title = L("审批超时"),
+                    subtitle = L("%s 秒 · 超时自动拒绝").format(timeoutState),
+                    visible = !approvalUnlimited,
+                    content = {
+                        Slider(
+                            value = timeoutState.toFloat(),
+                            onValueChange = { timeoutState = it.toLong() },
+                            onValueChangeFinished = {
+                                AppCore.config.approvalTimeoutMs = timeoutState * 1000
+                                AppCore.prefs.approvalTimeoutLastSec = timeoutState
+                                AppCore.saveConfig()
+                                onChanged()
+                            },
+                            valueRange = 15f..600f,
+                            steps = 38
+                        )
+                    }
+                )
             )
         )
     }
@@ -454,31 +451,10 @@ internal fun ShellSettingsPage(
         GroupLabel(L("超时"))
         CardGroup(
             listOf(
-                RowSpec(
-                    title = L("命令默认超时"),
-                    subtitle = if (shellUnlimited) L("不限制 · 命令一直跑到自己结束")
-                    else L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
-                    subtitleColor = if (shellUnlimited) Sem.warn else null,
-                    content = {
-                        Slider(
-                            value = shellTimeoutState.toFloat(),
-                            onValueChange = { shellTimeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
-                                AppCore.prefs.shellTimeoutLastSec = shellTimeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 10f..300f,
-                            steps = 28,
-                            enabled = !shellUnlimited
-                        )
-                    }
-                ),
                 switchSpec(
                     title = L("命令不限时"),
-                    subtitle = L("打开后 AI 执行的命令会一直跑到自己结束，不会中途被掐断（上面的秒数失效）"),
-                    subtitleMaxLines = 3,
+                    subtitle = L("打开后 AI 执行的命令会一直跑到自己结束，不会中途被掐断"),
+                    subtitleMaxLines = 2,
                     icon = Icons.Filled.Warning,
                     checked = shellUnlimited
                 ) { on ->
@@ -493,7 +469,26 @@ internal fun ShellSettingsPage(
                     }
                     AppCore.saveConfig()
                     onChanged()
-                }
+                },
+                RowSpec(
+                    title = L("命令默认超时"),
+                    subtitle = L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
+                    visible = !shellUnlimited,
+                    content = {
+                        Slider(
+                            value = shellTimeoutState.toFloat(),
+                            onValueChange = { shellTimeoutState = it.toLong() },
+                            onValueChangeFinished = {
+                                AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
+                                AppCore.prefs.shellTimeoutLastSec = shellTimeoutState
+                                AppCore.saveConfig()
+                                onChanged()
+                            },
+                            valueRange = 10f..300f,
+                            steps = 28
+                        )
+                    }
+                )
             )
         )
     }

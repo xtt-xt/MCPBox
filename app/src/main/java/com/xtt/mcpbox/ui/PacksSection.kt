@@ -269,15 +269,9 @@ fun PacksSection(
                 AppCore.config.aiPackControl = on
                 AppCore.saveConfig()
                 onChanged()
-            }
-        )
-    )
-
-    // 会话状态跟着工具包走：自动重置管的就是「激活状态能活多久」，
-    // 所以贴在「让 AI 自己开关工具包」下面，紧挨着「重置这个会话」按钮。
-    GroupLabel(L("会话"))
-    CardGroup(
-        listOf(
+            },
+            // 会话状态跟着工具包走：自动重置管的就是「激活状态能活多久」，
+            // 所以跟上面的开关同属一组卡片，不再另起一个分组标签。
             switchSpec(
                 title = L("会话状态自动重置"),
                 subtitle = if (AppCore.config.profileTtlEnabled)
