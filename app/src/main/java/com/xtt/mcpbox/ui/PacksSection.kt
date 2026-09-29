@@ -289,7 +289,7 @@ fun PacksSection(
         Spacer(Modifier.height(6.dp))
         Text(
             if (AppCore.config.profileTtlEnabled)
-                L("超过 %s 分钟没请求会自动回到默认（可在设置里关掉）")
+                L("超过 %s 分钟没请求会自动回到默认（可在下面关掉）")
                     .format(AppCore.config.profileTtlMinutes)
             else L("会话状态不会自动重置，完全手动控制"),
             color = MaterialTheme.colorScheme.onSurfaceVariant,

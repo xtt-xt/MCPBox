@@ -177,21 +177,21 @@ fun SettingsScreen(
                     onChanged = onChanged,
                     onBack = back
                 )
-                "ai" -> AiSettingsPage(
-                    status = status,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onOpenTools = onOpenTools,
-                    onOpenMemory = onOpenMemory,
-                    onBack = back
-                )
                 "background" -> BackgroundSettingsPage(
                     onChanged = onChanged,
                     onRestartService = onRestartService,
                     onOpenReset = { showReset = true },
                     onBack = back
                 )
-                else -> SettingsHomePage(onPage = onPage, onOpenAbout = onOpenAbout)
+                else -> SettingsHomePage(
+                    toolCount = status.toolCount,
+                    entityCount = AppCore.memory.graph.entities.size,
+                    relationCount = AppCore.memory.graph.relations.size,
+                    onPage = onPage,
+                    onOpenTools = onOpenTools,
+                    onOpenMemory = onOpenMemory,
+                    onOpenAbout = onOpenAbout
+                )
             }
         }
     }
@@ -550,7 +550,15 @@ fun SettingsScreen(
  * 高频的「看状态」留在首页里（版本号写在标题下方）。
  */
 @Composable
-private fun SettingsHomePage(onPage: (String) -> Unit, onOpenAbout: () -> Unit) {
+private fun SettingsHomePage(
+    toolCount: Int,
+    entityCount: Int,
+    relationCount: Int,
+    onPage: (String) -> Unit,
+    onOpenTools: () -> Unit,
+    onOpenMemory: () -> Unit,
+    onOpenAbout: () -> Unit
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -588,14 +596,26 @@ private fun SettingsHomePage(onPage: (String) -> Unit, onOpenAbout: () -> Unit) 
             )
         )
 
-        GroupLabel(L("应用"))
+        GroupLabel(L("AI"))
         CardGroup(
             listOf(
                 entrySpec(
-                    L("AI 与工具"),
-                    L("工具管理、记忆库、会话状态自动重置"),
-                    Icons.Filled.Info
-                ) { onPage("ai") },
+                    L("工具管理"),
+                    L("共 %s 个 · 可单独启用/禁用、设权限（跟随 / 允许 / 询问 / 拒绝）；右上角 + 新建自定义工具")
+                        .format(toolCount),
+                    Icons.Filled.Build
+                ) { onOpenTools() },
+                entrySpec(
+                    L("记忆库"),
+                    L("给 AI 的长期记忆：%s 个实体 · %s 条关系").format(entityCount, relationCount),
+                    Icons.Filled.Star
+                ) { onOpenMemory() }
+            )
+        )
+
+        GroupLabel(L("应用"))
+        CardGroup(
+            listOf(
                 entrySpec(
                     L("后台与运行"),
                     L("CPU 唤醒、开机自启、日志与服务控制"),
