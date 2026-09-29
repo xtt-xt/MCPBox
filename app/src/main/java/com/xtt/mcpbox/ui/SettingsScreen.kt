@@ -150,6 +150,7 @@ fun SettingsScreen(
             when (current) {
                 "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
+                    revision = revision,
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
                     onOpenSeed = { showSeed = true },
@@ -178,6 +179,7 @@ fun SettingsScreen(
                     onBack = back
                 )
                 "background" -> BackgroundSettingsPage(
+                    revision = revision,
                     onChanged = onChanged,
                     onRestartService = onRestartService,
                     onOpenReset = { showReset = true },
@@ -521,18 +523,33 @@ fun SettingsScreen(
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("重置全部设置？"), fontSize = 20.sp) },
             text = {
-                Text(
-                    L("会把权限、端口、令牌、目录等全部恢复默认，并停止服务器。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
+                Column {
+                    Text(
+                        L("会重置除记忆库以外的所有设置。"),
+                        color = Sem.bad,
+                        fontSize = 13.5.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        L("权限开关与规则、工具覆盖、端口、访问令牌、监听目录、外观与语言、后台选项都会回到默认；服务器会停止，用旧令牌的客户端要重新填地址。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        L("记忆库（实体 · 观察 · 关系）不受影响。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     showReset = false
                     AppCore.resetAll()
                     onChanged()
-                }) { Text(L("重置"), color = Sem.bad) }
+                }) { Text(L("确认重置"), color = Sem.bad) }
             },
             dismissButton = {
                 TextButton(onClick = { showReset = false }) {

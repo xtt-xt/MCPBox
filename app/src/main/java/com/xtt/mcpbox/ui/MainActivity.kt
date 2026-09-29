@@ -13,11 +13,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -289,9 +292,22 @@ fun AppRoot(
         NavItem(L("设置"), Icons.Filled.Settings)
     )
 
+    // 设置页进到子页（外观 / 网络 / 安全 / 终端 / 后台…）时隐藏底栏 ——
+    // 跟「工具管理 / 记忆库 / 关于」这些全屏子页保持一致，子页里只有一个返回按钮，
+    // 不然底栏还亮着、点了又跳走，等于给用户两条互相矛盾的出口。
+    val inSettingsSubPage = tab == 4 && settingsPage.isNotEmpty()
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { BottomPillNav(navItems, tab) { tab = it } }
+        bottomBar = {
+            AnimatedVisibility(
+                visible = !inSettingsSubPage,
+                enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
+                exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
+            ) {
+                BottomPillNav(navItems, tab) { tab = it }
+            }
+        }
     ) { padding ->
         Box(
             Modifier

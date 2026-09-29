@@ -86,6 +86,7 @@ internal fun SettingsPageShell(
 @Composable
 internal fun AppearanceSettingsPage(
     ctx: Context,
+    revision: Int,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onOpenSeed: () -> Unit,
@@ -93,7 +94,9 @@ internal fun AppearanceSettingsPage(
     onBack: () -> Unit
 ) {
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
-    val langChoices = com.xtt.mcpbox.i18n.Lang.languageChoices()
+    // 读一下 revision：它是对外声明的「设置变了」，让本页在开关改动后真的重组
+    // （不加这个参数的话，调用点的 lambda 全被 memoize 成相等，整页会被 Compose 跳过）
+    val langChoices = remember(revision) { com.xtt.mcpbox.i18n.Lang.languageChoices() }
 
     SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack) {
         GroupLabel(L("主题"))
@@ -498,11 +501,19 @@ internal fun ShellSettingsPage(
 
 @Composable
 internal fun BackgroundSettingsPage(
+    revision: Int,
     onChanged: () -> Unit,
     onRestartService: () -> Unit,
     onOpenReset: () -> Unit,
     onBack: () -> Unit
 ) {
+    // revision 是本页唯一的「外部状态」依赖：带上它，开关改动后才会重组。
+    // 不带的话调用点的 lambda（onBack / onOpenReset…）会被 Compose memoize 成相等，
+    // 整个子页被判定为「参数没变」直接跳过 —— 表现就是点了开关不动。
+    val keepAwake = remember(revision) { AppCore.prefs.keepAwake }
+    val autoStart = remember(revision) { AppCore.prefs.autoStartBoot }
+    val wakeScreen = remember(revision) { AppCore.prefs.wakeScreenOnApproval }
+    val logEnabled = remember(revision) { AppCore.config.logEnabled }
     SettingsPageShell(L("后台与运行"), L("保活、日志与服务控制"), onBack) {
         GroupLabel(L("后台"))
         CardGroup(
@@ -511,7 +522,7 @@ internal fun BackgroundSettingsPage(
                     title = L("保持 CPU 唤醒"),
                     subtitle = L("长时间会话更稳定，会稍微费电"),
                     icon = Icons.Filled.Warning,
-                    checked = AppCore.prefs.keepAwake
+                    checked = keepAwake
                 ) {
                     AppCore.prefs.keepAwake = it
                     onChanged()
@@ -520,7 +531,7 @@ internal fun BackgroundSettingsPage(
                     title = L("开机自动启动"),
                     subtitle = L("重启手机后自动把服务器打开"),
                     icon = Icons.Filled.Refresh,
-                    checked = AppCore.prefs.autoStartBoot
+                    checked = autoStart
                 ) {
                     AppCore.prefs.autoStartBoot = it
                     onChanged()
@@ -529,7 +540,7 @@ internal fun BackgroundSettingsPage(
                     title = L("审批时点亮屏幕"),
                     subtitle = L("有请求时亮屏，方便马上看到弹窗"),
                     icon = Icons.Filled.Notifications,
-                    checked = AppCore.prefs.wakeScreenOnApproval
+                    checked = wakeScreen
                 ) {
                     AppCore.prefs.wakeScreenOnApproval = it
                     AppCore.overlay?.wakeScreenOnApproval = it
@@ -539,7 +550,7 @@ internal fun BackgroundSettingsPage(
                     title = L("记录日志"),
                     subtitle = L("保留最近 800 条调用/审批记录"),
                     icon = Icons.Filled.Info,
-                    checked = AppCore.config.logEnabled
+                    checked = logEnabled
                 ) {
                     AppCore.config.logEnabled = it
                     AppCore.log.enabled = it
