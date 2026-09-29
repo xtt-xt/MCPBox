@@ -98,7 +98,7 @@ internal fun AppearanceSettingsPage(
     SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack) {
         GroupLabel(L("主题"))
         CardGroup(
-            listOfNotNull(
+            listOf(
                 switchSpec(
                     title = L("动态取色"),
                     subtitle = if (sdkOk) L("用系统壁纸的强调色当种子，Material You 原版配色")
@@ -112,12 +112,13 @@ internal fun AppearanceSettingsPage(
                         onThemeChanged()
                     }
                 },
-                // 动态取色开着的时候，种子色不起作用，就不显示了
-                if (!AppCore.prefs.dynamicColor) RowSpec(
+                // 动态取色开着的时候，种子色不起作用，就带动画收起来
+                RowSpec(
                     title = L("种子颜色"),
                     subtitle = L("整套配色都由这个颜色派生"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Create,
+                    visible = !AppCore.prefs.dynamicColor,
                     onClick = onOpenSeed,
                     trailing = {
                         Box(
@@ -127,7 +128,7 @@ internal fun AppearanceSettingsPage(
                                 .background(Color(AppCore.prefs.seedColor))
                         )
                     }
-                ) else null,
+                ),
                 dropdownSpec(
                     title = L("调色板样式"),
                     subtitle = L("同一个种子色，算法不同味道不同"),

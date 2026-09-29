@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +58,8 @@ fun PacksSection(
     var editing by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDelete by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDeleteProfile by remember { mutableStateOf<String?>(null) }
+    // 会话自动重置的分钟数：拖动时先存本地态，松手才写进配置
+    var ttlMinutesState by remember(revision) { mutableStateOf(AppCore.config.profileTtlMinutes) }
 
     fun selectProfile(id: String) {
         profile = id
@@ -269,6 +273,70 @@ fun PacksSection(
         )
     )
 
+    // 会话状态跟着工具包走：自动重置管的就是「激活状态能活多久」，
+    // 所以贴在「让 AI 自己开关工具包」下面，紧挨着「重置这个会话」按钮。
+    GroupLabel(L("会话"))
+    CardGroup(
+        listOf(
+            switchSpec(
+                title = L("会话状态自动重置"),
+                subtitle = if (AppCore.config.profileTtlEnabled)
+                    L("超过 %s 分钟没请求就回到默认工具包（新对话更干净）")
+                        .format(AppCore.config.profileTtlMinutes)
+                else L("不自动重置，激活状态一直保持到手动改"),
+                subtitleMaxLines = 2,
+                icon = Icons.Filled.Refresh,
+                checked = AppCore.config.profileTtlEnabled
+            ) {
+                AppCore.config.profileTtlEnabled = it
+                AppCore.saveConfig()
+                onChanged()
+            },
+            RowSpec(
+                title = L("重置间隔"),
+                subtitle = L("%s 分钟没动静就重置").format(ttlMinutesState),
+                icon = Icons.Filled.Refresh,
+                visible = AppCore.config.profileTtlEnabled,
+                trailing = {
+                    Slider(
+                        value = ttlMinutesState.toFloat(),
+                        onValueChange = { ttlMinutesState = it.toInt() },
+                        onValueChangeFinished = {
+                            AppCore.config.profileTtlMinutes = ttlMinutesState
+                            AppCore.saveConfig()
+                            onChanged()
+                        },
+                        valueRange = 5f..240f,
+                        modifier = Modifier.width(160.dp)
+                    )
+                }
+            )
+        )
+    )
+
+    Spacer(Modifier.height(7.dp))
+    Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PillButton(
+            L("重置这个会话"), Modifier.weight(1f), outlined = true,
+            color = Sem.warn, compact = true
+        ) {
+            AppCore.profiles.reset(profile)
+            toast(ctx, L("已重置「%s」").format(profile))
+            onChanged()
+        }
+        if (profile != "default") {
+            PillButton(
+                L("删除会话"), Modifier.weight(1f), outlined = true,
+                color = MaterialTheme.colorScheme.error, compact = true
+            ) {
+                AppCore.profiles.remove(profile)
+                selectProfile("default")
+                toast(ctx, L("已删除会话「%s」").format(profile))
+                onChanged()
+            }
+        }
+    }
+
     Spacer(Modifier.height(10.dp))
     Column(Modifier.padding(horizontal = 14.dp)) {
         Text(
@@ -286,38 +354,6 @@ fun PacksSection(
             fontSize = 12.sp,
             lineHeight = 17.sp
         )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            if (AppCore.config.profileTtlEnabled)
-                L("超过 %s 分钟没请求会自动回到默认（可在下面关掉）")
-                    .format(AppCore.config.profileTtlMinutes)
-            else L("会话状态不会自动重置，完全手动控制"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            lineHeight = 17.sp
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PillButton(
-                L("重置这个会话"), Modifier.weight(1f), outlined = true,
-                color = Sem.warn, compact = true
-            ) {
-                AppCore.profiles.reset(profile)
-                toast(ctx, L("已重置「%s」").format(profile))
-                onChanged()
-            }
-            if (profile != "default") {
-                PillButton(
-                    L("删除会话"), Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.error, compact = true
-                ) {
-                    AppCore.profiles.remove(profile)
-                    selectProfile("default")
-                    toast(ctx, L("已删除会话「%s」").format(profile))
-                    onChanged()
-                }
-            }
-        }
     }
 
     // ------------------------------------------------------------- 编辑工具包

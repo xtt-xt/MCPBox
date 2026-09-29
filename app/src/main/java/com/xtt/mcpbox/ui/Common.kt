@@ -11,10 +11,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -241,13 +246,23 @@ data class RowSpec(
      * 有了它，带滑块的行也能塞进同一个 [CardGroup]，和后面的开关连成一体 ——
      * 而不用拆成两张独立卡片（那会破坏「一组卡片首尾圆角、中间直角」的规范）。
      */
-    val content: (@Composable ColumnScope.() -> Unit)? = null
+    val content: (@Composable ColumnScope.() -> Unit)? = null,
+    /**
+     * 这一行现在要不要显示。
+     *
+     * 和「直接把它从列表里删掉」的区别：传 false 是**带动画收起**（展开同理），
+     * 用来做「开关一打开，下面冒出一行」的效果；首尾圆角按剩下的可见行重新算，
+     * 所以收起最后一行时上面那行的底部圆角会跟着变回圆的。
+     */
+    val visible: Boolean = true
 )
 
 /**
  * 一组连续的卡片：
  * 只有最上面一行的顶部圆角、最下面一行的底部圆角是圆的，中间是直角；
  * 按下去的时候直角会带动画地变成圆角，分隔线同时淡出。
+ *
+ * 行之间的显隐走 [RowSpec.visible]，自带展开 / 收起动画。
  */
 @Composable
 fun CardGroup(
@@ -255,17 +270,35 @@ fun CardGroup(
     modifier: Modifier = Modifier,
     horizontalPadding: Int = 14
 ) {
+    // 首尾圆角只认「可见行」：某行收起后，它上面的行就要接管底部圆角
+    val visibleCount = rows.count { it.visible }
+    var seen = 0
     Column(
         modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding.dp)
     ) {
-        rows.forEachIndexed { index, spec ->
-            GroupRowItem(
-                spec = spec,
-                isFirst = index == 0,
-                isLast = index == rows.lastIndex
-            )
+        rows.forEach { spec ->
+            val slot = seen
+            if (spec.visible) seen++
+            AnimatedVisibility(
+                visible = spec.visible,
+                enter = expandVertically(
+                    animationSpec = tween(durationMillis = 220),
+                    expandFrom = Alignment.Top
+                ) + fadeIn(animationSpec = tween(durationMillis = 150)),
+                exit = shrinkVertically(
+                    animationSpec = tween(durationMillis = 180),
+                    shrinkTowards = Alignment.Top
+                ) + fadeOut(animationSpec = tween(durationMillis = 120)),
+                label = "rowVisibility"
+            ) {
+                GroupRowItem(
+                    spec = spec,
+                    isFirst = slot == 0,
+                    isLast = slot == visibleCount - 1
+                )
+            }
         }
     }
 }
