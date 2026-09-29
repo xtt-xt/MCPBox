@@ -1576,6 +1576,95 @@ fun main() {
         val legacyMemory = """{"entities":[{"name":"老实体","type":"旧","folder":"projects","observations":[]}],"relations":[]}"""
         check("嗅探：老格式记忆文件仍然认得出", Backup.sniff(legacyMemory) == Backup.Part.MEMORY)
 
+        println("\n[48] 备份的类型保真（防 ClassCastException）")
+
+        // SharedPreferences 是强类型的：键里存 Integer 时 getLong 会直接崩。
+        // JSON 的 number 分不出 int / long，所以导出时必须把类型记下来。
+        val typeSrc = MemorySettings().apply {
+            putLong(Config.Keys.APPROVAL_TIMEOUT, 300_000L)
+            putLong(Config.Keys.SHELL_TIMEOUT, 60_000L)
+            putInt(Config.Keys.PORT, 8720)
+            putBoolean(Config.Keys.READ_ONLY, false)
+            putString(Config.Keys.ROOTS, "/sdcard")
+        }
+        val settingsTypeDump = Backup.exportSettings(typeSrc, includeToken = false)
+        check("导出带 types 映射", settingsTypeDump.contains("\"types\""), settingsTypeDump.take(160))
+        check("types 把审批超时标成 long", Regex("\"approval_timeout\"\\s*:\\s*\"long\"").containsMatchIn(settingsTypeDump))
+        check("types 把端口标成 int", Regex("\"port\"\\s*:\\s*\"int\"").containsMatchIn(settingsTypeDump))
+        check("types 把只读标成 boolean", Regex("\"read_only\"\\s*:\\s*\"boolean\"").containsMatchIn(settingsTypeDump))
+
+        // 恢复到空目标：每个键的类型都要跟原稿一致
+        val settingsTypeTarget = MemorySettings()
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsTypeDump, Backup.Mode.MERGE, restoreToken = false,
+            settings = settingsTypeTarget, memory = MemorySettings().let { MemoryStore(null) }, customTools = toolsX
+        )
+        check(
+            "恢复后 approval_timeout 仍是 Long（关键：不然 getLong 会崩）",
+            settingsTypeTarget.all()[Config.Keys.APPROVAL_TIMEOUT] is Long,
+            settingsTypeTarget.all()[Config.Keys.APPROVAL_TIMEOUT]?.javaClass?.simpleName ?: "null"
+        )
+        check("恢复后 shell_timeout 仍是 Long", settingsTypeTarget.all()[Config.Keys.SHELL_TIMEOUT] is Long)
+        check("恢复后 port 仍是 Int", settingsTypeTarget.all()[Config.Keys.PORT] is Int)
+        check("恢复后 read_only 仍是 Boolean", settingsTypeTarget.all()[Config.Keys.READ_ONLY] is Boolean)
+        check("恢复后 roots 仍是 String", settingsTypeTarget.all()[Config.Keys.ROOTS] is String)
+        check(
+            "恢复后真的读得出 Long 值",
+            runCatching { settingsTypeTarget.getLong(Config.Keys.APPROVAL_TIMEOUT, 0L) }.getOrNull() == 300_000L
+        )
+
+        // 覆盖模式同样要保类型（这条路径会先 clearAll）
+        val typeReplace = MemorySettings()
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsTypeDump, Backup.Mode.REPLACE, restoreToken = false,
+            settings = typeReplace, memory = MemoryStore(null), customTools = toolsX
+        )
+        check("覆盖恢复后 approval_timeout 仍是 Long", typeReplace.all()[Config.Keys.APPROVAL_TIMEOUT] is Long)
+
+        // —— 老备份（没有 types）：数字要跟着「当前这个键的类型」走
+        val legacyNoTypes = """{"values":{"approval_timeout":300000,"port":8720,"read_only":true}}"""
+        val legacyTarget = MemorySettings().apply {
+            putLong(Config.Keys.APPROVAL_TIMEOUT, 1L)
+            putInt(Config.Keys.PORT, 1)
+            putBoolean(Config.Keys.READ_ONLY, false)
+        }
+        Backup.apply(
+            Backup.Part.SETTINGS, legacyNoTypes, Backup.Mode.MERGE, restoreToken = false,
+            settings = legacyTarget, memory = MemoryStore(null), customTools = toolsX
+        )
+        check("老备份：当前是 Long 的键恢复成 Long", legacyTarget.all()[Config.Keys.APPROVAL_TIMEOUT] is Long)
+        check("老备份：当前是 Int 的键恢复成 Int", legacyTarget.all()[Config.Keys.PORT] is Int)
+        check("老备份：当前是 Boolean 的键恢复成 Boolean", legacyTarget.all()[Config.Keys.READ_ONLY] is Boolean)
+        check("老备份：值本身也对", legacyTarget.getLong(Config.Keys.APPROVAL_TIMEOUT, 0L) == 300_000L)
+
+        // 完全没有参照时（键本来不存在）：能塞进 Int 就用 Int
+        val guessTarget = MemorySettings()
+        Backup.apply(
+            Backup.Part.SETTINGS, legacyNoTypes, Backup.Mode.MERGE, restoreToken = false,
+            settings = guessTarget, memory = MemoryStore(null), customTools = toolsX
+        )
+        check("老备份：没有参照时小数字用 Int", guessTarget.all()[Config.Keys.PORT] is Int)
+
+        // 恢复设置后 Config 必须能正常 reload（这就是当时闪退的那一行）
+        val reloadTarget = MemorySettings().apply {
+            putInt(Config.Keys.PORT, 18720)
+            putBoolean(Config.Keys.BIND_ALL, false)
+            putString(Config.Keys.TOKEN, "t")
+            putBoolean(Config.Keys.TOKEN_ENABLED, true)
+            putString(Config.Keys.ROOTS, root.absolutePath)
+            putLong(Config.Keys.APPROVAL_TIMEOUT, 5000L)
+        }
+        val cfgDump = Backup.exportSettings(reloadTarget, includeToken = true)
+        val cfgTarget = MemorySettings()
+        Backup.apply(
+            Backup.Part.SETTINGS, cfgDump, Backup.Mode.REPLACE, restoreToken = true,
+            settings = cfgTarget, memory = MemoryStore(null), customTools = toolsX
+        )
+        val reloadOk = runCatching { Config(cfgTarget).reload() }.isSuccess
+        check("恢复后 Config.reload() 不抛异常（当时的闪退点）", reloadOk)
+        check("reload 后审批超时读得到", Config(cfgTarget).approvalTimeoutMs == 5000L)
+        check("reload 后端口读得到", Config(cfgTarget).port == 18720)
+
         config.shellTimeoutMs = 60_000L
     } finally {
         server.stop()

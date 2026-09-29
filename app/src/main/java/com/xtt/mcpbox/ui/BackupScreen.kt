@@ -747,6 +747,11 @@ private fun singleExportRow(
 
 /* ------------------------------------------------------------------ 小件 */
 
+/**
+ * 勾选状态：勾上打勾，没勾就什么都不显示。
+ * （早先这里放了个「不备份」灰标签，两个状态都在抢注意力，太吵；
+ * 整行本身就能点，没勾就是没勾。）
+ */
 @Composable
 private fun CheckMark(checked: Boolean) {
     if (checked) {
@@ -756,8 +761,6 @@ private fun CheckMark(checked: Boolean) {
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp)
         )
-    } else {
-        OutlineTag(L("不备份"), MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

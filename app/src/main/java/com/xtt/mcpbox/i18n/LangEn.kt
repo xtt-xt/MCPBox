@@ -1675,5 +1675,6 @@ object LangEn {
     "每个文件都自带类型标记，恢复时会被自动认出来 —— 单独导出的文件也能单独恢复。" to "Every file carries a type tag so restoring can tell what it is — standalone files restore on their own too.",
     "把记忆、设置和自定义工具打包导出，或从备份里挑着恢复" to "Export memory, settings and custom tools as a package, or restore just the parts you pick",
     "外观 / 语言的改动已经生效；端口或监听目录变了的话，记得去「后台与运行」重启一次服务器。" to "Appearance and language changes are live already; if the port or watched directories changed, restart the server from Background & runtime.",
+    "重载设置时出错：%s" to "Failed to reload settings: %s",
     )
 }

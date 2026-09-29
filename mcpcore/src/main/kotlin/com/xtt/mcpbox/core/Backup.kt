@@ -92,13 +92,18 @@ object Backup {
 
     // ---------------------------------------------------------------- 导出
 
-    /** 设置部分：值按类型原样存，恢复时再按类型写回。 */
+    /**
+     * 设置部分：值按类型原样存，恢复时再按类型写回。
+     *
+     * **必须额外记一份 `types`**：JSON 的数字不区分 int / long，
+     * `approval_timeout = 300000` 导出再读回来会变成 Int，
+     * 而 SharedPreferences 是强类型的 —— `getLong()` 读到 Integer 会直接
+     * ClassCastException 崩掉。所以这里把每个键的原始类型标出来。
+     */
     fun exportSettings(settings: SettingsSource, includeToken: Boolean): String {
-        val values = buildJsonObject {
-            settings.all()
-                .filterKeys { includeToken || it != TOKEN_KEY }
-                .forEach { (k, v) -> putValue(this, k, v) }
-        }
+        val entries = settings.all().filterKeys { includeToken || it != TOKEN_KEY }
+        val values = buildJsonObject { entries.forEach { (k, v) -> putValue(this, k, v) } }
+        val types = buildJsonObject { entries.forEach { (k, v) -> put(k, typeName(v)) } }
         return J.encodeToString(
             JsonObject.serializer(),
             buildJsonObject {
@@ -107,9 +112,20 @@ object Backup {
                 put("app", ServerMeta.fullVersion)
                 put("exportedAt", System.currentTimeMillis())
                 put("tokenIncluded", includeToken)
+                put("types", types)
                 put("values", values)
             }
         )
+    }
+
+    /** 一个值的类型名，恢复时靠它把数字写回正确的 Java 类型。 */
+    private fun typeName(value: Any?): String = when (value) {
+        null -> "null"
+        is Boolean -> "boolean"
+        is Int -> "int"
+        is Long -> "long"
+        is Float, is Double -> "double"
+        else -> "string"
     }
 
     private fun putValue(builder: kotlinx.serialization.json.JsonObjectBuilder, key: String, value: Any?) {
@@ -249,8 +265,12 @@ object Backup {
             ?: throw ToolFailure(L("设置备份里没有 values 字段"))
         val keepToken = settings.getString(TOKEN_KEY, null) ?: ""
 
+        val types = obj["types"] as? JsonObject
+        val before = settings.all()
         val incoming = LinkedHashMap<String, Any?>()
-        values.forEach { (k, v) -> incoming[k] = jsonToValue(v) }
+        values.forEach { (k, v) ->
+            incoming[k] = coerce(k, v, types, before[k])
+        }
 
         if (!restoreToken) incoming.remove(TOKEN_KEY)
 
@@ -265,10 +285,36 @@ object Backup {
         return L("已恢复 %s 项设置（%s）").format(count, L(if (mode == Mode.MERGE) "合并" else "覆盖"))
     }
 
-    private fun jsonToValue(el: kotlinx.serialization.json.JsonElement): Any? {
+    /**
+     * 把 JSON 里的值转成该键「原本的 Java 类型」。
+     *
+     * 优先看备份自带的 `types`；老备份没有这一栏时，就**跟随当前这个键的类型**
+     * （比如当前 approval_timeout 是 Long，备份里是 300000，那就写回 Long）——
+     * 实在没有参照才按数字范围猜。这一步是防 ClassCastException 的关键。
+     */
+    private fun coerce(
+        key: String,
+        el: kotlinx.serialization.json.JsonElement,
+        types: JsonObject?,
+        existing: Any?
+    ): Any? {
         val p = el as? JsonPrimitive ?: return el.toString()
+        val declared = types?.get(key)?.jsonPrimitive?.contentOrNull
+        // 声明了类型就严格照做
+        when (declared) {
+            "boolean" -> return p.booleanOrNull ?: p.content.equals("true", true)
+            "int" -> return p.intOrNull ?: p.doubleOrNull?.toInt() ?: 0
+            "long" -> return p.longOrNull ?: p.doubleOrNull?.toLong() ?: 0L
+            "double" -> return p.doubleOrNull ?: 0.0
+            "string" -> return p.content
+            "null" -> return null
+        }
         if (p.isString) return p.content
         p.booleanOrNull?.let { return it }
+        if (existing is Long) return p.longOrNull ?: p.doubleOrNull?.toLong() ?: return p.content
+        if (existing is Int) return p.intOrNull ?: p.doubleOrNull?.toInt() ?: return p.content
+        if (existing is Boolean) return p.booleanOrNull ?: return p.content
+        // 没有参照：能塞进 Int 就 Int，否则 Long，带小数点的当 Double
         p.intOrNull?.let { return it }
         p.longOrNull?.let { return it }
         p.doubleOrNull?.let { return it }

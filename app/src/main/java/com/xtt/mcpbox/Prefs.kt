@@ -45,9 +45,53 @@ class Prefs(context: Context) : SettingsSource {
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
-    override fun getInt(key: String, def: Int): Int = sp.getInt(key, def)
-    override fun getLong(key: String, def: Long): Long = sp.getLong(key, def)
-    override fun getBoolean(key: String, def: Boolean): Boolean = sp.getBoolean(key, def)
+
+    /*
+     * SharedPreferences 是强类型的：键里存的是 Integer 时 `getLong` 会直接抛
+     * ClassCastException（恢复备份写错类型就踩过这个坑，App 直接闪退）。
+     *
+     * 所以这几个读取都包一层：正常路径零额外开销（不抛异常就不会进 fallback），
+     * 真读到不匹配的类型才转一下，**并顺手写回正确类型**，免得每次都纠一次。
+     */
+
+    override fun getInt(key: String, def: Int): Int =
+        runCatching { sp.getInt(key, def) }.getOrElse {
+            val v = numberOrNull(key)?.toInt() ?: return@getOrElse def
+            sp.edit().putInt(key, v).apply()
+            v
+        }
+
+    override fun getLong(key: String, def: Long): Long =
+        runCatching { sp.getLong(key, def) }.getOrElse {
+            val v = numberOrNull(key) ?: return@getOrElse def
+            sp.edit().putLong(key, v).apply()
+            v
+        }
+
+    override fun getBoolean(key: String, def: Boolean): Boolean =
+        runCatching { sp.getBoolean(key, def) }.getOrElse {
+            val raw = sp.all[key]
+            val v = when (raw) {
+                is Boolean -> raw
+                is String -> raw.equals("true", true)
+                is Number -> raw.toInt() != 0
+                else -> return@getOrElse def
+            }
+            sp.edit().putBoolean(key, v).apply()
+            v
+        }
+
+    /** 把键里的原始值当数字读（只在类型不匹配的 fallback 路径里用）。 */
+    private fun numberOrNull(key: String): Long? = when (val raw = sp.all[key]) {
+        is Long -> raw
+        is Int -> raw.toLong()
+        is Float -> raw.toLong()
+        is Double -> raw.toLong()
+        is String -> raw.toLongOrNull()
+        is Boolean -> if (raw) 1L else 0L
+        else -> null
+    }
+
     override fun putString(key: String, value: String?) {
         sp.edit().apply { if (value == null) remove(key) else putString(key, value) }.apply()
     }

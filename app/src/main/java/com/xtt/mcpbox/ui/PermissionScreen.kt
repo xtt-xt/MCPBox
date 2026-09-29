@@ -142,7 +142,10 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
                                 value = L(current.label),
                                 options = PermAction.entries.map { L(it.label) },
                                 expanded = openPerm == key,
-                                onExpandedChange = { open -> if (!open) openPerm = null }
+                                // 打开和关闭都要接：早先只处理了「关闭」，
+                                // 胶囊自己那次点击被吞掉（setOpen(true) → 回调里啥也不做），
+                                // 结果只有点整行才展开、点胶囊没反应。
+                                onExpandedChange = { open -> openPerm = if (open) key else null }
                             ) { index ->
                                 openPerm = null
                                 AppCore.permissions.setSwitch(key, PermAction.entries[index])

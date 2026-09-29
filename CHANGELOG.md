@@ -106,6 +106,29 @@ The previous release was `v1.0.0-22` (2026-09-12). What changed since then:
 
 ---
 
+## v1.1.0-65 · 2026-09-29
+
+**修：恢复备份闪退（ClassCastException）· 权限胶囊点不动 · 备份页不打勾不再显示灰标签**
+
+- **恢复备份直接闪退** —— 根因是 JSON 分不出 `int` / `long`：
+  `approval_timeout = 300000` 导出再读回来变成 Int，我用 `putInt` 写了回去，
+  而 `Config.reload()` 用 `getLong` 读 → `ClassCastException: Integer cannot be cast to Long` → 崩。
+  三处一起修：
+  - 导出设置时**额外记一份 `types` 映射**（每个键的原始类型），恢复时严格照类型写回
+  - 没有 `types` 的老备份：跟着**当前这个键的类型**走（当前是 Long 就写 Long）
+  - `Prefs` 的 `getInt` / `getLong` / `getBoolean` 加了容错：读到不匹配的类型就自己转，
+    并顺手写回正确类型（防旧版本留下的坏数据，也防以后再踩）
+- **权限页的胶囊点不动** —— `onExpandedChange` 只处理了「关闭」：
+  胶囊自己的 `.clickable { setOpen(true) }` 走进回调后 `open == true` 什么都不做。
+  现在开关都接，点胶囊和点整行都能展开
+- **备份页**：没勾选的内容不再显示「不备份」灰标签，不打勾就是不打勾
+
+### 基线
+
+- 端到端测试 **413 项全绿**（第 48 段 19 项：备份的类型保真）
+
+---
+
 ## v1.1.0-64 · 2026-09-29
 
 **备份与恢复（设置 → 应用），外加几个修修补补**
