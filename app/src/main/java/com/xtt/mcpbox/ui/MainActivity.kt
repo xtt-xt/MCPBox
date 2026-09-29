@@ -272,6 +272,14 @@ fun AppRoot(
                         onChanged = { revision++ },
                         onBack = { subScreen = "" }
                     )
+                    "backup" -> BackupScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onThemeChanged = onThemeChanged,
+                        onLangChanged = onLangChanged,
+                        onBack = { subScreen = "" }
+                    )
                     // tools 以及任何意外值都兜到工具管理，避免白屏
                     else -> ToolsScreen(
                         ctx = ctx,
@@ -364,6 +372,7 @@ fun AppRoot(
                     onLangChanged = onLangChanged,
                     onOpenTools = { subScreen = "tools" },
                     onOpenMemory = { subScreen = "memory" },
+                    onOpenBackup = { subScreen = "backup" },
                     onOpenAbout = { subScreen = "about" },
                     onChanged = { revision++ },
                     onRestartService = { McpService.restart(ctx) }

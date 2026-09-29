@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -54,6 +55,8 @@ import com.xtt.mcpbox.core.ToolFailure
 fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<CustomTool?>(null) }
     var creating by remember { mutableStateOf(false) }
+    // 右上角「⋯」：导出到文件 / 从文件导入
+    var showMenu by remember { mutableStateOf(false) }
 
     // 系统返回键 = 退回设置页，而不是把整个 App 关掉
     androidx.activity.compose.BackHandler(enabled = true) { onBack() }
@@ -99,7 +102,11 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
         PageHeader(
             title = L("自定义工具"),
             subtitle = L("给 AI 造工具：命令模板里用 {{参数名}} 插入参数，创建后自动出现在 tools/list"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+            actions = {
+                RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = { showMenu = true })
+                Spacer(Modifier.width(8.dp))
+                RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
+            }
         )
 
         CardGroup(
@@ -118,22 +125,14 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
                 )
             )
         )
-        Spacer(Modifier.height(7.dp))
-        CardColumn {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PillButton(
-                    L("导出到文件"), Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.primary, compact = true
-                ) {
-                    exportLauncher.launch("mcp-tools.json")
-                }
-                PillButton(
-                    L("从文件导入"), Modifier.weight(1f), outlined = true,
-                    color = MaterialTheme.colorScheme.primary, compact = true
-                ) {
-                    importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                }
-            }
+        Spacer(Modifier.height(10.dp))
+        Column(Modifier.padding(horizontal = 14.dp)) {
+            Text(
+                L("导出 / 导入在右上角的菜单里 —— 备份文件也能在「设置 → 备份与恢复」里统一管理。"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                lineHeight = 17.sp
+            )
         }
 
         GroupLabel(L("已有工具（%s）").format(tools.size))
@@ -190,6 +189,21 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
                     icon = Icons.Filled.Share
                 )
             )
+        )
+    }
+
+    // 右上角「⋯」：跟记忆页一个套路，导出 / 导入都收进菜单里
+    if (showMenu) {
+        ChoiceDialog(
+            title = L("自定义工具"),
+            options = listOf(L("导出到文件"), L("从文件导入")),
+            selected = -1,
+            onDismiss = { showMenu = false },
+            onSelect = { index ->
+                showMenu = false
+                if (index == 0) exportLauncher.launch("mcpbox-custom-tools-${toolStamp()}.json")
+                else importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+            }
         )
     }
 
@@ -383,3 +397,7 @@ private fun EditToolDialog(
         }
     )
 }
+
+/** 导出文件名里的时间戳，如 20260929-213045。 */
+private fun toolStamp(): String =
+    java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())

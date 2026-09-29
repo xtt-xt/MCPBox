@@ -90,6 +90,7 @@ fun SettingsScreen(
     onLangChanged: () -> Unit,
     onOpenTools: () -> Unit,
     onOpenMemory: () -> Unit,
+    onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit,
     onChanged: () -> Unit,
     onRestartService: () -> Unit
@@ -192,6 +193,7 @@ fun SettingsScreen(
                     onPage = onPage,
                     onOpenTools = onOpenTools,
                     onOpenMemory = onOpenMemory,
+                    onOpenBackup = onOpenBackup,
                     onOpenAbout = onOpenAbout
                 )
             }
@@ -574,6 +576,7 @@ private fun SettingsHomePage(
     onPage: (String) -> Unit,
     onOpenTools: () -> Unit,
     onOpenMemory: () -> Unit,
+    onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit
 ) {
     Column(
@@ -638,6 +641,11 @@ private fun SettingsHomePage(
                     L("CPU 唤醒、开机自启、日志与服务控制"),
                     Icons.Filled.Refresh
                 ) { onPage("background") },
+                entrySpec(
+                    L("备份与恢复"),
+                    L("把记忆、设置和自定义工具打包导出，或从备份里挑着恢复"),
+                    Icons.Filled.Share
+                ) { onOpenBackup() },
                 entrySpec(
                     L("关于"),
                     L("%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.fullVersion),

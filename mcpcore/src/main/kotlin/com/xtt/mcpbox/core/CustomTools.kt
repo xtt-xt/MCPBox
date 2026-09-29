@@ -179,6 +179,9 @@ class CustomToolStore(private val config: Config, private val src: SettingsSourc
     fun exportJson(): String {
         val el = J.encodeToJsonElement(ListSerializer(CustomTool.serializer()), tools)
         return jo(
+            // 类型标记：备份页靠它认出「这个文件是自定义工具」，
+            // 老备份文件没有这个字段，那边还有按 `tools` 字段猜的兜底
+            "_type" to Backup.TYPE_TOOLS,
             "version" to 1,
             "exportedAt" to System.currentTimeMillis(),
             "note" to L("MCP 文件盒 · 自定义工具导出"),

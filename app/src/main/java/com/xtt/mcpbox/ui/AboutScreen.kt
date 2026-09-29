@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -123,10 +124,28 @@ fun AboutScreen(
         pages.SaveableStateProvider(current) {
             if (current == DEV_PAGE) {
                 DevModePage(
+                    revision = revision,
                     ctx = ctx,
                     onChanged = onChanged,
                     onLangChanged = onLangChanged,
                     onPreviewUpdate = onPreviewUpdate,
+                    onCloseDev = {
+                        // 关掉开发者模式：入口卡片消失，语言菜单也一起收起来。
+                        // 如果正用着彩蛋语言，顺手退回跟随系统，免得下拉里找不到当前项。
+                        AppCore.prefs.devModeUnlocked = false
+                        if (AppCore.prefs.languageMenu) {
+                            AppCore.prefs.languageMenu = false
+                            Lang.AndroidCatFlag.unlocked = false
+                            if (AppCore.prefs.appLang == Lang.CAT) {
+                                AppCore.prefs.appLang = "system"
+                                Lang.init(ctx, "system", Lang.systemIsEnglish)
+                                onLangChanged()
+                            }
+                        }
+                        page = ABOUT_PAGE
+                        toast(ctx, L("开发者模式已关闭"))
+                        onChanged()
+                    },
                     onBack = { page = ABOUT_PAGE }
                 )
             } else {
@@ -413,15 +432,18 @@ private fun AboutHomePage(
  */
 @Composable
 private fun DevModePage(
+    revision: Int,
     ctx: Context,
     onChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onPreviewUpdate: (UpdateChecker.Info) -> Unit,
+    onCloseDev: () -> Unit,
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
-    val langMenu = AppCore.prefs.languageMenu
+    // 带上 revision：不然开关点了界面不重组，看着像没生效
+    val langMenu = remember(revision) { AppCore.prefs.languageMenu }
 
     Column(
         Modifier
@@ -515,6 +537,21 @@ private fun DevModePage(
                 fontSize = 12.sp
             )
         }
+
+        GroupLabel(L("开发者模式"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("关闭开发者模式"),
+                    subtitle = L("关于页的入口卡片会消失，「语言菜单」也一起关掉。再解锁连点图标 7 次就行"),
+                    subtitleMaxLines = 2,
+                    subtitleColor = Sem.warn,
+                    icon = Icons.Filled.Warning,
+                    onClick = onCloseDev
+                )
+            )
+        )
+
         Spacer(Modifier.height(20.dp))
     }
 }

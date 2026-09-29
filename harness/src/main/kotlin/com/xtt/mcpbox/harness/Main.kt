@@ -1427,6 +1427,155 @@ fun main() {
         val (okBadImp, badImpText) = call("memory_import", """{"path":"xtt/bad-memory.json"}""")
         check("导入非法文件会报错", !okBadImp, badImpText.take(200))
 
+        println("\n[47] 备份与恢复")
+
+        // —— 设置部分：导出 → 嗅探 → 合并恢复 / 覆盖恢复
+        val bkSettings = MemorySettings().apply {
+            putInt(Config.Keys.PORT, 19999)
+            putBoolean(Config.Keys.READ_ONLY, true)
+            putString(Config.Keys.TOKEN, "tok-abc")
+            putString(Config.Keys.ROOTS, "/sdcard")
+        }
+        val memX = MemoryStore(null).also {
+            it.createEntities(listOf(Triple("备份：甲", "项目", "projects")))
+            it.addObservations("备份：甲", listOf("一条观察"))
+        }
+        val toolsX = CustomToolStore(Config(MemorySettings()), MemorySettings())
+
+        val settingsNoToken = Backup.exportSettings(bkSettings, includeToken = false)
+        check("设置导出：不含令牌时确实没写进去", !Backup.settingsHasToken(settingsNoToken))
+        check("设置导出：普通键在里面", settingsNoToken.contains("\"port\"") && settingsNoToken.contains("19999"))
+        check("设置导出：带 _type 标记", settingsNoToken.contains(Backup.TYPE_SETTINGS))
+        check("设置导出：能嗅探出类型", Backup.sniff(settingsNoToken) == Backup.Part.SETTINGS)
+
+        val settingsWithToken = Backup.exportSettings(bkSettings, includeToken = true)
+        check("设置导出：含令牌时写得进去", Backup.settingsHasToken(settingsWithToken))
+        check("设置导出：令牌值在里面", settingsWithToken.contains("tok-abc"))
+
+        // 合并：只动备份里提到的键
+        val mergeTarget = MemorySettings().apply {
+            putInt(Config.Keys.PORT, 1)
+            putString(Config.Keys.ROOTS, "/keep-me")
+            putBoolean(Config.Keys.TRASH, false)
+            putString(Config.Keys.TOKEN, "current-token")
+        }
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsNoToken, Backup.Mode.MERGE, restoreToken = false,
+            settings = mergeTarget, memory = memX, customTools = toolsX
+        )
+        check("合并恢复：备份里的键被改写", mergeTarget.getInt(Config.Keys.PORT, 0) == 19999)
+        check(
+            "合并恢复：备份里没提到的键保持原样",
+            mergeTarget.getString(Config.Keys.TRASH, null) == null,
+            "trash=${mergeTarget.getString(Config.Keys.TRASH, null)}"
+        )
+        check("合并恢复：root 被备份覆盖", mergeTarget.getString(Config.Keys.ROOTS, "") == "/sdcard")
+        check("合并恢复：没勾「恢复令牌」时当前令牌不动", mergeTarget.getString(Config.Keys.TOKEN, "") == "current-token")
+
+        // 覆盖：先清空再写入
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsNoToken, Backup.Mode.REPLACE, restoreToken = false,
+            settings = mergeTarget, memory = memX, customTools = toolsX
+        )
+        check("覆盖恢复：备份里的键写进去了", mergeTarget.getInt(Config.Keys.PORT, 0) == 19999)
+        check("覆盖恢复：当前令牌仍在（没勾恢复令牌）", mergeTarget.getString(Config.Keys.TOKEN, "") == "current-token")
+        check("覆盖恢复：只留下备份里的键", mergeTarget.all().keys.contains(Config.Keys.PORT))
+
+        // 勾了「恢复令牌」 → 令牌跟着备份走
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsWithToken, Backup.Mode.MERGE, restoreToken = true,
+            settings = mergeTarget, memory = memX, customTools = toolsX
+        )
+        check("勾了恢复令牌：令牌变成备份里那个", mergeTarget.getString(Config.Keys.TOKEN, "") == "tok-abc")
+
+        // 覆盖 + 恢复令牌
+        val replaceAll = MemorySettings().apply { putString(Config.Keys.TOKEN, "will-be-replaced") }
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsWithToken, Backup.Mode.REPLACE, restoreToken = true,
+            settings = replaceAll, memory = memX, customTools = toolsX
+        )
+        check("覆盖 + 恢复令牌：令牌被替换", replaceAll.getString(Config.Keys.TOKEN, "") == "tok-abc")
+
+        // —— 设置部分：类型要原样还原（bool 不能变成字符串）
+        val typed = MemorySettings().apply { putBoolean(Config.Keys.TRASH, false) }
+        Backup.apply(
+            Backup.Part.SETTINGS, settingsNoToken, Backup.Mode.MERGE, restoreToken = false,
+            settings = typed, memory = memX, customTools = toolsX
+        )
+        check("类型还原：布尔键仍是布尔", typed.getBoolean(Config.Keys.READ_ONLY, false))
+        check("类型还原：整数键仍是整数", typed.getInt(Config.Keys.PORT, 0) == 19999)
+
+        // —— 记忆部分：合并 / 覆盖都走通
+        val memDump = memX.exportJson()
+        check("记忆导出：能嗅探出类型", Backup.sniff(memDump) == Backup.Part.MEMORY)
+        val memPlain = MemoryStore(null).also { it.createEntities(listOf(Triple("原有", "类型", "x"))) }
+        Backup.apply(
+            Backup.Part.MEMORY, memDump, Backup.Mode.MERGE, restoreToken = false,
+            settings = MemorySettings(), memory = memPlain, customTools = toolsX
+        )
+        check("记忆合并：原有内容没丢", memPlain.entity("原有") != null)
+        check("记忆合并：备份内容加进来了", memPlain.entity("备份：甲") != null)
+
+        val memWipe = MemoryStore(null).also { it.createEntities(listOf(Triple("会被清掉", "类型", "x"))) }
+        Backup.apply(
+            Backup.Part.MEMORY, memDump, Backup.Mode.REPLACE, restoreToken = false,
+            settings = MemorySettings(), memory = memWipe, customTools = toolsX
+        )
+        check("记忆覆盖：旧内容被清掉", memWipe.entity("会被清掉") == null)
+        check("记忆覆盖：备份内容进来了", memWipe.entity("备份：甲") != null)
+
+        // —— 自定义工具部分
+        val toolDump = toolsX.exportJson()
+        check("工具导出：能嗅探出类型", Backup.sniff(toolDump) == Backup.Part.CUSTOM_TOOLS)
+        check("工具导出：带 _type 标记", toolDump.contains(Backup.TYPE_TOOLS))
+
+        // —— zip 打包 / 解包
+        val zipBytes = Backup.zip(
+            parts = mapOf(
+                Backup.Part.MEMORY to memDump,
+                Backup.Part.SETTINGS to settingsWithToken,
+                Backup.Part.CUSTOM_TOOLS to toolDump
+            ),
+            includeToken = true
+        )
+        check("zip：产出了非空字节", zipBytes.isNotEmpty(), "${zipBytes.size} 字节")
+        val bundle = Backup.readZip(zipBytes)
+        check("zip：解出三部分", bundle.parts.size == 3, "${bundle.parts.keys}")
+        check("zip：含令牌标记为 true", bundle.tokenIncluded)
+        check("zip：解出的记忆和原稿一致", bundle.parts[Backup.Part.MEMORY] == memDump)
+        check("zip：解出的设置和原稿一致", bundle.parts[Backup.Part.SETTINGS] == settingsWithToken)
+        check("zip：版本号写进了 manifest", bundle.app == ServerMeta.fullVersion, "${bundle.app}")
+
+        // 不含令牌的包
+        val zipNoToken = Backup.zip(
+            parts = mapOf(Backup.Part.SETTINGS to settingsNoToken),
+            includeToken = false
+        )
+        check("zip：不含令牌时标记为 false", !Backup.readZip(zipNoToken).tokenIncluded)
+
+        // 坏 zip / 空 zip
+        check(
+            "zip：不是 zip 的字节会报错",
+            runCatching { Backup.readZip("这不是 zip".toByteArray()) }.isFailure
+        )
+        val emptyZip = java.io.ByteArrayOutputStream().also { bos ->
+            java.util.zip.ZipOutputStream(bos).use { it.finish() }
+        }.toByteArray()
+        check("zip：空 zip 会报错", runCatching { Backup.readZip(emptyZip) }.isFailure)
+
+        // 单独导出的文件也要能被 sniff 认出来（导入单文件时靠它）
+        check(
+            "嗅探：三种单独文件都能认出来",
+            Backup.sniff(memDump) == Backup.Part.MEMORY &&
+                Backup.sniff(settingsNoToken) == Backup.Part.SETTINGS &&
+                Backup.sniff(toolDump) == Backup.Part.CUSTOM_TOOLS
+        )
+        check("嗅探：随便一段文字认不出（返回 null）", Backup.sniff("随便一段文字") == null)
+
+        // 老记忆文件（没有 _type）也要认：兼容 1.1.0-55 的备份
+        val legacyMemory = """{"entities":[{"name":"老实体","type":"旧","folder":"projects","observations":[]}],"relations":[]}"""
+        check("嗅探：老格式记忆文件仍然认得出", Backup.sniff(legacyMemory) == Backup.Part.MEMORY)
+
         config.shellTimeoutMs = 60_000L
     } finally {
         server.stop()

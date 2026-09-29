@@ -164,7 +164,10 @@ class Prefs(context: Context) : SettingsSource {
         set(value) = putLong(KEY_SHELL_TIMEOUT_LAST, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
-    fun clearAll() = sp.edit().clear().apply()
+    override fun clearAll() = sp.edit().clear().apply()
+
+    /** 全部键值：备份用。SharedPreferences 的 getAll() 本来就是只读快照。 */
+    override fun all(): Map<String, Any?> = LinkedHashMap(sp.all)
 }
 
 /** 目录建议：给「添加允许访问的目录」对话框用。 */
