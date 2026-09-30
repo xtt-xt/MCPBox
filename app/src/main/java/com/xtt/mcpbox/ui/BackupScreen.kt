@@ -4,7 +4,11 @@
 package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
+import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,20 +19,24 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -37,33 +45,45 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.core.Backup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 备份与恢复。
  *
- * 两个子页：
- *  - 首页两张卡：备份 / 恢复备份
- *  - 备份子页：勾选要备份的部分（记忆 / 设置 / 自定义工具），导出 zip 或单独导出
+ * 三个页面：
+ *  - 首页：两张卡（备份 / 恢复备份）+ 当前内容 + 说明
+ *  - 备份页：用**开关**挑要备份的部分，底栏自带 全选 / 全不选 / 导出；
+ *            点导出先选方式（文件导出 = 每个部分一个 json，zip 导出 = 打包成一个 zip），
+ *            选完方式再选一个文件夹，文件直接落进去（SAF，不用手打文件名）
+ *  - 恢复页：选完备份文件后的整页界面 —— 详情卡 + 统计 + 每部分一个开关，底栏同样是
+ *            全选 / 全不选 / 恢复所选项
  *
- * 恢复流程分两步（弹窗都在首页上）：
- *  ① 选要恢复哪些部分 —— zip 与多文件走这一步，单文件直接跳 ②
- *  ② 每部分各自选模式（合并 / 覆盖）
+ * 恢复时的模式询问：设置永远整份覆盖（不问）；记忆库 / 自定义工具只有在
+ * 「备份里有、而且当前不是空的」才会问合并还是覆盖 —— 往空里写怎么写都一样，不用烦人。
  */
 @Composable
 fun BackupScreen(
@@ -75,16 +95,123 @@ fun BackupScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(HOME) }
+    // 恢复页的数据（放外层：切页动画重建时不能丢）
+    var restoreItems by remember { mutableStateOf<List<RestoreItem>>(emptyList()) }
+    var restoreMeta by remember { mutableStateOf<RestoreMeta?>(null) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun loadZip(bytes: ByteArray) {
+        runCatching { Backup.readZip(bytes) }.fold(
+            onSuccess = { bundle ->
+                restoreItems = bundle.parts.map { (part, text) -> RestoreItem.ready(part, text) }
+                restoreMeta = RestoreMeta(bundle.exportedAt, bundle.app, bundle.tokenIncluded)
+                result = null
+                page = RESTORE
+            },
+            onFailure = { toast(ctx, L("不是合法的备份包：%s").format(it.message ?: "")) }
+        )
+    }
+
+    fun loadFiles(uris: List<Uri>) {
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                uris.mapNotNull { u ->
+                    val text = runCatching {
+                        ctx.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() }
+                    }.getOrNull()
+                    val part = text?.let { Backup.sniff(it) }
+                    if (text == null || part == null) null else RestoreItem.ready(part, text)
+                }
+            }
+            if (loaded.isEmpty()) {
+                toast(ctx, L("没有能识别的备份内容"))
+            } else {
+                restoreItems = loaded
+                restoreMeta = null
+                result = null
+                page = RESTORE
+            }
+        }
+    }
+
+    /** 真正把选中的部分写回去。 */
+    fun runRestore(list: List<RestoreItem>) {
+        val lines = list.map { item ->
+            runCatching {
+                Backup.apply(
+                    part = item.part,
+                    text = item.text,
+                    mode = if (item.merge) Backup.Mode.MERGE else Backup.Mode.REPLACE,
+                    restoreToken = item.restoreToken,
+                    settings = AppCore.prefs,
+                    memory = AppCore.memory,
+                    customTools = AppCore.customTools
+                )
+            }.fold(
+                onSuccess = { L("%s：%s").format(partLabel(item.part), it) },
+                onFailure = {
+                    L("%s：失败 —— %s").format(
+                        partLabel(item.part),
+                        it.message ?: L("不是合法的备份内容")
+                    )
+                }
+            )
+        }
+        val touchedSettings = list.any { it.part == Backup.Part.SETTINGS }
+        result = lines.joinToString("\n") +
+            if (touchedSettings)
+                "\n" + L("外观 / 语言的改动已经生效；端口或监听目录变了的话，记得去「后台与运行」重启一次服务器。")
+            else ""
+        // 设置可能被整份换掉：核心配置、权限、自定义工具都得重读
+        AppCore.config.reload()
+        AppCore.permissions.load()
+        AppCore.customTools.load()
+        AppCore.log.enabled = AppCore.config.logEnabled
+        // 主题 / 语言 / 彩蛋语言开关都可能在备份里，重建整棵树才对得上
+        onThemeChanged()
+        onLangChanged()
+        onChanged()
+        toast(ctx, L("恢复完成，结果在最下面"))
+    }
+
+    // 选 zip
+    val zipLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val bytes = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    }.getOrNull()
+                }
+                if (bytes == null) toast(ctx, L("读不到文件内容")) else loadZip(bytes)
+            }
+        }
+    }
+
+    // 选文件（可多选）
+    val fileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (!uris.isNullOrEmpty()) loadFiles(uris)
+    }
+
+    // 进程被回收再回来时，恢复页的数据已经没了 —— 直接回首页，别显示一个空页面
+    LaunchedEffect(page, restoreItems) {
+        if (page == RESTORE && restoreItems.isEmpty()) page = HOME
+    }
 
     BackHandler(enabled = true) {
-        if (page == CREATE) page = HOME else onBack()
+        if (page == HOME) onBack() else page = HOME
     }
 
     val pages = rememberSaveableStateHolder()
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState == CREATE
+            val entering = targetState != HOME
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -95,20 +222,38 @@ fun BackupScreen(
         label = "backupPage"
     ) { current ->
         pages.SaveableStateProvider(current) {
-            if (current == CREATE) {
-                BackupCreatePage(
+            when (current) {
+                CREATE -> BackupCreatePage(
                     revision = revision,
                     ctx = ctx,
                     onBack = { page = HOME }
                 )
-            } else {
-                BackupHomePage(
+
+                RESTORE -> RestorePage(
+                    ctx = ctx,
+                    items = restoreItems,
+                    meta = restoreMeta,
+                    result = result,
+                    onItemsChange = { restoreItems = it },
+                    onRun = { runRestore(it) },
+                    onBack = { page = HOME }
+                )
+
+                else -> BackupHomePage(
                     ctx = ctx,
                     revision = revision,
-                    onChanged = onChanged,
-                    onThemeChanged = onThemeChanged,
-                    onLangChanged = onLangChanged,
+                    result = result,
                     onOpenCreate = { page = CREATE },
+                    onPickZip = {
+                        result = null
+                        zipLauncher.launch(
+                            arrayOf("application/zip", "application/octet-stream", "*/*")
+                        )
+                    },
+                    onPickFiles = {
+                        result = null
+                        fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    },
                     onBack = onBack
                 )
             }
@@ -118,91 +263,58 @@ fun BackupScreen(
 
 private const val HOME = "home"
 private const val CREATE = "create"
+private const val RESTORE = "restore"
 
-/* ------------------------------------------------------------------ 首页 */
-
-/** 待恢复的一项：一块内容 + 用户选好的模式。 */
+/** 待恢复的一项：一块内容 + 用户选好的处理方式。 */
 private data class RestoreItem(
     val part: Backup.Part,
     val text: String,
     val selected: Boolean = true,
+    /** 合并 / 覆盖；设置这一部分永远走覆盖，不参与询问。 */
     val merge: Boolean = true,
-    /** 设置专有：要不要连访问令牌一起恢复。 */
+    /** 设置专有：要不要连访问令牌一起恢复（默认不要，免得把客户端全踢下线）。 */
     val restoreToken: Boolean = false
+) {
+    companion object {
+        /**
+         * 从备份里读出来的一项。
+         *
+         * 设置的默认模式是**覆盖**（跟「把备份整份还原回去」的直觉一致），
+         * 记忆库和自定义工具默认合并，至于要不要问用户，交给恢复页判断。
+         */
+        fun ready(part: Backup.Part, text: String): RestoreItem = RestoreItem(
+            part = part,
+            text = text,
+            merge = part != Backup.Part.SETTINGS
+        )
+    }
+}
+
+/** 备份文件的元信息（zip 的 manifest / 没有就留空）。 */
+private data class RestoreMeta(
+    val exportedAt: Long,
+    val app: String?,
+    val tokenIncluded: Boolean
 )
+
+/* ------------------------------------------------------------------ 首页 */
 
 @Composable
 private fun BackupHomePage(
     ctx: Context,
     revision: Int,
-    onChanged: () -> Unit,
-    onThemeChanged: () -> Unit,
-    onLangChanged: () -> Unit,
+    result: String?,
     onOpenCreate: () -> Unit,
+    onPickZip: () -> Unit,
+    onPickFiles: () -> Unit,
     onBack: () -> Unit
 ) {
     var showPick by remember { mutableStateOf(false) }
-    // 0 = 不在恢复流程里；1 = 选部分；2 = 选模式
-    var stage by remember { mutableStateOf(0) }
-    var items by remember { mutableStateOf<List<RestoreItem>>(emptyList()) }
-    var result by remember { mutableStateOf<String?>(null) }
 
     val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
     val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
     val settingCount = remember(revision) { AppCore.prefs.all().size }
-
-    fun startFlow(loaded: List<RestoreItem>, single: Boolean) {
-        if (loaded.isEmpty()) {
-            toast(ctx, L("没有能识别的备份内容"))
-            return
-        }
-        items = loaded
-        stage = if (single && loaded.size == 1) 2 else 1
-    }
-
-    // 选 zip
-    val zipLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val bytes = runCatching {
-                ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            }.getOrNull()
-            if (bytes == null) {
-                toast(ctx, L("读不到文件内容"))
-            } else {
-                runCatching { Backup.readZip(bytes) }.fold(
-                    onSuccess = { bundle ->
-                        startFlow(
-                            bundle.parts.map { (part, text) ->
-                                RestoreItem(part, text, restoreToken = Backup.settingsHasToken(text))
-                            },
-                            single = false
-                        )
-                    },
-                    onFailure = { toast(ctx, L("不是合法的备份包：%s").format(it.message ?: "")) }
-                )
-            }
-        }
-    }
-
-    // 选文件（可多选）
-    val fileLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (!uris.isNullOrEmpty()) {
-            val loaded = uris.mapNotNull { u ->
-                val text = runCatching {
-                    ctx.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() }
-                }.getOrNull()
-                val part = text?.let { Backup.sniff(it) }
-                if (text == null || part == null) null
-                else RestoreItem(part, text, restoreToken = Backup.settingsHasToken(text))
-            }
-            startFlow(loaded, single = uris.size == 1)
-        }
-    }
 
     Column(
         Modifier
@@ -221,7 +333,7 @@ private fun BackupHomePage(
             listOf(
                 RowSpec(
                     title = L("备份"),
-                    subtitle = L("选要备份的内容，导出成一个 zip 或单独的文件"),
+                    subtitle = L("开关挑要备份的内容，再导出到文件夹里"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Share,
                     onClick = onOpenCreate,
@@ -310,270 +422,20 @@ private fun BackupHomePage(
             confirmButton = {
                 TextButton(onClick = {
                     showPick = false
-                    result = null
-                    zipLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    onPickZip()
                 }) { Text(L("选 zip 备份"), color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showPick = false
-                    result = null
-                    fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    onPickFiles()
                 }) { Text(L("选单独文件"), color = MaterialTheme.colorScheme.primary) }
             }
         )
     }
-
-    // -------------------------------------------------------------- 第一步
-    if (stage == 1) {
-        PartPickerDialog(
-            items = items,
-            onToggle = { index ->
-                items = items.mapIndexed { i, it -> if (i == index) it.copy(selected = !it.selected) else it }
-            },
-            onDismiss = { stage = 0; items = emptyList() },
-            onNext = {
-                val picked = items.filter { it.selected }
-                if (picked.isEmpty()) {
-                    toast(ctx, L("至少要选一部分"))
-                } else {
-                    items = picked
-                    stage = 2
-                }
-            }
-        )
-    }
-
-    // -------------------------------------------------------------- 第二步
-    if (stage == 2) {
-        ModePickerDialog(
-            items = items,
-            onToggleMode = { index ->
-                items = items.mapIndexed { i, it -> if (i == index) it.copy(merge = !it.merge) else it }
-            },
-            onToggleToken = { index ->
-                items = items.mapIndexed { i, it ->
-                    if (i == index) it.copy(restoreToken = !it.restoreToken) else it
-                }
-            },
-            onDismiss = { stage = 0; items = emptyList() },
-            onRun = {
-                val lines = items.map { item ->
-                    runCatching {
-                        Backup.apply(
-                            part = item.part,
-                            text = item.text,
-                            mode = if (item.merge) Backup.Mode.MERGE else Backup.Mode.REPLACE,
-                            restoreToken = item.restoreToken,
-                            settings = AppCore.prefs,
-                            memory = AppCore.memory,
-                            customTools = AppCore.customTools
-                        )
-                    }.fold(
-                        onSuccess = { L("%s：%s").format(partLabel(item.part), it) },
-                        onFailure = {
-                            L("%s：失败 —— %s").format(
-                                partLabel(item.part),
-                                it.message ?: L("不是合法的备份内容")
-                            )
-                        }
-                    )
-                }
-                val touchedSettings = items.any { it.part == Backup.Part.SETTINGS }
-                result = lines.joinToString("\n") +
-                    if (touchedSettings)
-                        "\n" + L("外观 / 语言的改动已经生效；端口或监听目录变了的话，记得去「后台与运行」重启一次服务器。")
-                    else ""
-                stage = 0
-                items = emptyList()
-                // 设置可能被整份换掉：核心配置、权限、自定义工具都得重读
-                AppCore.config.reload()
-                AppCore.permissions.load()
-                AppCore.customTools.load()
-                AppCore.log.enabled = AppCore.config.logEnabled
-                // 主题 / 语言 / 彩蛋语言开关都可能在备份里，重建整棵树才对得上
-                onThemeChanged()
-                onLangChanged()
-                onChanged()
-            }
-        )
-    }
 }
 
-/* ------------------------------------------------------------ 第一步弹窗 */
-
-@Composable
-private fun PartPickerDialog(
-    items: List<RestoreItem>,
-    onToggle: (Int) -> Unit,
-    onDismiss: () -> Unit,
-    onNext: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(28.dp),
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(L("要恢复哪些部分？"), fontSize = 20.sp) },
-        text = {
-            Column {
-                Text(
-                    L("取消勾选的部分不会被写入。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                items.forEachIndexed { index, item ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        ChoiceChip(
-                            text = if (item.selected) "✓" else "",
-                            active = item.selected,
-                            color = MaterialTheme.colorScheme.primary,
-                            onClick = { onToggle(index) }
-                        )
-                        Spacer(Modifier.size(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                partLabel(item.part),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 14.5.sp
-                            )
-                            Text(
-                                partSummary(item),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onNext) {
-                Text(L("下一步"), color = MaterialTheme.colorScheme.primary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    )
-}
-
-/* ------------------------------------------------------------ 第二步弹窗 */
-
-@Composable
-private fun ModePickerDialog(
-    items: List<RestoreItem>,
-    onToggleMode: (Int) -> Unit,
-    onToggleToken: (Int) -> Unit,
-    onDismiss: () -> Unit,
-    onRun: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(28.dp),
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        title = { Text(L("每一部分怎么恢复？"), fontSize = 20.sp) },
-        text = {
-            Column {
-                Text(
-                    L("点右侧的胶囊切换合并 / 覆盖。覆盖会先清空这一部分，不能撤销。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
-                Spacer(Modifier.height(10.dp))
-                items.forEachIndexed { index, item ->
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    partLabel(item.part),
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.5.sp
-                                )
-                                Text(
-                                    partSummary(item),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            Spacer(Modifier.size(8.dp))
-                            ChoiceChip(
-                                text = L(if (item.merge) "合并" else "覆盖"),
-                                active = !item.merge,
-                                color = if (item.merge) MaterialTheme.colorScheme.primary else Sem.warn,
-                                onClick = { onToggleMode(index) }
-                            )
-                        }
-                        // 设置部分带着令牌时多给一个开关：默认不恢复，免得把客户端全踢下线
-                        if (item.part == Backup.Part.SETTINGS && Backup.settingsHasToken(item.text)) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 2.dp, top = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                AppSwitch(item.restoreToken) { onToggleToken(index) }
-                                Spacer(Modifier.size(8.dp))
-                                Text(
-                                    L(
-                                        if (item.restoreToken)
-                                            "连访问令牌一起恢复（客户端要用备份里那个）"
-                                        else "保留当前访问令牌（推荐，客户端不用动）"
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.5.sp,
-                                    lineHeight = 16.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onRun) {
-                Text(L("开始恢复"), color = Sem.warn)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    )
-}
-
-/** 里头就翻译好：调用处直接拼字符串，不用再包一层 L(...)。 */
-private fun partLabel(part: Backup.Part): String = when (part) {
-    Backup.Part.MEMORY -> L("记忆库")
-    Backup.Part.SETTINGS -> L("设置")
-    Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
-}
-
-/** 一行摘要：设置报含不含令牌，其它报个大概。 */
-private fun partSummary(item: RestoreItem): String = when (item.part) {
-    Backup.Part.MEMORY -> L("实体 / 观察 / 关系的完整内容")
-    Backup.Part.SETTINGS ->
-        if (Backup.settingsHasToken(item.text)) L("含访问令牌") else L("不含访问令牌")
-    Backup.Part.CUSTOM_TOOLS -> L("命令模板 + 参数定义")
-}
-
-/* ---------------------------------------------------------------- 备份子页 */
+/* ---------------------------------------------------------------- 备份页 */
 
 @Composable
 private fun BackupCreatePage(
@@ -585,8 +447,13 @@ private fun BackupCreatePage(
     var pickSettings by rememberSaveable { mutableStateOf(true) }
     var pickTools by rememberSaveable { mutableStateOf(true) }
     var includeToken by rememberSaveable { mutableStateOf(true) }
-    // 单独导出：先记住导哪一部分，等系统文件选择器回来再写
-    var singlePart by remember { mutableStateOf<Backup.Part?>(null) }
+    // 导出方式弹窗
+    var showMode by remember { mutableStateOf(false) }
+    // 已经点了导出方式、在等系统文件选择器回来的那次要出什么："zip" / "files"
+    var pendingMode by remember { mutableStateOf("") }
+
+    val scope = rememberCoroutineScope()
+    val resolver = ctx.contentResolver
 
     val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
     val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
@@ -604,164 +471,550 @@ private fun BackupCreatePage(
         Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
     }
 
-    val zipLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip")
+    // 选文件夹 → 直接把文件写进去（不再让用户手打文件名）
+    val dirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
-        if (uri != null) {
-            val ok = runCatching {
-                val bytes = Backup.zip(
-                    parts = chosen.associateWith { textOf(it) },
-                    includeToken = includeToken && pickSettings
-                )
-                ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
-            }.isSuccess
-            toast(ctx, if (ok) L("已导出 %s 个部分").format(chosen.size) else L("导出失败"))
+        val mode = pendingMode
+        pendingMode = ""
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        val parts = chosen.associateWith { textOf(it) }
+        val withToken = includeToken && pickSettings
+        scope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    runCatching {
+                        resolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    }
+                    if (mode == "zip") {
+                        val bytes = Backup.zip(parts = parts, includeToken = withToken)
+                        writeIntoFolder(
+                            resolver, uri, "application/zip",
+                            "mcpbox-backup-${stamp()}.zip", bytes
+                        )
+                    } else {
+                        parts.forEach { (part, text) ->
+                            writeIntoFolder(
+                                resolver, uri, "application/json",
+                                "${baseOf(part.file)}-${stamp()}.json", text.toByteArray()
+                            )
+                        }
+                    }
+                }
+            }
+            toast(
+                ctx,
+                if (done.isSuccess) {
+                    if (mode == "zip") L("已导出 %s 个部分").format(parts.size)
+                    else L("已导出 %s 个文件").format(parts.size)
+                } else {
+                    L("导出失败")
+                }
+            )
         }
     }
 
-    val singleLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        val part = singlePart
-        singlePart = null
-        if (uri != null && part != null) {
-            val ok = runCatching {
-                ctx.contentResolver.openOutputStream(uri)?.use { it.write(textOf(part).toByteArray()) }
-            }.isSuccess
-            toast(ctx, if (ok) L("已导出%s").format(partLabel(part)) else L("导出失败"))
-        }
-    }
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp)
+        ) {
+            PageHeader(
+                title = L("备份"),
+                subtitle = L("用开关挑要备份的内容，点底下的导出挑一个文件夹"),
+                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+            )
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
-    ) {
-        PageHeader(
-            title = L("备份"),
-            subtitle = L("勾选要备份的内容，再选导出成一个 zip 还是分开导"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
-
-        GroupLabel(L("要备份的内容"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("记忆库"),
-                    subtitle = L("%s 个实体 · %s 条关系").format(memoryCount, relationCount),
-                    icon = Icons.Filled.Star,
-                    onClick = { pickMemory = !pickMemory },
-                    trailing = { CheckMark(pickMemory) }
-                ),
-                RowSpec(
-                    title = L("设置"),
-                    subtitle = L("端口、权限、外观、超时等全部配置项"),
-                    icon = Icons.Filled.Lock,
-                    onClick = { pickSettings = !pickSettings },
-                    trailing = { CheckMark(pickSettings) }
-                ),
-                // 令牌单独可控：备份文件有可能被分享出去
-                RowSpec(
-                    title = L("包含访问令牌"),
-                    subtitle = if (includeToken)
-                        L("备份里带着令牌，恢复后客户端不用改地址；文件别随便分享")
-                    else L("备份里不带令牌，恢复时会保留当前令牌"),
-                    subtitleMaxLines = 2,
-                    subtitleColor = if (includeToken) Sem.warn else null,
-                    icon = Icons.Filled.Lock,
-                    visible = pickSettings,
-                    onClick = { includeToken = !includeToken },
-                    trailing = { CheckMark(includeToken) }
-                ),
-                RowSpec(
-                    title = L("自定义工具"),
-                    subtitle = if (toolCount == 0) L("还没有自定义工具") else L("%s 个工具").format(toolCount),
-                    icon = Icons.Filled.Build,
-                    onClick = { pickTools = !pickTools },
-                    trailing = { CheckMark(pickTools) }
+            GroupLabel(L("要备份的内容"))
+            CardGroup(
+                listOf(
+                    RowSpec(
+                        title = L("记忆库"),
+                        subtitle = L("%s 个实体 · %s 条关系").format(memoryCount, relationCount),
+                        icon = Icons.Filled.Star,
+                        onClick = { pickMemory = !pickMemory },
+                        trailing = { AppSwitch(pickMemory) { pickMemory = it } }
+                    ),
+                    RowSpec(
+                        title = L("设置"),
+                        subtitle = L("端口、权限、外观、超时等全部配置项"),
+                        icon = Icons.Filled.Lock,
+                        onClick = { pickSettings = !pickSettings },
+                        trailing = { AppSwitch(pickSettings) { pickSettings = it } }
+                    ),
+                    // 令牌是「设置」的附属项：跟着设置一起开关，关掉设置时整行收起来
+                    RowSpec(
+                        title = L("包含访问令牌"),
+                        subtitle = if (includeToken)
+                            L("备份里带着令牌，恢复后客户端不用改地址；文件别随便分享")
+                        else L("备份里不带令牌，恢复时会保留当前令牌"),
+                        subtitleMaxLines = 2,
+                        subtitleColor = if (includeToken) Sem.warn else null,
+                        visible = pickSettings,
+                        indent = true,
+                        onClick = { includeToken = !includeToken },
+                        trailing = { AppSwitch(includeToken) { includeToken = it } }
+                    ),
+                    RowSpec(
+                        title = L("自定义工具"),
+                        subtitle = if (toolCount == 0) L("还没有自定义工具") else L("%s 个工具").format(toolCount),
+                        icon = Icons.Filled.Build,
+                        onClick = { pickTools = !pickTools },
+                        trailing = { AppSwitch(pickTools) { pickTools = it } }
+                    )
                 )
             )
-        )
 
-        Spacer(Modifier.height(10.dp))
-        CardColumn {
-            PillButton(
-                if (chosen.isEmpty()) L("先勾选要备份的内容")
-                else L("导出 zip（%s 个部分）").format(chosen.size),
-                Modifier.fillMaxWidth(),
-                outlined = false,
-                color = if (chosen.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
-                else MaterialTheme.colorScheme.primary,
-                compact = true
-            ) {
-                if (chosen.isNotEmpty()) zipLauncher.launch("mcpbox-backup-${stamp()}.zip")
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.padding(horizontal = 14.dp)) {
+                Text(
+                    L("点导出后选方式：「文件导出」每个部分一个 json，「zip 导出」打包成一个 zip；选完方式再挑一个文件夹，文件直接放进去。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    L("每个文件都自带类型标记，恢复时会被自动认出来 —— 单独导出的文件也能单独恢复。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
             }
         }
 
-        GroupLabel(L("单独导出"))
-        CardGroup(
-            listOf(
-                singleExportRow(L("记忆库"), pickMemory, Icons.Filled.Star) {
-                    singlePart = Backup.Part.MEMORY
-                    singleLauncher.launch("mcpbox-memory-${stamp()}.json")
-                },
-                singleExportRow(L("设置"), pickSettings, Icons.Filled.Lock) {
-                    singlePart = Backup.Part.SETTINGS
-                    singleLauncher.launch("mcpbox-settings-${stamp()}.json")
-                },
-                singleExportRow(L("自定义工具"), pickTools, Icons.Filled.Build) {
-                    singlePart = Backup.Part.CUSTOM_TOOLS
-                    singleLauncher.launch("mcpbox-custom-tools-${stamp()}.json")
-                }
-            )
+        SelectionBar(
+            actionText = if (chosen.isEmpty()) L("导出")
+            else L("导出（%s 个部分）").format(chosen.size),
+            actionEnabled = chosen.isNotEmpty(),
+            onSelectAll = {
+                pickMemory = true
+                pickSettings = true
+                pickTools = true
+                includeToken = true
+            },
+            onSelectNone = {
+                pickMemory = false
+                pickSettings = false
+                pickTools = false
+                includeToken = false
+            },
+            onAction = { showMode = true }
         )
+    }
 
-        Spacer(Modifier.height(10.dp))
-        Column(Modifier.padding(horizontal = 14.dp)) {
-            Text(
-                L("每个文件都自带类型标记，恢复时会被自动认出来 —— 单独导出的文件也能单独恢复。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
+    if (showMode) {
+        ExportModeDialog(
+            count = chosen.size,
+            onDismiss = { showMode = false },
+            onPick = { mode ->
+                showMode = false
+                pendingMode = mode
+                dirLauncher.launch(null)
+            }
+        )
+    }
+}
+
+/** 导出方式：分开的 json 还是打包成 zip。 */
+@Composable
+private fun ExportModeDialog(
+    count: Int,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+        ) {
+            Column(Modifier.padding(vertical = 20.dp)) {
+                Text(
+                    L("怎么导出？"),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 22.dp, end = 22.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    L("%s 个部分准备好了，选一种放法，下一步挑个文件夹就行。").format(count),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    modifier = Modifier.padding(start = 22.dp, end = 22.dp)
+                )
+                Spacer(Modifier.height(14.dp))
+
+                ModeChoiceRow(
+                    title = L("文件导出"),
+                    desc = L("每个部分一个 json，直接放进你选的文件夹"),
+                    onClick = { onPick("files") }
+                )
+                Spacer(Modifier.height(4.dp))
+                ModeChoiceRow(
+                    title = L("zip 导出"),
+                    desc = L("打包成一个 zip，里面是 manifest.json 加各个部分"),
+                    onClick = { onPick("zip") }
+                )
+
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 22.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun singleExportRow(
-    title: String,
-    enabled: Boolean,
-    icon: ImageVector,
-    onClick: () -> Unit
-): RowSpec = RowSpec(
-    title = title,
-    subtitle = if (enabled) L("导出一个单独的 json 文件") else L("先在上面勾上它"),
-    icon = icon,
-    iconTint = if (enabled) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.onSurfaceVariant,
-    onClick = if (enabled) onClick else null,
-    trailing = { Chevron1() }
-)
-
-/* ------------------------------------------------------------------ 小件 */
-
-/**
- * 勾选状态：勾上打勾，没勾就什么都不显示。
- * （早先这里放了个「不备份」灰标签，两个状态都在抢注意力，太吵；
- * 整行本身就能点，没勾就是没勾。）
- */
-@Composable
-private fun CheckMark(checked: Boolean) {
-    if (checked) {
+private fun ModeChoiceRow(title: String, desc: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = MaterialTheme.colorScheme.primary),
+                onClick = onClick
+            )
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 15.5.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                desc,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.5.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+        }
+        Spacer(Modifier.width(10.dp))
         Icon(
-            Icons.Filled.Check,
+            Icons.Filled.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
         )
     }
+}
+
+/* ---------------------------------------------------------------- 恢复页 */
+
+@Composable
+private fun RestorePage(
+    ctx: Context,
+    items: List<RestoreItem>,
+    meta: RestoreMeta?,
+    result: String?,
+    onItemsChange: (List<RestoreItem>) -> Unit,
+    onRun: (List<RestoreItem>) -> Unit,
+    onBack: () -> Unit
+) {
+    // 需要问合并 / 覆盖的项（点恢复时才弹）
+    var asking by remember { mutableStateOf(false) }
+
+    val picked = items.filter { it.selected }
+    val needsAsk = picked.filter { it.part != Backup.Part.SETTINGS && targetNotEmpty(it.part) }
+
+    fun start() {
+        when {
+            picked.isEmpty() -> toast(ctx, L("至少要选一部分"))
+            needsAsk.isEmpty() -> onRun(picked)
+            else -> asking = true
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 16.dp)
+        ) {
+            PageHeader(
+                title = L("恢复备份"),
+                subtitle = L("备份里读出来的部分都在下面，开关挑要写回哪些"),
+                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+            )
+
+            GroupLabel(L("备份详情"))
+            CardColumn {
+                CardBox {
+                    KeyValue(L("创建时间"), exportTimeLabel(meta))
+                    KeyValue(L("应用版本"), meta?.app?.takeIf { it.isNotBlank() } ?: L("未知"))
+                    KeyValue(
+                        L("访问令牌"),
+                        if (meta?.tokenIncluded == true) L("备份里带着") else L("备份里没有")
+                    )
+                    KeyValue(L("包含部分"), L("%s 个").format(items.size))
+                }
+            }
+
+            Text(
+                L("已选 %s 个部分，共 %s 个").format(picked.size, items.size),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.5.sp,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp)
+            )
+
+            GroupLabel(L("要恢复的内容"))
+            CardGroup(
+                buildList {
+                    items.forEach { item ->
+                        add(
+                            RowSpec(
+                                title = partLabel(item.part),
+                                subtitle = restoreSummary(item),
+                                subtitleMaxLines = 2,
+                                icon = partIcon(item.part),
+                                onClick = { onItemsChange(items.map { if (it === item) it.copy(selected = !it.selected) else it }) },
+                                trailing = {
+                                    AppSwitch(item.selected) { on ->
+                                        onItemsChange(items.map { if (it === item) it.copy(selected = on) else it })
+                                    }
+                                }
+                            )
+                        )
+                        // 设置是整份覆盖，恢复不恢复令牌在这里定（默认保留当前的）
+                        if (item.part == Backup.Part.SETTINGS && item.selected) {
+                            add(
+                                RowSpec(
+                                    title = L("同时恢复访问令牌"),
+                                    subtitle = if (item.restoreToken)
+                                        L("恢复成备份里那个令牌，客户端也要跟着换")
+                                    else L("保留当前令牌（推荐）：客户端不用动"),
+                                    subtitleMaxLines = 2,
+                                    subtitleColor = if (item.restoreToken) Sem.warn else null,
+                                    visible = true,
+                                    indent = true,
+                                    onClick = {
+                                        onItemsChange(items.map { if (it === item) it.copy(restoreToken = !it.restoreToken) else it })
+                                    },
+                                    trailing = {
+                                        AppSwitch(item.restoreToken) { on ->
+                                            onItemsChange(items.map { if (it === item) it.copy(restoreToken = on) else it })
+                                        }
+                                    }
+                                )
+                            )
+                        }
+                    }
+                }
+            )
+
+            Spacer(Modifier.height(10.dp))
+            Column(Modifier.padding(horizontal = 14.dp)) {
+                Text(
+                    L("设置固定整份覆盖；记忆库和自定义工具只有当前不是空的才会问合并还是覆盖。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    L("覆盖会先把这一部分清空再写入，不能撤销；合并只动备份里提到的内容。"),
+                    color = Sem.warn,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+            }
+
+            result?.let { text ->
+                Spacer(Modifier.height(10.dp))
+                CardColumn {
+                    CardBox {
+                        Text(
+                            L("恢复结果"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 13.5.sp,
+                            lineHeight = 19.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        SelectionBar(
+            actionText = L("恢复所选项"),
+            actionColor = Sem.warn,
+            actionEnabled = picked.isNotEmpty(),
+            onSelectAll = { onItemsChange(items.map { it.copy(selected = true) }) },
+            onSelectNone = { onItemsChange(items.map { it.copy(selected = false) }) },
+            onAction = { start() }
+        )
+    }
+
+    if (asking) {
+        ModePickerDialog(
+            items = picked,
+            onToggleMode = { part ->
+                onItemsChange(
+                    items.map { if (it.part == part) it.copy(merge = !it.merge) else it }
+                )
+            },
+            onDismiss = { asking = false },
+            onRun = {
+                asking = false
+                onRun(items.filter { it.selected })
+            }
+        )
+    }
+}
+
+/* ------------------------------------------------------- 模式选择弹窗 */
+
+/**
+ * 合并还是覆盖。
+ *
+ * 只列「真的需要选」的那些部分（备份里有、当前又不是空的）——
+ * 其它部分怎么写都一样，列出来只会让人犹豫。
+ */
+@Composable
+private fun ModePickerDialog(
+    items: List<RestoreItem>,
+    onToggleMode: (Backup.Part) -> Unit,
+    onDismiss: () -> Unit,
+    onRun: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(28.dp),
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        title = { Text(L("怎么恢复这几部分？"), fontSize = 20.sp) },
+        text = {
+            Column {
+                Text(
+                    L("点右侧的胶囊切换合并 / 覆盖。覆盖会先清空这一部分，不能撤销。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                items.forEach { item ->
+                    if (item.part == Backup.Part.SETTINGS) return@forEach
+                    if (!targetNotEmpty(item.part)) return@forEach
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                partLabel(item.part),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.5.sp
+                            )
+                            Text(
+                                restoreSummary(item),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(Modifier.size(8.dp))
+                        ChoiceChip(
+                            text = L(if (item.merge) "合并" else "覆盖"),
+                            active = !item.merge,
+                            color = if (item.merge) MaterialTheme.colorScheme.primary else Sem.warn,
+                            onClick = { onToggleMode(item.part) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onRun) {
+                Text(L("开始恢复"), color = Sem.warn)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    )
+}
+
+/* ------------------------------------------------------------------ 小件 */
+
+/** 里头就翻译好：调用处直接拼字符串，不用再包一层 L(...)。 */
+private fun partLabel(part: Backup.Part): String = when (part) {
+    Backup.Part.MEMORY -> L("记忆库")
+    Backup.Part.SETTINGS -> L("设置")
+    Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
+}
+
+private fun partIcon(part: Backup.Part) = when (part) {
+    Backup.Part.MEMORY -> Icons.Filled.Star
+    Backup.Part.SETTINGS -> Icons.Filled.Lock
+    Backup.Part.CUSTOM_TOOLS -> Icons.Filled.Build
+}
+
+/**
+ * 一行的说明：这块里有什么 + 写下去会怎么样。
+ *
+ * 「将替换当前数据」和「当前为空，直接写入」这两句是给用户看的重点 ——
+ * 前者意味着一恢复就没了，后者说明不会问模式（怎么写都一样）。
+ */
+private fun restoreSummary(item: RestoreItem): String = when (item.part) {
+    Backup.Part.MEMORY -> {
+        val n = AppCore.memory.graph.entities.size
+        val r = AppCore.memory.graph.relations.size
+        L("%s 个实体 · %s 条关系").format(n, r) + " · " + overwriteHint(item.part)
+    }
+
+    Backup.Part.SETTINGS -> (if (Backup.settingsHasToken(item.text)) L("含访问令牌")
+    else L("不含访问令牌")) + " · " + L("整份覆盖当前设置")
+
+    Backup.Part.CUSTOM_TOOLS -> {
+        val n = AppCore.customTools.tools.size
+        (if (n == 0) L("还没有自定义工具") else L("%s 个工具").format(n)) +
+            " · " + overwriteHint(item.part)
+    }
+}
+
+private fun overwriteHint(part: Backup.Part): String =
+    if (targetNotEmpty(part)) L("将替换当前数据") else L("当前为空，直接写入")
+
+/** 这一部分现在有没有内容（空的就不用问合并还是覆盖）。 */
+private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
+    Backup.Part.MEMORY ->
+        AppCore.memory.graph.entities.isNotEmpty() || AppCore.memory.graph.relations.isNotEmpty()
+
+    Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.tools.isNotEmpty()
+    Backup.Part.SETTINGS -> true
 }
 
 @Composable
@@ -774,6 +1027,39 @@ private fun Chevron1() {
     )
 }
 
+/** 备份包里记的导出时间。 */
+private fun exportTimeLabel(meta: RestoreMeta?): String {
+    val ts = meta?.exportedAt ?: 0L
+    if (ts <= 0L) return L("没记（单独导出的文件）")
+    return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date(ts))
+}
+
+/**
+ * 往用户选的文件夹里写一个文件。
+ *
+ * 走 SAF 的 DocumentsContract，不依赖 DocumentFile（少一个依赖）；
+ * 同名文件交给系统自己去重命名（一般会加「 (1)」），我们不覆盖别人的东西。
+ */
+private fun writeIntoFolder(
+    resolver: ContentResolver,
+    tree: Uri,
+    mime: String,
+    name: String,
+    bytes: ByteArray
+): Uri {
+    val dir = DocumentsContract.buildDocumentUriUsingTree(
+        tree,
+        DocumentsContract.getTreeDocumentId(tree)
+    )
+    val file = DocumentsContract.createDocument(resolver, dir, mime, name)
+        ?: error("createDocument returned null")
+    resolver.openOutputStream(file)?.use { it.write(bytes) } ?: error("openOutputStream failed")
+    return file
+}
+
 /** 文件名里的时间戳，如 20260929-213045。 */
 private fun stamp(): String =
     java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+
+/** memory.json → memory。 */
+private fun baseOf(file: String): String = file.substringBeforeLast('.')

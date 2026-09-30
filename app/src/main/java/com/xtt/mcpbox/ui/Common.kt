@@ -48,7 +48,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -254,7 +256,12 @@ data class RowSpec(
      * 用来做「开关一打开，下面冒出一行」的效果；首尾圆角按剩下的可见行重新算，
      * 所以收起最后一行时上面那行的底部圆角会跟着变回圆的。
      */
-    val visible: Boolean = true
+    val visible: Boolean = true,
+    /**
+     * 作为上一行的附属项缩进显示（字号也小一号）。
+     * 用来表示「这一项从属于上面那一项」，比如备份里的「包含访问令牌」挂在「设置」下面。
+     */
+    val indent: Boolean = false
 )
 
 /**
@@ -346,7 +353,12 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
         ) {
             Column(Modifier.fillMaxWidth()) {
                 Row(
-                    Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                    Modifier.padding(
+                        start = if (spec.indent) 40.dp else 18.dp,
+                        end = 18.dp,
+                        top = 14.dp,
+                        bottom = 14.dp
+                    ),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val tint = spec.iconTint ?: MaterialTheme.colorScheme.primary
@@ -358,7 +370,7 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
                         Text(
                             spec.title,
                             color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 15.5.sp,
+                            fontSize = if (spec.indent) 15.sp else 15.5.sp,
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -367,7 +379,7 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
                             Text(
                                 it,
                                 color = spec.subtitleColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.5.sp,
+                                fontSize = if (spec.indent) 12.sp else 12.5.sp,
                                 lineHeight = 17.sp,
                                 maxLines = spec.subtitleMaxLines,
                                 overflow = TextOverflow.Ellipsis,
@@ -756,17 +768,22 @@ fun PillButton(
     contentColor: Color = MaterialTheme.colorScheme.onPrimary,
     outlined: Boolean = false,
     compact: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    // 禁用态：实心胶囊退成灰底 + 灰字，描边胶囊只是整体变灰
+    val tint = if (enabled) color else MaterialTheme.colorScheme.onSurfaceVariant
+    val fill = if (enabled) color else MaterialTheme.colorScheme.surfaceContainerHighest
     Surface(
-        color = if (outlined) Color.Transparent else color,
+        color = if (outlined || !enabled) Color.Transparent else fill,
         shape = RoundedCornerShape(50),
-        border = if (outlined) BorderStroke(1.dp, color.copy(alpha = 0.7f)) else null,
+        border = if (outlined) BorderStroke(1.dp, tint.copy(alpha = 0.7f)) else null,
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = ripple(color = MaterialTheme.colorScheme.primary),
+                enabled = enabled,
                 onClick = onClick
             )
     ) {
@@ -779,7 +796,7 @@ fun PillButton(
         ) {
             Text(
                 text,
-                color = if (outlined) color else contentColor,
+                color = if (outlined || !enabled) tint else contentColor,
                 fontSize = if (compact) 12.5.sp else 13.5.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
@@ -1086,5 +1103,60 @@ fun PressCardBox(
             )
     ) {
         Column(Modifier.padding(contentPadding), content = content)
+    }
+}
+
+/**
+ * 选择型页面（备份 / 恢复）的底栏：
+ * 左边「全选 / 全不选」两个圆形按钮，右边一个主操作胶囊。
+ *
+ * 和 [BottomPillNav] 同款：底色比页面低一档 + 顶部一条细分割线，
+ * 让底栏看起来是「浮在内容上面的一层」，而不是页面里的一块。
+ */
+@Composable
+fun SelectionBar(
+    actionText: String,
+    actionColor: Color = MaterialTheme.colorScheme.primary,
+    actionEnabled: Boolean = true,
+    selectAllDesc: String = L("全选"),
+    selectNoneDesc: String = L("全不选"),
+    onSelectAll: () -> Unit,
+    onSelectNone: () -> Unit,
+    onAction: () -> Unit
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            RoundIconButton(
+                Icons.Filled.Done, selectAllDesc,
+                tint = MaterialTheme.colorScheme.primary, size = 44
+            ) { onSelectAll() }
+            RoundIconButton(
+                Icons.Filled.Clear, selectNoneDesc,
+                tint = MaterialTheme.colorScheme.primary, size = 44
+            ) { onSelectNone() }
+            Spacer(Modifier.weight(1f))
+            PillButton(
+                actionText,
+                color = actionColor,
+                compact = true,
+                enabled = actionEnabled
+            ) { onAction() }
+        }
     }
 }
