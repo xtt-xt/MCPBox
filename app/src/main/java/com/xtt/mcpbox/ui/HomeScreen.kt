@@ -68,11 +68,6 @@ fun HomeScreen(
     ) {
         PageHeader(
             title = L("MCP 文件盒"),
-            subtitle = if (status.running) {
-                L("运行中 · 端口 %s · %s 个工具").format(status.port, status.toolCount)
-            } else {
-                L("服务未运行 · 打开下面的开关让 AI 连进来")
-            },
             actions = {
                 RoundIconButton(Icons.Filled.Refresh, L("重启服务")) { onRestartService() }
             }
@@ -316,19 +311,6 @@ private fun GuideCard(ctx: Context, status: McpServer.ServerStatus) {
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PillButton(L("复制配置"), Modifier.weight(1f)) { copyText(ctx, snippet, L("MCP 配置已复制")) }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Info, null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(16.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                L("读取默认允许；写入/删除会弹窗问你，可以选「始终允许」不再打扰。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp
-            )
         }
     }
 }

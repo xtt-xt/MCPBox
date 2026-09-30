@@ -190,14 +190,6 @@ fun PacksSection(
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(top = 6.dp)
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (token.isNotBlank()) L("复制出来的地址里已经带上令牌，直接粘进客户端就能用，不用再配请求头。")
-                else L("当前没开启访问令牌，复制地址即可；想更安全可以去设置里打开令牌。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.5.sp,
-                lineHeight = 16.sp
-            )
             Spacer(Modifier.height(10.dp))
             PillButton(
                 L("复制地址"), Modifier.fillMaxWidth(), outlined = true,
@@ -334,17 +326,8 @@ fun PacksSection(
     Spacer(Modifier.height(10.dp))
     Column(Modifier.padding(horizontal = 14.dp)) {
         Text(
-            L("工具包决定「AI 的工具列表里出现哪些工具」，也不会绕过上面的权限。") +
-                L("默认只加载基础 + 文件读取 + 记忆库，工具列表更干净。"),
+            L("读取默认允许，写入 / 删除会先问你。改了工具包要重连客户端才生效。"),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            lineHeight = 17.sp
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            L("重要：大多数 MCP 客户端只在连接时读取一次工具列表，所以改完工具包后，") +
-                L("要让 AI 看到变化，需要重新连接（或重启 App）。"),
-            color = Sem.warn,
             fontSize = 12.sp,
             lineHeight = 17.sp
         )

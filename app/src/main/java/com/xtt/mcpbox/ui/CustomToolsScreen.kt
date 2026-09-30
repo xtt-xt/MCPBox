@@ -101,7 +101,6 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
     ) {
         PageHeader(
             title = L("自定义工具"),
-            subtitle = L("给 AI 造工具：命令模板里用 {{参数名}} 插入参数，创建后自动出现在 tools/list"),
             actions = {
                 RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = { showMenu = true })
                 Spacer(Modifier.width(8.dp))

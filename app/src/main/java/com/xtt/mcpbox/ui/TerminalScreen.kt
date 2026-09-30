@@ -74,7 +74,6 @@ fun TerminalScreen(
     Column(Modifier.fillMaxSize()) {
         PageHeader(
             title = L("终端"),
-            subtitle = L("AI 用 run_shell 执行命令时也会弹窗审批，可以「始终允许」某条命令"),
             actions = { RoundIconButton(Icons.Filled.Clear, L("清屏")) { term.clear() } }
         )
 

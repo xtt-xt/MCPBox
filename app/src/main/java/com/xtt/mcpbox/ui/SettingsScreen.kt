@@ -587,7 +587,6 @@ private fun SettingsHomePage(
     ) {
         PageHeader(
             title = L("设置"),
-            subtitle = "${ServerMeta.fullVersion} · ${AppCore.deviceLabel()}"
         )
 
         GroupLabel(L("通用"))

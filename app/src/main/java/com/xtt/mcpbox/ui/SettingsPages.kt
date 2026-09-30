@@ -74,7 +74,6 @@ internal fun SettingsPageShell(
     ) {
         PageHeader(
             title = title,
-            subtitle = subtitle,
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
         content()

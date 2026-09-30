@@ -55,7 +55,6 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, onChanged: () -> Unit) {
     ) {
         PageHeader(
             title = L("日志"),
-            subtitle = L("最近 %s 条调用与审批记录").format(logs.size)
         )
 
         Row(

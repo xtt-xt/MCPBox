@@ -140,7 +140,6 @@ private fun ToolListPage(
     ) {
         PageHeader(
             title = L("工具管理"),
-            subtitle = L("共 %s 个 · 禁用 %s · 单独设权限 %s").format(all.size, disabledCount, overrideCount),
             actions = {
                 RoundIconButton(Icons.Filled.Add, L("新建自定义工具"), onClick = onCreate)
                 Spacer(Modifier.width(8.dp))
@@ -239,7 +238,6 @@ private fun ToolDetailPage(
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
             PageHeader(
                 title = L("工具不存在"),
-                subtitle = L("它可能已经被删掉了"),
                 actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
             )
         }
@@ -309,7 +307,6 @@ private fun ToolDetailPage(
     ) {
         PageHeader(
             title = spec.name,
-            subtitle = spec.title,
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 

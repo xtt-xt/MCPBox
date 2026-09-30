@@ -13,11 +13,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -68,6 +71,7 @@ import androidx.compose.ui.window.Dialog
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.core.Backup
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,6 +104,22 @@ fun BackupScreen(
     var restoreMeta by remember { mutableStateOf<RestoreMeta?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    // 返回时先让底栏滑下去，再换页（跟主页底栏的退场动画对齐）
+    var closing by remember { mutableStateOf(false) }
+
+    fun backHome() {
+        if (page == HOME) {
+            onBack()
+            return
+        }
+        if (closing) return
+        closing = true
+        scope.launch {
+            delay(190)
+            page = HOME
+            closing = false
+        }
+    }
 
     fun loadZip(bytes: ByteArray) {
         runCatching { Backup.readZip(bytes) }.fold(
@@ -203,9 +223,7 @@ fun BackupScreen(
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
     }
 
-    BackHandler(enabled = true) {
-        if (page == HOME) onBack() else page = HOME
-    }
+    BackHandler(enabled = true) { backHome() }
 
     val pages = rememberSaveableStateHolder()
     AnimatedContent(
@@ -226,7 +244,8 @@ fun BackupScreen(
                 CREATE -> BackupCreatePage(
                     revision = revision,
                     ctx = ctx,
-                    onBack = { page = HOME }
+                    barVisible = !closing,
+                    onBack = { backHome() }
                 )
 
                 RESTORE -> RestorePage(
@@ -234,9 +253,10 @@ fun BackupScreen(
                     items = restoreItems,
                     meta = restoreMeta,
                     result = result,
+                    barVisible = !closing,
                     onItemsChange = { restoreItems = it },
                     onRun = { runRestore(it) },
-                    onBack = { page = HOME }
+                    onBack = { backHome() }
                 )
 
                 else -> BackupHomePage(
@@ -324,7 +344,6 @@ private fun BackupHomePage(
     ) {
         PageHeader(
             title = L("备份与恢复"),
-            subtitle = L("把记忆、设置和自定义工具打包带走，或者从备份里挑着恢复"),
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
@@ -372,23 +391,6 @@ private fun BackupHomePage(
                 )
             )
         )
-
-        Spacer(Modifier.height(10.dp))
-        Column(Modifier.padding(horizontal = 14.dp)) {
-            Text(
-                L("zip 里是一个 manifest.json 加各个部分的 json；单独导出的文件也自带类型标记，恢复时能认出来。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                L("合并：只动备份里提到的内容，现有的一律保留。覆盖：先把这一部分清空再写入，不能撤销。"),
-                color = Sem.warn,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
-        }
 
         // 恢复结果直接留在页面上，不用 toast 一闪而过
         result?.let { text ->
@@ -441,6 +443,7 @@ private fun BackupHomePage(
 private fun BackupCreatePage(
     revision: Int,
     ctx: Context,
+    barVisible: Boolean,
     onBack: () -> Unit
 ) {
     var pickMemory by rememberSaveable { mutableStateOf(true) }
@@ -451,6 +454,9 @@ private fun BackupCreatePage(
     var showMode by remember { mutableStateOf(false) }
     // 已经点了导出方式、在等系统文件选择器回来的那次要出什么："zip" / "files"
     var pendingMode by remember { mutableStateOf("") }
+    // 底栏进场：进页面时从下方滑进来，和主页底栏一致
+    var barIn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { barIn = true }
 
     val scope = rememberCoroutineScope()
     val resolver = ctx.contentResolver
@@ -506,15 +512,18 @@ private fun BackupCreatePage(
                     }
                 }
             }
+            val ok = done.isSuccess
             toast(
                 ctx,
-                if (done.isSuccess) {
+                if (ok) {
                     if (mode == "zip") L("已导出 %s 个部分").format(parts.size)
                     else L("已导出 %s 个文件").format(parts.size)
                 } else {
                     L("导出失败")
                 }
             )
+            // 导出成功就直接退回上一页，不用自己再点返回
+            if (ok) onBack()
         }
     }
 
@@ -527,7 +536,6 @@ private fun BackupCreatePage(
         ) {
             PageHeader(
                 title = L("备份"),
-                subtitle = L("用开关挑要备份的内容，点底下的导出挑一个文件夹"),
                 actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
             )
 
@@ -555,7 +563,6 @@ private fun BackupCreatePage(
                             L("备份里带着令牌，恢复后客户端不用改地址；文件别随便分享")
                         else L("备份里不带令牌，恢复时会保留当前令牌"),
                         subtitleMaxLines = 2,
-                        subtitleColor = if (includeToken) Sem.warn else null,
                         visible = pickSettings,
                         indent = true,
                         onClick = { includeToken = !includeToken },
@@ -571,42 +578,33 @@ private fun BackupCreatePage(
                 )
             )
 
-            Spacer(Modifier.height(10.dp))
-            Column(Modifier.padding(horizontal = 14.dp)) {
-                Text(
-                    L("点导出后选方式：「文件导出」每个部分一个 json，「zip 导出」打包成一个 zip；选完方式再挑一个文件夹，文件直接放进去。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    L("每个文件都自带类型标记，恢复时会被自动认出来 —— 单独导出的文件也能单独恢复。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-            }
         }
 
-        SelectionBar(
-            actionText = if (chosen.isEmpty()) L("导出")
-            else L("导出（%s 个部分）").format(chosen.size),
-            actionEnabled = chosen.isNotEmpty(),
-            onSelectAll = {
-                pickMemory = true
-                pickSettings = true
-                pickTools = true
-                includeToken = true
-            },
-            onSelectNone = {
-                pickMemory = false
-                pickSettings = false
-                pickTools = false
-                includeToken = false
-            },
-            onAction = { showMode = true }
-        )
+        // 底栏：跟主页底栏同一套进出场动画（从下方滑入 + 淡入）
+        AnimatedVisibility(
+            visible = barIn && barVisible,
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
+        ) {
+            SelectionBar(
+                actionText = if (chosen.isEmpty()) L("导出")
+                else L("导出（%s 个部分）").format(chosen.size),
+                actionEnabled = chosen.isNotEmpty(),
+                onSelectAll = {
+                    pickMemory = true
+                    pickSettings = true
+                    pickTools = true
+                    includeToken = true
+                },
+                onSelectNone = {
+                    pickMemory = false
+                    pickSettings = false
+                    pickTools = false
+                    includeToken = false
+                },
+                onAction = { showMode = true }
+            )
+        }
     }
 
     if (showMode) {
@@ -731,12 +729,16 @@ private fun RestorePage(
     items: List<RestoreItem>,
     meta: RestoreMeta?,
     result: String?,
+    barVisible: Boolean,
     onItemsChange: (List<RestoreItem>) -> Unit,
     onRun: (List<RestoreItem>) -> Unit,
     onBack: () -> Unit
 ) {
     // 需要问合并 / 覆盖的项（点恢复时才弹）
     var asking by remember { mutableStateOf(false) }
+    // 底栏进场：和主页底栏同一套动画
+    var barIn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { barIn = true }
 
     val picked = items.filter { it.selected }
     val needsAsk = picked.filter { it.part != Backup.Part.SETTINGS && targetNotEmpty(it.part) }
@@ -758,7 +760,6 @@ private fun RestorePage(
         ) {
             PageHeader(
                 title = L("恢复备份"),
-                subtitle = L("备份里读出来的部分都在下面，开关挑要写回哪些"),
                 actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
             )
 
@@ -772,15 +773,15 @@ private fun RestorePage(
                         if (meta?.tokenIncluded == true) L("备份里带着") else L("备份里没有")
                     )
                     KeyValue(L("包含部分"), L("%s 个").format(items.size))
+                    // 选了几个放在这张卡里，不单独占一行
+                    KeyValue(
+                        L("已选"),
+                        L("%s 个，共 %s 个").format(picked.size, items.size),
+                        if (picked.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.primary
+                    )
                 }
             }
-
-            Text(
-                L("已选 %s 个部分，共 %s 个").format(picked.size, items.size),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.5.sp,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp)
-            )
 
             GroupLabel(L("要恢复的内容"))
             CardGroup(
@@ -809,7 +810,6 @@ private fun RestorePage(
                                         L("恢复成备份里那个令牌，客户端也要跟着换")
                                     else L("保留当前令牌（推荐）：客户端不用动"),
                                     subtitleMaxLines = 2,
-                                    subtitleColor = if (item.restoreToken) Sem.warn else null,
                                     visible = true,
                                     indent = true,
                                     onClick = {
@@ -826,23 +826,6 @@ private fun RestorePage(
                     }
                 }
             )
-
-            Spacer(Modifier.height(10.dp))
-            Column(Modifier.padding(horizontal = 14.dp)) {
-                Text(
-                    L("设置固定整份覆盖；记忆库和自定义工具只有当前不是空的才会问合并还是覆盖。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    L("覆盖会先把这一部分清空再写入，不能撤销；合并只动备份里提到的内容。"),
-                    color = Sem.warn,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-            }
 
             result?.let { text ->
                 Spacer(Modifier.height(10.dp))
@@ -865,14 +848,19 @@ private fun RestorePage(
             }
         }
 
-        SelectionBar(
-            actionText = L("恢复所选项"),
-            actionColor = Sem.warn,
-            actionEnabled = picked.isNotEmpty(),
-            onSelectAll = { onItemsChange(items.map { it.copy(selected = true) }) },
-            onSelectNone = { onItemsChange(items.map { it.copy(selected = false) }) },
-            onAction = { start() }
-        )
+        AnimatedVisibility(
+            visible = barIn && barVisible,
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
+        ) {
+            SelectionBar(
+                actionText = L("恢复所选项"),
+                actionEnabled = picked.isNotEmpty(),
+                onSelectAll = { onItemsChange(items.map { it.copy(selected = true) }) },
+                onSelectNone = { onItemsChange(items.map { it.copy(selected = false) }) },
+                onAction = { start() }
+            )
+        }
     }
 
     if (asking) {
@@ -947,7 +935,7 @@ private fun ModePickerDialog(
                         ChoiceChip(
                             text = L(if (item.merge) "合并" else "覆盖"),
                             active = !item.merge,
-                            color = if (item.merge) MaterialTheme.colorScheme.primary else Sem.warn,
+                            color = MaterialTheme.colorScheme.primary,
                             onClick = { onToggleMode(item.part) }
                         )
                     }
@@ -956,7 +944,7 @@ private fun ModePickerDialog(
         },
         confirmButton = {
             TextButton(onClick = onRun) {
-                Text(L("开始恢复"), color = Sem.warn)
+                Text(L("开始恢复"), color = MaterialTheme.colorScheme.primary)
             }
         },
         dismissButton = {
@@ -983,30 +971,26 @@ private fun partIcon(part: Backup.Part) = when (part) {
 }
 
 /**
- * 一行的说明：这块里有什么 + 写下去会怎么样。
+ * 一行的说明：这一块里有什么。
  *
- * 「将替换当前数据」和「当前为空，直接写入」这两句是给用户看的重点 ——
- * 前者意味着一恢复就没了，后者说明不会问模式（怎么写都一样）。
+ * 只留数据量（有多少实体 / 多少工具），「将替换当前数据」那类后缀就省了 ——
+ * 需要选合并还是覆盖的时候，弹窗里会说清楚。
  */
 private fun restoreSummary(item: RestoreItem): String = when (item.part) {
-    Backup.Part.MEMORY -> {
-        val n = AppCore.memory.graph.entities.size
-        val r = AppCore.memory.graph.relations.size
-        L("%s 个实体 · %s 条关系").format(n, r) + " · " + overwriteHint(item.part)
-    }
+    Backup.Part.MEMORY -> L("%s 个实体 · %s 条关系").format(
+        AppCore.memory.graph.entities.size,
+        AppCore.memory.graph.relations.size
+    )
 
+    // 设置是整份覆盖、不问模式，所以这里得留一句短的
     Backup.Part.SETTINGS -> (if (Backup.settingsHasToken(item.text)) L("含访问令牌")
-    else L("不含访问令牌")) + " · " + L("整份覆盖当前设置")
+    else L("不含访问令牌")) + " · " + L("整份覆盖")
 
     Backup.Part.CUSTOM_TOOLS -> {
         val n = AppCore.customTools.tools.size
-        (if (n == 0) L("还没有自定义工具") else L("%s 个工具").format(n)) +
-            " · " + overwriteHint(item.part)
+        if (n == 0) L("还没有自定义工具") else L("%s 个工具").format(n)
     }
 }
-
-private fun overwriteHint(part: Backup.Part): String =
-    if (targetNotEmpty(part)) L("将替换当前数据") else L("当前为空，直接写入")
 
 /** 这一部分现在有没有内容（空的就不用问合并还是覆盖）。 */
 private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {

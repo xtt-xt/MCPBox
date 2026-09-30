@@ -199,7 +199,6 @@ private fun AboutHomePage(
     ) {
         PageHeader(
             title = L("关于"),
-            subtitle = "${full} · ${AppCore.deviceLabel()}",
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
@@ -392,14 +391,6 @@ private fun AboutHomePage(
                 )
             }
         )
-        Spacer(Modifier.height(8.dp))
-        Column(Modifier.padding(horizontal = 22.dp)) {
-            Text(
-                L("感谢这些开源项目，MCP 文件盒才能做得这么轻。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp
-            )
-        }
 
         // ------------------------------------------------ 运行环境
         GroupLabel(L("运行环境"))
@@ -453,7 +444,6 @@ private fun DevModePage(
     ) {
         PageHeader(
             title = L("开发者模式"),
-            subtitle = L("调试功能，平时用不到"),
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 
@@ -543,9 +533,8 @@ private fun DevModePage(
             listOf(
                 RowSpec(
                     title = L("关闭开发者模式"),
-                    subtitle = L("关于页的入口卡片会消失，「语言菜单」也一起关掉。再解锁连点图标 7 次就行"),
+                    subtitle = L("入口卡片会消失，连点图标 7 次可再解锁"),
                     subtitleMaxLines = 2,
-                    subtitleColor = Sem.warn,
                     icon = Icons.Filled.Warning,
                     onClick = onCloseDev
                 )

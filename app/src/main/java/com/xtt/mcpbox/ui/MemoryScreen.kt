@@ -306,8 +306,6 @@ private fun MemoryListPage(
     ) {
         PageHeader(
             title = L("记忆库"),
-            subtitle = L("实体 %s · 关系 %s · 分区 %s")
-                .format(graph.entities.size, graph.relations.size, folders.size),
             actions = {
                 RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = { showNew = true })
                 Spacer(Modifier.width(8.dp))
@@ -479,7 +477,6 @@ private fun MemoryDetailPage(
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
             PageHeader(
                 title = L("记忆不存在"),
-                subtitle = L("它可能已经被删掉了"),
                 actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
             )
         }
@@ -666,10 +663,6 @@ private fun MemoryDetailPage(
     ) {
         PageHeader(
             title = entity.name,
-            subtitle = buildString {
-                append(entity.type.ifBlank { L("未分类") })
-                append(" · ").append(entity.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER })
-            },
             actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
         )
 

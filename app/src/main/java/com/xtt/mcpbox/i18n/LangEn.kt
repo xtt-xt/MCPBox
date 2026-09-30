@@ -1713,5 +1713,10 @@ object LangEn {
     "没记（单独导出的文件）" to "not recorded (standalone file)",
     "恢复结果" to "Restore result",
     "恢复完成，结果在最下面" to "Restore done — the result is at the bottom",
+    "入口卡片会消失，连点图标 7 次可再解锁" to "The entry card disappears; tap the icon 7 times to unlock it again",
+    "读取默认允许，写入 / 删除会先问你。改了工具包要重连客户端才生效。" to "Reads are allowed by default; writes and deletes ask you first. After changing tool packs, reconnect the client.",
+    "已选" to "Selected",
+    "%s 个，共 %s 个" to "%s of %s",
+    "整份覆盖" to "overwrites everything",
     )
 }

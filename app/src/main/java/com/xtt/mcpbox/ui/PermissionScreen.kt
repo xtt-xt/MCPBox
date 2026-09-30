@@ -84,7 +84,6 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
 
         PageHeader(
             title = L("权限"),
-            subtitle = L("选「询问」时，AI 每次调用都会弹出悬浮窗让你决定")
         )
 
         // ---------------------------------------------------------- 预设会话
