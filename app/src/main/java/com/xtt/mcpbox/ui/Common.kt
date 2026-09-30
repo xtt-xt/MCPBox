@@ -938,7 +938,8 @@ fun BottomPillNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit) 
                 .fillMaxWidth()
                 // 内容避开小白条，底色仍然铺到屏幕最底
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 12.dp),
+                // 整条高度对齐改前 / 改后的中间值（≈93dp，含小白条）：top 8 + 内容 54 + bottom 6
+                .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             BottomNavItem(items, selected, onSelect)
@@ -952,6 +953,8 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
         val active = index == selected
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
+        // 只有图标外面那一圈胶囊跟着状态变；整格**不画任何底色**，
+        // 否则就会出现「一个框包着图标、另一个框包着图标+文字」的两层嵌套
         val iconBg by animateColorAsState(
             targetValue = when {
                 active -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
@@ -964,12 +967,12 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
+                    // indication = null：整格不画涟漪，视觉上只有图标那圈
                     .clickable(
                         interactionSource = interaction,
-                        indication = ripple(color = MaterialTheme.colorScheme.primary)
+                        indication = null
                     ) { onSelect(index) }
-                    .padding(top = 4.dp, bottom = 4.dp),
+                    .padding(vertical = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // 选中底色只包图标这一块
