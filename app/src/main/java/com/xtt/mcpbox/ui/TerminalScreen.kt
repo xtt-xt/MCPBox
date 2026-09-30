@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -54,7 +55,8 @@ fun TerminalScreen(
     ctx: Context,
     revision: Int,
     onRequestShizuku: () -> Unit,
-    onChanged: () -> Unit
+    onChanged: () -> Unit,
+    scrollTopTick: Int = 0
 ) {
     val term = AppCore.terminal
     val text by term.text.collectAsState()
@@ -70,8 +72,12 @@ fun TerminalScreen(
     LaunchedEffect(text) {
         runCatching { outScroll.scrollTo(outScroll.maxValue) }
     }
+    // 双击底栏当前 tab：回到输出区顶部
+    LaunchedEffect(scrollTopTick) {
+        if (scrollTopTick > 0) runCatching { outScroll.animateScrollTo(0) }
+    }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().imePadding()) {
         PageHeader(
             title = L("终端"),
             actions = { RoundIconButton(Icons.Filled.Clear, L("清屏")) { term.clear() } }
@@ -154,7 +160,11 @@ fun TerminalScreen(
                     }
                 }),
                 trailingIcon = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 往左挪一点：输入不贴右边缘，跟输入框留出呼吸
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 10.dp)
+                    ) {
                         RoundIconButton(Icons.Filled.KeyboardArrowUp, L("上一条"), size = 36) {
                             term.previousCommand()?.let { input = it }
                         }

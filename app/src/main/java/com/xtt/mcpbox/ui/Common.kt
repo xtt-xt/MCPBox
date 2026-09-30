@@ -31,15 +31,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -194,6 +198,7 @@ fun PageHeader(
     Column(
         Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 2.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -907,7 +912,14 @@ fun EmptyHint(text: String) {
 
 data class NavItem(val label: String, val icon: ImageVector)
 
-/** 底栏：只有选中的那格有胶囊底色，其余透明（底部一条细分割线，整体抬高一点）。 */
+/**
+ * 底栏。
+ *
+ * 造型参考主流 App（B 站那种）：
+ *  - 选中态是**图标外面一圈胶囊底色**，文字在下面、不参与选中底色；
+ *  - 切 tab 时不做缩放，只换颜色和底色；
+ *  - 整条浮在页面之上（顶部分割线 + 低一档的底色），内容避开系统小白条、底色铺到屏幕最底。
+ */
 @Composable
 fun BottomPillNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit) {
     Column(
@@ -924,8 +936,10 @@ fun BottomPillNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit) 
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 18.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // 内容避开小白条，底色仍然铺到屏幕最底
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             BottomNavItem(items, selected, onSelect)
         }
@@ -938,58 +952,50 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
         val active = index == selected
         val interaction = remember { MutableInteractionSource() }
         val pressed by interaction.collectIsPressedAsState()
-        val bg by animateColorAsState(
+        val iconBg by animateColorAsState(
             targetValue = when {
-                active -> MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                active -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                 pressed -> MaterialTheme.colorScheme.surfaceContainerHigh
                 else -> Color.Transparent
             },
-            animationSpec = tween(150), label = "navBg"
-        )
-        // 选中项轻微放大、胶囊底色淡入，切换时整排都有个舒服的过渡
-        val scale by animateFloatAsState(
-            targetValue = if (active) 1f else 0.90f,
-            animationSpec = tween(190), label = "navScale"
+            animationSpec = tween(150), label = "navIconBg"
         )
         Box(Modifier.weight(1f)) {
-            Surface(
-                color = bg,
-                shape = RoundedCornerShape(50),
-                modifier = Modifier
+            Column(
+                Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
-                    .clip(RoundedCornerShape(50))     // 按压/选中底色都限制在胶囊内
+                    .clip(RoundedCornerShape(18.dp))
                     .clickable(
                         interactionSource = interaction,
                         indication = ripple(color = MaterialTheme.colorScheme.primary)
                     ) { onSelect(index) }
+                    .padding(top = 4.dp, bottom = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
+                // 选中底色只包图标这一块
+                Box(
                     Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                        },
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .size(width = 58.dp, height = 32.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(iconBg),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         item.icon,
                         contentDescription = item.label,
                         tint = if (active) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        item.label,
-                        color = if (active) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 10.sp,
-                        maxLines = 1
+                        modifier = Modifier.size(24.dp)
                     )
                 }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    item.label,
+                    color = if (active) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
             }
         }
     }
@@ -1138,7 +1144,9 @@ fun SelectionBar(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 18.dp),
+                // 内容避开小白条，底色铺到屏幕最底
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {

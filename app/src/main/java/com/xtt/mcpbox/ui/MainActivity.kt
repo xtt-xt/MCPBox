@@ -23,6 +23,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -251,7 +252,12 @@ fun AppRoot(
     ) { screen ->
     screenStateHolder.SaveableStateProvider(screen) {
     if (screen.isNotEmpty()) {
-        Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
+            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        ) { padding ->
             Box(
                 Modifier
                     .fillMaxSize()
@@ -305,15 +311,21 @@ fun AppRoot(
     // 不然底栏还亮着、点了又跳走，等于给用户两条互相矛盾的出口。
     val inSettingsSubPage = tab == 4 && settingsPage.isNotEmpty()
 
+    var scrollTopTick by remember { mutableStateOf(0) }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             AnimatedVisibility(
                 visible = !inSettingsSubPage,
                 enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
                 exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
             ) {
-                BottomPillNav(navItems, tab) { tab = it }
+                BottomPillNav(navItems, tab) { index ->
+                    // 点当前这一格 = 回到顶部（列表滑到最上面）
+                    if (index == tab) scrollTopTick++ else tab = index
+                }
             }
         }
     ) { padding ->
@@ -351,16 +363,18 @@ fun AppRoot(
                     },
                     onRestartService = { McpService.restart(ctx) },
                     onPermNeed = requestPermission,
-                    onOpenPermissions = { tab = 1 }
+                    onOpenPermissions = { tab = 1 },
+                    scrollTopTick = scrollTopTick
                 )
                 1 -> TerminalScreen(
                     ctx = ctx,
                     revision = revision,
                     onRequestShizuku = onRequestShizuku,
-                    onChanged = { revision++ }
+                    onChanged = { revision++ },
+                    scrollTopTick = scrollTopTick
                 )
-                2 -> PermissionScreen(ctx, revision) { revision++ }
-                3 -> LogScreen(ctx, logs) { revision++ }
+                2 -> PermissionScreen(ctx, revision, scrollTopTick) { revision++ }
+                3 -> LogScreen(ctx, logs, scrollTopTick) { revision++ }
                 else -> SettingsScreen(
                     // 这里的入口是「松手才触发」（Compose 的 clickable 语义：按下高亮、松手进入、滑出取消）
                     ctx = ctx,
@@ -375,7 +389,8 @@ fun AppRoot(
                     onOpenBackup = { subScreen = "backup" },
                     onOpenAbout = { subScreen = "about" },
                     onChanged = { revision++ },
-                    onRestartService = { McpService.restart(ctx) }
+                    onRestartService = { McpService.restart(ctx) },
+                    scrollTopTick = scrollTopTick
                 )
             }
             }

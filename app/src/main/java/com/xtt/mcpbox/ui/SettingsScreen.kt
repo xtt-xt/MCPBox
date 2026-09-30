@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +50,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,7 +95,8 @@ fun SettingsScreen(
     onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit,
     onChanged: () -> Unit,
-    onRestartService: () -> Unit
+    onRestartService: () -> Unit,
+    scrollTopTick: Int = 0
 ) {
     var showPort by remember { mutableStateOf(false) }
     var showReset by remember { mutableStateOf(false) }
@@ -187,6 +190,7 @@ fun SettingsScreen(
                     onBack = back
                 )
                 else -> SettingsHomePage(
+                        scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
                     entityCount = AppCore.memory.graph.entities.size,
                     relationCount = AppCore.memory.graph.relations.size,
@@ -570,6 +574,7 @@ fun SettingsScreen(
  */
 @Composable
 private fun SettingsHomePage(
+    scrollTopTick: Int = 0,
     toolCount: Int,
     entityCount: Int,
     relationCount: Int,
@@ -579,10 +584,16 @@ private fun SettingsHomePage(
     onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit
 ) {
+    val scroll = rememberScrollState()
+    // 双击底栏「设置」回顶部
+    LaunchedEffect(scrollTopTick) {
+        if (scrollTopTick > 0) scroll.animateScrollTo(0)
+    }
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
+            .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
         PageHeader(

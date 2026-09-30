@@ -323,15 +323,6 @@ fun PacksSection(
         }
     }
 
-    Spacer(Modifier.height(10.dp))
-    Column(Modifier.padding(horizontal = 14.dp)) {
-        Text(
-            L("读取默认允许，写入 / 删除会先问你。改了工具包要重连客户端才生效。"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            lineHeight = 17.sp
-        )
-    }
 
     // ------------------------------------------------------------- 编辑工具包
 

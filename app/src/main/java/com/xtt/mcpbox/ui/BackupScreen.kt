@@ -25,12 +25,14 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,26 +101,40 @@ fun BackupScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(HOME) }
-    // 恢复页的数据（放外层：切页动画重建时不能丢）
+
+    // 备份页挑了哪些、导出方式 —— 底栏在页面外面，得靠这些算文案和动作，所以状态放这里
+    var pickMemory by rememberSaveable { mutableStateOf(true) }
+    var pickSettings by rememberSaveable { mutableStateOf(true) }
+    var pickTools by rememberSaveable { mutableStateOf(true) }
+    var includeToken by rememberSaveable { mutableStateOf(true) }
+    var showMode by remember { mutableStateOf(false) }
+    var pendingMode by remember { mutableStateOf("") }
+
+    // 恢复页：读出来的部分 + 备份元信息
     var restoreItems by remember { mutableStateOf<List<RestoreItem>>(emptyList()) }
     var restoreMeta by remember { mutableStateOf<RestoreMeta?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    // 返回时先让底栏滑下去，再换页（跟主页底栏的退场动画对齐）
-    var closing by remember { mutableStateOf(false) }
+    var askingMode by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
+    val resolver = ctx.contentResolver
+
+    val chosen = buildList {
+        if (pickMemory) add(Backup.Part.MEMORY)
+        if (pickSettings) add(Backup.Part.SETTINGS)
+        if (pickTools) add(Backup.Part.CUSTOM_TOOLS)
+    }
+    val picked = restoreItems.filter { it.selected }
+
+    fun textOf(part: Backup.Part): String = when (part) {
+        Backup.Part.MEMORY -> AppCore.memory.exportJson()
+        Backup.Part.SETTINGS -> Backup.exportSettings(AppCore.prefs, includeToken)
+        Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
+    }
+
+    /** 已经在首页了就往外退，否则回首页。底栏和页面切换同时进行，不用等。 */
     fun backHome() {
-        if (page == HOME) {
-            onBack()
-            return
-        }
-        if (closing) return
-        closing = true
-        scope.launch {
-            delay(190)
-            page = HOME
-            closing = false
-        }
+        if (page == HOME) onBack() else page = HOME
     }
 
     fun loadZip(bytes: ByteArray) {
@@ -195,6 +211,17 @@ fun BackupScreen(
         toast(ctx, L("恢复完成，结果在最下面"))
     }
 
+    /** 点「恢复所选项」：需要挑模式的才弹窗，不需要就直接开跑。 */
+    fun startRestore() {
+        when {
+            picked.isEmpty() -> toast(ctx, L("至少要选一部分"))
+            picked.none { it.part != Backup.Part.SETTINGS && targetNotEmpty(it.part) } ->
+                runRestore(picked)
+
+            else -> askingMode = true
+        }
+    }
+
     // 选 zip
     val zipLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -218,6 +245,56 @@ fun BackupScreen(
         if (!uris.isNullOrEmpty()) loadFiles(uris)
     }
 
+    // 选文件夹 → 直接把文件写进去（不再让用户手打文件名）
+    val dirLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        val mode = pendingMode
+        pendingMode = ""
+        if (uri == null) return@rememberLauncherForActivityResult
+
+        val parts = chosen.associateWith { textOf(it) }
+        val withToken = includeToken && pickSettings
+        scope.launch {
+            val done = withContext(Dispatchers.IO) {
+                runCatching {
+                    runCatching {
+                        resolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        )
+                    }
+                    if (mode == "zip") {
+                        val bytes = Backup.zip(parts = parts, includeToken = withToken)
+                        writeIntoFolder(
+                            resolver, uri, "application/zip",
+                            "mcpbox-backup-${stamp()}.zip", bytes
+                        )
+                    } else {
+                        parts.forEach { (part, text) ->
+                            writeIntoFolder(
+                                resolver, uri, "application/json",
+                                "${baseOf(part.file)}-${stamp()}.json", text.toByteArray()
+                            )
+                        }
+                    }
+                }
+            }
+            val ok = done.isSuccess
+            toast(
+                ctx,
+                if (ok) {
+                    if (mode == "zip") L("已导出 %s 个部分").format(parts.size)
+                    else L("已导出 %s 个文件").format(parts.size)
+                } else {
+                    L("导出失败")
+                }
+            )
+            // 导出成功就直接退回上一页，不用自己再点返回
+            if (ok && page == CREATE) page = HOME
+        }
+    }
+
     // 进程被回收再回来时，恢复页的数据已经没了 —— 直接回首页，别显示一个空页面
     LaunchedEffect(page, restoreItems) {
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
@@ -226,58 +303,127 @@ fun BackupScreen(
     BackHandler(enabled = true) { backHome() }
 
     val pages = rememberSaveableStateHolder()
-    AnimatedContent(
-        targetState = page,
-        transitionSpec = {
-            val entering = targetState != HOME
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
-            )
-        },
-        label = "backupPage"
-    ) { current ->
-        pages.SaveableStateProvider(current) {
-            when (current) {
-                CREATE -> BackupCreatePage(
-                    revision = revision,
-                    ctx = ctx,
-                    barVisible = !closing,
-                    onBack = { backHome() }
-                )
-
-                RESTORE -> RestorePage(
-                    ctx = ctx,
-                    items = restoreItems,
-                    meta = restoreMeta,
-                    result = result,
-                    barVisible = !closing,
-                    onItemsChange = { restoreItems = it },
-                    onRun = { runRestore(it) },
-                    onBack = { backHome() }
-                )
-
-                else -> BackupHomePage(
-                    ctx = ctx,
-                    revision = revision,
-                    result = result,
-                    onOpenCreate = { page = CREATE },
-                    onPickZip = {
-                        result = null
-                        zipLauncher.launch(
-                            arrayOf("application/zip", "application/octet-stream", "*/*")
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f)) {
+            AnimatedContent(
+                targetState = page,
+                transitionSpec = {
+                    val entering = targetState != HOME
+                    val slide = if (entering) 1 else -1
+                    (
+                        slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                        ).togetherWith(
+                        slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+                    )
+                },
+                label = "backupPage"
+            ) { current ->
+                pages.SaveableStateProvider(current) {
+                    when (current) {
+                        CREATE -> BackupCreatePage(
+                            revision = revision,
+                            pickMemory = pickMemory,
+                            onPickMemory = { pickMemory = it },
+                            pickSettings = pickSettings,
+                            onPickSettings = { pickSettings = it },
+                            pickTools = pickTools,
+                            onPickTools = { pickTools = it },
+                            includeToken = includeToken,
+                            onIncludeToken = { includeToken = it },
+                            onBack = { backHome() }
                         )
+
+                        RESTORE -> RestorePage(
+                            items = restoreItems,
+                            meta = restoreMeta,
+                            result = result,
+                            onItemsChange = { restoreItems = it },
+                            onBack = { backHome() }
+                        )
+
+                        else -> BackupHomePage(
+                            ctx = ctx,
+                            revision = revision,
+                            result = result,
+                            onOpenCreate = { page = CREATE },
+                            onPickZip = {
+                                result = null
+                                zipLauncher.launch(
+                                    arrayOf("application/zip", "application/octet-stream", "*/*")
+                                )
+                            },
+                            onPickFiles = {
+                                result = null
+                                fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            },
+                            onBack = onBack
+                        )
+                    }
+                }
+            }
+        }
+
+        // 底栏固定在页面外面：进子页滑入一次，子页之间切来切去都不再动它
+        AnimatedVisibility(
+            visible = page != HOME,
+            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
+            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
+        ) {
+            if (page == CREATE) {
+                SelectionBar(
+                    actionText = if (chosen.isEmpty()) L("导出")
+                    else L("导出（%s 个部分）").format(chosen.size),
+                    actionEnabled = chosen.isNotEmpty(),
+                    onSelectAll = {
+                        pickMemory = true
+                        pickSettings = true
+                        pickTools = true
+                        includeToken = true
                     },
-                    onPickFiles = {
-                        result = null
-                        fileLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                    onSelectNone = {
+                        pickMemory = false
+                        pickSettings = false
+                        pickTools = false
+                        includeToken = false
                     },
-                    onBack = onBack
+                    onAction = { showMode = true }
+                )
+            } else {
+                SelectionBar(
+                    actionText = L("恢复所选项"),
+                    actionEnabled = picked.isNotEmpty(),
+                    onSelectAll = { restoreItems = restoreItems.map { it.copy(selected = true) } },
+                    onSelectNone = { restoreItems = restoreItems.map { it.copy(selected = false) } },
+                    onAction = { startRestore() }
                 )
             }
         }
+    }
+
+    if (showMode) {
+        ExportModeDialog(
+            count = chosen.size,
+            onDismiss = { showMode = false },
+            onPick = { mode ->
+                showMode = false
+                pendingMode = mode
+                dirLauncher.launch(null)
+            }
+        )
+    }
+
+    if (askingMode) {
+        ModePickerDialog(
+            items = picked,
+            onToggleMode = { part ->
+                restoreItems = restoreItems.map { if (it.part == part) it.copy(merge = !it.merge) else it }
+            },
+            onDismiss = { askingMode = false },
+            onRun = {
+                askingMode = false
+                runRestore(restoreItems.filter { it.selected })
+            }
+        )
     }
 }
 
@@ -340,6 +486,7 @@ private fun BackupHomePage(
         Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
         PageHeader(
@@ -442,180 +589,68 @@ private fun BackupHomePage(
 @Composable
 private fun BackupCreatePage(
     revision: Int,
-    ctx: Context,
-    barVisible: Boolean,
+    pickMemory: Boolean,
+    onPickMemory: (Boolean) -> Unit,
+    pickSettings: Boolean,
+    onPickSettings: (Boolean) -> Unit,
+    pickTools: Boolean,
+    onPickTools: (Boolean) -> Unit,
+    includeToken: Boolean,
+    onIncludeToken: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
-    var pickMemory by rememberSaveable { mutableStateOf(true) }
-    var pickSettings by rememberSaveable { mutableStateOf(true) }
-    var pickTools by rememberSaveable { mutableStateOf(true) }
-    var includeToken by rememberSaveable { mutableStateOf(true) }
-    // 导出方式弹窗
-    var showMode by remember { mutableStateOf(false) }
-    // 已经点了导出方式、在等系统文件选择器回来的那次要出什么："zip" / "files"
-    var pendingMode by remember { mutableStateOf("") }
-    // 底栏进场：进页面时从下方滑进来，和主页底栏一致
-    var barIn by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { barIn = true }
-
-    val scope = rememberCoroutineScope()
-    val resolver = ctx.contentResolver
-
     val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
     val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
 
-    val chosen = buildList {
-        if (pickMemory) add(Backup.Part.MEMORY)
-        if (pickSettings) add(Backup.Part.SETTINGS)
-        if (pickTools) add(Backup.Part.CUSTOM_TOOLS)
-    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 16.dp)
+    ) {
+        PageHeader(
+            title = L("备份"),
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+        )
 
-    fun textOf(part: Backup.Part): String = when (part) {
-        Backup.Part.MEMORY -> AppCore.memory.exportJson()
-        Backup.Part.SETTINGS -> Backup.exportSettings(AppCore.prefs, includeToken)
-        Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
-    }
-
-    // 选文件夹 → 直接把文件写进去（不再让用户手打文件名）
-    val dirLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        val mode = pendingMode
-        pendingMode = ""
-        if (uri == null) return@rememberLauncherForActivityResult
-
-        val parts = chosen.associateWith { textOf(it) }
-        val withToken = includeToken && pickSettings
-        scope.launch {
-            val done = withContext(Dispatchers.IO) {
-                runCatching {
-                    runCatching {
-                        resolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                        )
-                    }
-                    if (mode == "zip") {
-                        val bytes = Backup.zip(parts = parts, includeToken = withToken)
-                        writeIntoFolder(
-                            resolver, uri, "application/zip",
-                            "mcpbox-backup-${stamp()}.zip", bytes
-                        )
-                    } else {
-                        parts.forEach { (part, text) ->
-                            writeIntoFolder(
-                                resolver, uri, "application/json",
-                                "${baseOf(part.file)}-${stamp()}.json", text.toByteArray()
-                            )
-                        }
-                    }
-                }
-            }
-            val ok = done.isSuccess
-            toast(
-                ctx,
-                if (ok) {
-                    if (mode == "zip") L("已导出 %s 个部分").format(parts.size)
-                    else L("已导出 %s 个文件").format(parts.size)
-                } else {
-                    L("导出失败")
-                }
-            )
-            // 导出成功就直接退回上一页，不用自己再点返回
-            if (ok) onBack()
-        }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 16.dp)
-        ) {
-            PageHeader(
-                title = L("备份"),
-                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-            )
-
-            GroupLabel(L("要备份的内容"))
-            CardGroup(
-                listOf(
-                    RowSpec(
-                        title = L("记忆库"),
-                        subtitle = L("%s 个实体 · %s 条关系").format(memoryCount, relationCount),
-                        icon = Icons.Filled.Star,
-                        onClick = { pickMemory = !pickMemory },
-                        trailing = { AppSwitch(pickMemory) { pickMemory = it } }
-                    ),
-                    RowSpec(
-                        title = L("设置"),
-                        subtitle = L("端口、权限、外观、超时等全部配置项"),
-                        icon = Icons.Filled.Lock,
-                        onClick = { pickSettings = !pickSettings },
-                        trailing = { AppSwitch(pickSettings) { pickSettings = it } }
-                    ),
-                    // 令牌是「设置」的附属项：跟着设置一起开关，关掉设置时整行收起来
-                    RowSpec(
-                        title = L("包含访问令牌"),
-                        subtitle = if (includeToken)
-                            L("备份里带着令牌，恢复后客户端不用改地址；文件别随便分享")
-                        else L("备份里不带令牌，恢复时会保留当前令牌"),
-                        subtitleMaxLines = 2,
-                        visible = pickSettings,
-                        indent = true,
-                        onClick = { includeToken = !includeToken },
-                        trailing = { AppSwitch(includeToken) { includeToken = it } }
-                    ),
-                    RowSpec(
-                        title = L("自定义工具"),
-                        subtitle = if (toolCount == 0) L("还没有自定义工具") else L("%s 个工具").format(toolCount),
-                        icon = Icons.Filled.Build,
-                        onClick = { pickTools = !pickTools },
-                        trailing = { AppSwitch(pickTools) { pickTools = it } }
-                    )
+        GroupLabel(L("要备份的内容"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("记忆库"),
+                    subtitle = L("%s 个实体 · %s 条关系").format(memoryCount, relationCount),
+                    icon = Icons.Filled.Star,
+                    onClick = { onPickMemory(!pickMemory) },
+                    trailing = { AppSwitch(pickMemory, onPickMemory) }
+                ),
+                RowSpec(
+                    title = L("设置"),
+                    subtitle = L("端口、权限、外观、超时等全部配置项"),
+                    icon = Icons.Filled.Lock,
+                    onClick = { onPickSettings(!pickSettings) },
+                    trailing = { AppSwitch(pickSettings, onPickSettings) }
+                ),
+                // 令牌是「设置」的附属项：跟着设置一起开关，关掉设置时整行收起来
+                RowSpec(
+                    title = L("包含访问令牌"),
+                    subtitle = if (includeToken)
+                        L("备份里带着令牌，恢复后客户端不用改地址；文件别随便分享")
+                    else L("备份里不带令牌，恢复时会保留当前令牌"),
+                    subtitleMaxLines = 2,
+                    visible = pickSettings,
+                    indent = true,
+                    onClick = { onIncludeToken(!includeToken) },
+                    trailing = { AppSwitch(includeToken, onIncludeToken) }
+                ),
+                RowSpec(
+                    title = L("自定义工具"),
+                    subtitle = if (toolCount == 0) L("还没有自定义工具") else L("%s 个工具").format(toolCount),
+                    icon = Icons.Filled.Build,
+                    onClick = { onPickTools(!pickTools) },
+                    trailing = { AppSwitch(pickTools, onPickTools) }
                 )
             )
-
-        }
-
-        // 底栏：跟主页底栏同一套进出场动画（从下方滑入 + 淡入）
-        AnimatedVisibility(
-            visible = barIn && barVisible,
-            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
-            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
-        ) {
-            SelectionBar(
-                actionText = if (chosen.isEmpty()) L("导出")
-                else L("导出（%s 个部分）").format(chosen.size),
-                actionEnabled = chosen.isNotEmpty(),
-                onSelectAll = {
-                    pickMemory = true
-                    pickSettings = true
-                    pickTools = true
-                    includeToken = true
-                },
-                onSelectNone = {
-                    pickMemory = false
-                    pickSettings = false
-                    pickTools = false
-                    includeToken = false
-                },
-                onAction = { showMode = true }
-            )
-        }
-    }
-
-    if (showMode) {
-        ExportModeDialog(
-            count = chosen.size,
-            onDismiss = { showMode = false },
-            onPick = { mode ->
-                showMode = false
-                pendingMode = mode
-                dirLauncher.launch(null)
-            }
         )
     }
 }
@@ -725,158 +760,109 @@ private fun ModeChoiceRow(title: String, desc: String, onClick: () -> Unit) {
 
 @Composable
 private fun RestorePage(
-    ctx: Context,
     items: List<RestoreItem>,
     meta: RestoreMeta?,
     result: String?,
-    barVisible: Boolean,
     onItemsChange: (List<RestoreItem>) -> Unit,
-    onRun: (List<RestoreItem>) -> Unit,
     onBack: () -> Unit
 ) {
-    // 需要问合并 / 覆盖的项（点恢复时才弹）
-    var asking by remember { mutableStateOf(false) }
-    // 底栏进场：和主页底栏同一套动画
-    var barIn by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { barIn = true }
-
     val picked = items.filter { it.selected }
-    val needsAsk = picked.filter { it.part != Backup.Part.SETTINGS && targetNotEmpty(it.part) }
 
-    fun start() {
-        when {
-            picked.isEmpty() -> toast(ctx, L("至少要选一部分"))
-            needsAsk.isEmpty() -> onRun(picked)
-            else -> asking = true
-        }
-    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 16.dp)
+    ) {
+        PageHeader(
+            title = L("恢复备份"),
+            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+        )
 
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 16.dp)
-        ) {
-            PageHeader(
-                title = L("恢复备份"),
-                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-            )
-
-            GroupLabel(L("备份详情"))
-            CardColumn {
-                CardBox {
-                    KeyValue(L("创建时间"), exportTimeLabel(meta))
-                    KeyValue(L("应用版本"), meta?.app?.takeIf { it.isNotBlank() } ?: L("未知"))
-                    KeyValue(
-                        L("访问令牌"),
-                        if (meta?.tokenIncluded == true) L("备份里带着") else L("备份里没有")
-                    )
-                    KeyValue(L("包含部分"), L("%s 个").format(items.size))
-                    // 选了几个放在这张卡里，不单独占一行
-                    KeyValue(
-                        L("已选"),
-                        L("%s 个，共 %s 个").format(picked.size, items.size),
-                        if (picked.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.primary
-                    )
-                }
+        GroupLabel(L("备份详情"))
+        CardColumn {
+            CardBox {
+                KeyValue(L("创建时间"), exportTimeLabel(meta))
+                KeyValue(L("应用版本"), meta?.app?.takeIf { it.isNotBlank() } ?: L("未知"))
+                KeyValue(
+                    L("访问令牌"),
+                    if (meta?.tokenIncluded == true) L("备份里带着") else L("备份里没有")
+                )
+                KeyValue(L("包含部分"), L("%s 个").format(items.size))
+                // 选了几个放在这张卡里，不单独占一行
+                KeyValue(
+                    L("已选"),
+                    L("%s 个，共 %s 个").format(picked.size, items.size),
+                    if (picked.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.primary
+                )
             }
+        }
 
-            GroupLabel(L("要恢复的内容"))
-            CardGroup(
-                buildList {
-                    items.forEach { item ->
+        GroupLabel(L("要恢复的内容"))
+        CardGroup(
+            buildList {
+                items.forEach { item ->
+                    add(
+                        RowSpec(
+                            title = partLabel(item.part),
+                            subtitle = restoreSummary(item),
+                            subtitleMaxLines = 2,
+                            icon = partIcon(item.part),
+                            onClick = {
+                                onItemsChange(items.map { if (it === item) it.copy(selected = !it.selected) else it })
+                            },
+                            trailing = {
+                                AppSwitch(item.selected) { on ->
+                                    onItemsChange(items.map { if (it === item) it.copy(selected = on) else it })
+                                }
+                            }
+                        )
+                    )
+                    // 设置是整份覆盖，恢复不恢复令牌在这里定（默认保留当前的）
+                    if (item.part == Backup.Part.SETTINGS && item.selected) {
                         add(
                             RowSpec(
-                                title = partLabel(item.part),
-                                subtitle = restoreSummary(item),
+                                title = L("同时恢复访问令牌"),
+                                subtitle = if (item.restoreToken)
+                                    L("恢复成备份里那个令牌，客户端也要跟着换")
+                                else L("保留当前令牌（推荐）：客户端不用动"),
                                 subtitleMaxLines = 2,
-                                icon = partIcon(item.part),
-                                onClick = { onItemsChange(items.map { if (it === item) it.copy(selected = !it.selected) else it }) },
+                                indent = true,
+                                onClick = {
+                                    onItemsChange(items.map { if (it === item) it.copy(restoreToken = !it.restoreToken) else it })
+                                },
                                 trailing = {
-                                    AppSwitch(item.selected) { on ->
-                                        onItemsChange(items.map { if (it === item) it.copy(selected = on) else it })
+                                    AppSwitch(item.restoreToken) { on ->
+                                        onItemsChange(items.map { if (it === item) it.copy(restoreToken = on) else it })
                                     }
                                 }
                             )
                         )
-                        // 设置是整份覆盖，恢复不恢复令牌在这里定（默认保留当前的）
-                        if (item.part == Backup.Part.SETTINGS && item.selected) {
-                            add(
-                                RowSpec(
-                                    title = L("同时恢复访问令牌"),
-                                    subtitle = if (item.restoreToken)
-                                        L("恢复成备份里那个令牌，客户端也要跟着换")
-                                    else L("保留当前令牌（推荐）：客户端不用动"),
-                                    subtitleMaxLines = 2,
-                                    visible = true,
-                                    indent = true,
-                                    onClick = {
-                                        onItemsChange(items.map { if (it === item) it.copy(restoreToken = !it.restoreToken) else it })
-                                    },
-                                    trailing = {
-                                        AppSwitch(item.restoreToken) { on ->
-                                            onItemsChange(items.map { if (it === item) it.copy(restoreToken = on) else it })
-                                        }
-                                    }
-                                )
-                            )
-                        }
                     }
                 }
-            )
-
-            result?.let { text ->
-                Spacer(Modifier.height(10.dp))
-                CardColumn {
-                    CardBox {
-                        Text(
-                            L("恢复结果"),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.5.sp,
-                            lineHeight = 19.sp
-                        )
-                    }
-                }
-            }
-        }
-
-        AnimatedVisibility(
-            visible = barIn && barVisible,
-            enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
-            exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
-        ) {
-            SelectionBar(
-                actionText = L("恢复所选项"),
-                actionEnabled = picked.isNotEmpty(),
-                onSelectAll = { onItemsChange(items.map { it.copy(selected = true) }) },
-                onSelectNone = { onItemsChange(items.map { it.copy(selected = false) }) },
-                onAction = { start() }
-            )
-        }
-    }
-
-    if (asking) {
-        ModePickerDialog(
-            items = picked,
-            onToggleMode = { part ->
-                onItemsChange(
-                    items.map { if (it.part == part) it.copy(merge = !it.merge) else it }
-                )
-            },
-            onDismiss = { asking = false },
-            onRun = {
-                asking = false
-                onRun(items.filter { it.selected })
             }
         )
+
+        result?.let { text ->
+            Spacer(Modifier.height(10.dp))
+            CardColumn {
+                CardBox {
+                    Text(
+                        L("恢复结果"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+        }
     }
 }
 

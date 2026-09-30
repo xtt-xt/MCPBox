@@ -44,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,7 +65,7 @@ import com.xtt.mcpbox.core.PermPreset
 import com.xtt.mcpbox.core.Rule
 
 @Composable
-fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
+fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChanged: () -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
     var showAddCommand by remember { mutableStateOf(false) }
     // 预设那一行的下拉展开了没
@@ -72,10 +73,15 @@ fun PermissionScreen(ctx: Context, revision: Int, onChanged: () -> Unit) {
     // 权限开关里哪一行的下拉展开了（点整行 = 点它右边那个胶囊）
     var openPerm by remember { mutableStateOf<PermKey?>(null) }
 
+    val scroll = rememberScrollState()
+    // 双击底栏当前 tab：回到顶部
+    LaunchedEffect(scrollTopTick) {
+        if (scrollTopTick > 0) scroll.animateScrollTo(0)
+    }
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(bottom = 20.dp)
     ) {
         val switches = remember(revision) { AppCore.permissions.snapshot() }
