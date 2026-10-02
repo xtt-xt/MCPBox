@@ -21,6 +21,7 @@ import com.xtt.mcpbox.core.PosixShLauncher
 import com.xtt.mcpbox.core.ServerMeta
 import com.xtt.mcpbox.core.ShellBackends
 import com.xtt.mcpbox.core.ShellEnv
+import com.xtt.mcpbox.core.StatsStore
 import com.xtt.mcpbox.core.SuLauncher
 import com.xtt.mcpbox.ui.OverlayApproval
 
@@ -51,6 +52,8 @@ object AppCore {
     lateinit var packs: PackStore
         private set
     lateinit var profiles: ProfileStore
+        private set
+    lateinit var stats: StatsStore
         private set
     lateinit var terminal: TerminalController
         private set
@@ -106,6 +109,8 @@ object AppCore {
             profiles = ProfileStore(java.io.File(application.filesDir, "profiles"), config)
             // 记忆库独立成文件，不塞进 SharedPreferences
             memory = MemoryStore(java.io.File(application.filesDir, "memory/graph.json"))
+            // 统计也是独立文件：不进 SharedPreferences，所以「重置全部设置」不会把它清掉
+            stats = StatsStore(java.io.File(application.filesDir, "stats/stats.json")).also { it.load() }
 
             // 语言：跟随系统时，系统语言不是中文就按英文走
             // 彩蛋语言（猫娘语）是否出现在语言列表里，由开发者模式里的「语言菜单」开关决定
@@ -142,7 +147,8 @@ object AppCore {
                 memory = memory,
                 toolMeta = toolMeta,
                 packs = packs,
-                profiles = profiles
+                profiles = profiles,
+                stats = stats
             )
             initialized = true
         }

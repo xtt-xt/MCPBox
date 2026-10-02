@@ -35,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
@@ -188,6 +189,7 @@ fun SettingsScreen(
                     onOpenReset = { showReset = true },
                     onBack = back
                 )
+                "stats" -> StatsSettingsPage(onBack = back)
                 else -> SettingsHomePage(
                         scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
@@ -543,7 +545,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        L("记忆库（实体 · 观察 · 关系）不受影响。"),
+                        L("记忆库（实体 · 观察 · 关系）和统计不受影响。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp
                     )
@@ -649,8 +651,13 @@ private fun SettingsHomePage(
                     Icons.Filled.Refresh
                 ) { onPage("background") },
                 entrySpec(
+                    L("统计"),
+                    L("每日请求热力图、累计运行时长与启动次数"),
+                    Icons.Filled.DateRange
+                ) { onPage("stats") },
+                entrySpec(
                     L("备份与恢复"),
-                    L("把记忆、设置和自定义工具打包导出，或从备份里挑着恢复"),
+                    L("把记忆、设置、自定义工具和统计打包导出，或从备份里挑着恢复"),
                     Icons.Filled.Share
                 ) { onOpenBackup() },
                 entrySpec(

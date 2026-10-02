@@ -49,7 +49,9 @@ class McpServer(
     /** 工具包定义（内置 + 用户自建）。 */
     val packs: PackStore = PackStore(MemorySettings()),
     /** 各会话（URL profile）的工具包激活状态。 */
-    val profiles: ProfileStore = ProfileStore(null, config)
+    val profiles: ProfileStore = ProfileStore(null, config),
+    /** 使用统计（请求次数 / 运行时长 / 启动次数）。 */
+    val stats: StatsStore = StatsStore()
 ) {
 
     val sandbox = PathSandbox(config)
@@ -127,6 +129,7 @@ class McpServer(
             http.start(config.port, config.bindAll)
             boundPort = config.port
             ServerMeta.startTime = System.currentTimeMillis()
+            stats.noteServerStart()
             log.add(LogKind.SYSTEM, message = L("服务已启动，端口 %s").format(config.port))
             startCleanup()
             true
@@ -149,6 +152,8 @@ class McpServer(
         http.stop()
         cleanupThread?.interrupt()
         cleanupThread = null
+        // 运行时长记到这儿为止（没在跑的时候调它也不会记成负数/多次）
+        stats.noteServerStop()
     }
 
     private fun startCleanup() {
@@ -587,6 +592,14 @@ class McpServer(
             is JsonObject -> listOfNotNull(processMessage(parsed, session, remote, profile))
             else -> emptyList()
         }
+        // 统计：每条 JSON-RPC 消息算一次请求（含 initialize / ping / tools/call 与通知）
+        stats.noteRequests(
+            when (parsed) {
+                is JsonArray -> parsed.count { it is JsonObject }
+                is JsonObject -> 1
+                else -> 0
+            }
+        )
         val newSessionId = outs.firstOrNull { it.sessionId != null }?.sessionId
         return outs.mapNotNull { it.response } to newSessionId
     }

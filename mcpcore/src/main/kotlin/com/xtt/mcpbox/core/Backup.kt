@@ -29,6 +29,7 @@ import java.util.zip.ZipOutputStream
  *  - [Part.MEMORY]        记忆库（实体 / 观察 / 关系）
  *  - [Part.SETTINGS]      全部设置键值（可选带访问令牌）
  *  - [Part.CUSTOM_TOOLS]  自定义工具
+ *  - [Part.STATS]         使用统计（请求次数 / 运行时长 / 启动次数）
  *
  * 打包成 zip 时多放一个 `manifest.json`，里面写清楚有哪些部分、含不含令牌；
  * 单独导出时就是一段裸 JSON（靠 [_type] 字段自报家门，导入时用来嗅探类型）。
@@ -38,12 +39,15 @@ object Backup {
     const val TYPE_SETTINGS = "mcpbox.settings"
     const val TYPE_MANIFEST = "mcpbox.backup"
     const val TYPE_TOOLS = "mcpbox.custom-tools"
+    /** 统计（请求热力图 / 运行时长 / 启动次数）。类型常量的正主在 [StatsStore]。 */
+    const val TYPE_STATS = StatsStore.TYPE
 
     /** 备份/恢复的粒度。 */
     enum class Part(val id: String, val file: String) {
         MEMORY("memory", "memory.json"),
         SETTINGS("settings", "settings.json"),
-        CUSTOM_TOOLS("custom_tools", "custom-tools.json");
+        CUSTOM_TOOLS("custom_tools", "custom-tools.json"),
+        STATS("stats", "stats.json");
 
         companion object {
             fun of(id: String): Part? = entries.firstOrNull { it.id == id }
@@ -80,12 +84,15 @@ object Backup {
         when (type) {
             TYPE_SETTINGS -> return Part.SETTINGS
             TYPE_TOOLS -> return Part.CUSTOM_TOOLS
+            TYPE_STATS -> return Part.STATS
             else -> {}
         }
         return when {
             obj.containsKey("entities") || obj.containsKey("relations") -> Part.MEMORY
             obj["values"] is JsonObject -> Part.SETTINGS
             obj["tools"] is JsonArray -> Part.CUSTOM_TOOLS
+            // 统计：按「有 requests 表 + 有 appLaunches」认（老文件没有 _type 也认得出来）
+            obj["requests"] is JsonObject && obj.containsKey("appLaunches") -> Part.STATS
             else -> null
         }
     }
@@ -237,7 +244,8 @@ object Backup {
         restoreToken: Boolean,
         settings: SettingsSource,
         memory: MemoryStore,
-        customTools: CustomToolStore
+        customTools: CustomToolStore,
+        stats: StatsStore = StatsStore()
     ): String = when (part) {
         Part.MEMORY -> {
             val r = memory.importJson(text, merge = mode == Mode.MERGE)
@@ -248,6 +256,8 @@ object Backup {
             val r = customTools.importJson(text, replace = mode == Mode.REPLACE)
             r.message
         }
+
+        Part.STATS -> stats.importJson(text, merge = mode == Mode.MERGE)
 
         Part.SETTINGS -> restoreSettings(text, mode, restoreToken, settings)
     }

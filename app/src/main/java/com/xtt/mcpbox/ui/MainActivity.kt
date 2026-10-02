@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppCore.init(application)
+        // 统计：打开一次 App 记一次（一个进程只记一次，转屏 / 切回任务不算新的）
+        AppCore.stats.noteAppLaunch()
         setContent {
             var themeRev by remember { mutableStateOf(0) }
             // 切语言时整棵树重建，让所有 L(...) 重新取值

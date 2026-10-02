@@ -117,6 +117,8 @@ fun main() {
     ShellEnv.tmp = root.absolutePath
     ShellBackends.register(PosixShLauncher(shellPath = "/bin/sh"))
     val customTools = CustomToolStore(config, settings)
+    // 统计：和 App 里一样挂在 files/stats/stats.json 上
+    val statsStore = StatsStore(File(root, "stats/stats.json"))
 
     val server = McpServer(
         config = config, customTools = customTools, permissions = permissions,
@@ -124,7 +126,8 @@ fun main() {
         memory = MemoryStore(File(root, "memory/graph.json")),
         toolMeta = ToolMetaStore(settings),
         packs = PackStore(settings),
-        profiles = ProfileStore(File(root, "profiles"), config)
+        profiles = ProfileStore(File(root, "profiles"), config),
+        stats = statsStore
     )
     // 默认会话把所有包都打开：下面大量老测试都假设「tools/list 返回全部工具」。
     // 工具包的过滤行为在 [37] 段用独立的会话单独验证。
@@ -1530,17 +1533,19 @@ fun main() {
         check("工具导出：带 _type 标记", toolDump.contains(Backup.TYPE_TOOLS))
 
         // —— zip 打包 / 解包
+        val statsDump = statsStore.exportJson()
         val zipBytes = Backup.zip(
             parts = mapOf(
                 Backup.Part.MEMORY to memDump,
                 Backup.Part.SETTINGS to settingsWithToken,
-                Backup.Part.CUSTOM_TOOLS to toolDump
+                Backup.Part.CUSTOM_TOOLS to toolDump,
+                Backup.Part.STATS to statsDump
             ),
             includeToken = true
         )
         check("zip：产出了非空字节", zipBytes.isNotEmpty(), "${zipBytes.size} 字节")
         val bundle = Backup.readZip(zipBytes)
-        check("zip：解出三部分", bundle.parts.size == 3, "${bundle.parts.keys}")
+        check("zip：解出四部分", bundle.parts.size == 4, "${bundle.parts.keys}")
         check("zip：含令牌标记为 true", bundle.tokenIncluded)
         check("zip：解出的记忆和原稿一致", bundle.parts[Backup.Part.MEMORY] == memDump)
         check("zip：解出的设置和原稿一致", bundle.parts[Backup.Part.SETTINGS] == settingsWithToken)
@@ -1668,6 +1673,73 @@ fun main() {
         config.shellTimeoutMs = 60_000L
     } finally {
         server.stop()
+    }
+
+    println("\n[49] 统计（请求次数 / 运行时长 / 启动次数）")
+    run {
+        val snap = statsStore.snapshot()
+        check("统计：跑过 MCP 流量后请求数 > 0", snap.requestsTotal > 0L, "总请求 ${snap.requestsTotal}")
+        check("统计：今天的格子有数", (snap.requestsByDay[StatsStore.todayKey()] ?: 0L) > 0L)
+        check("统计：服务器启动次数记了一次（stop 之前 start 过一次）", snap.serverStarts == 1L, "启动 ${snap.serverStarts}")
+        check("统计：跑了一阵，运行时长 > 0", snap.serverMillis > 0L, "运行 ${snap.serverMillis}ms")
+        check("统计：stop() 之后不再有「正在运行」标记", !snap.serverRunning)
+        // 落盘 + 重新读回来
+        statsStore.flush()
+        val reloaded = StatsStore(File(root, "stats/stats.json")).also { it.load() }.snapshot()
+        check("统计：文件里读回来的请求数和内存里一致", reloaded.requestsTotal == snap.requestsTotal)
+        check("统计：按天记录也读得回来", reloaded.requestsByDay == snap.requestsByDay)
+
+        // 打开应用次数：一个进程只记一次
+        val solo = StatsStore(null)
+        solo.noteAppLaunch()
+        solo.noteAppLaunch()
+        check("统计：打开应用一个进程只加一次", solo.snapshot().appLaunches == 1L)
+
+        // 备份：嗅探 + zip 往返 + 合并/覆盖
+        val dump = statsStore.exportJson()
+        check("统计：导出带 _type 标记", dump.contains(StatsStore.TYPE))
+        check("统计：能嗅探出类型", Backup.sniff(dump) == Backup.Part.STATS)
+
+        val zip = Backup.zip(mapOf(Backup.Part.STATS to dump), includeToken = false)
+        val bundle = Backup.readZip(zip)
+        check("统计：zip 往返后内容一致", bundle.parts[Backup.Part.STATS]?.trim() == dump.trim())
+
+        val fresh = StatsStore(null)
+        val emptyTools = CustomToolStore(Config(MemorySettings()), MemorySettings())
+        Backup.apply(
+            Backup.Part.STATS, dump, Backup.Mode.REPLACE, restoreToken = false,
+            settings = MemorySettings(), memory = MemoryStore(null), customTools = emptyTools,
+            stats = fresh
+        )
+        check("统计：覆盖恢复后请求数对得上", fresh.snapshot().requestsTotal == snap.requestsTotal)
+
+        // 合并取较大值：同一份恢复两次不会翻倍
+        val twice = StatsStore(null)
+        listOf(dump, dump).forEach {
+            Backup.apply(
+                Backup.Part.STATS, it, Backup.Mode.MERGE, restoreToken = false,
+                settings = MemorySettings(), memory = MemoryStore(null), customTools = emptyTools,
+                stats = twice
+            )
+        }
+        check("统计：合并恢复两次不会翻倍", twice.snapshot().requestsTotal == snap.requestsTotal)
+
+        // 热力图网格：一周一列 × 7 天，范围外的格子是 null
+        val today = java.time.LocalDate.of(2026, 10, 2) // 星期五
+        val weeks = heatWeeks(
+            mapOf("2026-10-02" to 3L, "2026-09-28" to 1L),
+            today,
+            today.minusDays(27)
+        )
+        check("热力图：列数 = 覆盖的周数", weeks.size == 5, "得到 ${weeks.size}")
+        check("热力图：每列 7 格", weeks.all { it.size == 7 })
+        check("热力图：今天那格计数是 3", weeks.last().firstOrNull { it?.date == today }?.count == 3L)
+        check("热力图：起点之前的日子留空（第一列 5 个空白）",
+            weeks.first().count { it == null } == 5, "空白 ${weeks.first().count { it == null }}")
+        check("分档：0 次最浅", heatLevel(0L, 10L) == 0)
+        check("分档：最大值最深", heatLevel(10L, 10L) == 4)
+        check("分档：中间值居中", heatLevel(5L, 10L) in 2..3)
+        check("分档：没有记录（max = 0）不炸", heatLevel(0L, 0L) == 0)
     }
 
     println("\n====================================")

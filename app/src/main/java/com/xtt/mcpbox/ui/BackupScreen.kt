@@ -42,6 +42,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -106,6 +107,7 @@ fun BackupScreen(
     var pickMemory by rememberSaveable { mutableStateOf(true) }
     var pickSettings by rememberSaveable { mutableStateOf(true) }
     var pickTools by rememberSaveable { mutableStateOf(true) }
+    var pickStats by rememberSaveable { mutableStateOf(true) }
     var includeToken by rememberSaveable { mutableStateOf(true) }
     var showMode by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf("") }
@@ -123,6 +125,7 @@ fun BackupScreen(
         if (pickMemory) add(Backup.Part.MEMORY)
         if (pickSettings) add(Backup.Part.SETTINGS)
         if (pickTools) add(Backup.Part.CUSTOM_TOOLS)
+        if (pickStats) add(Backup.Part.STATS)
     }
     val picked = restoreItems.filter { it.selected }
 
@@ -130,6 +133,7 @@ fun BackupScreen(
         Backup.Part.MEMORY -> AppCore.memory.exportJson()
         Backup.Part.SETTINGS -> Backup.exportSettings(AppCore.prefs, includeToken)
         Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
+        Backup.Part.STATS -> AppCore.stats.exportJson()
     }
 
     /** 已经在首页了就往外退，否则回首页。底栏和页面切换同时进行，不用等。 */
@@ -182,7 +186,8 @@ fun BackupScreen(
                     restoreToken = item.restoreToken,
                     settings = AppCore.prefs,
                     memory = AppCore.memory,
-                    customTools = AppCore.customTools
+                    customTools = AppCore.customTools,
+                    stats = AppCore.stats
                 )
             }.fold(
                 onSuccess = { L("%s：%s").format(partLabel(item.part), it) },
@@ -328,6 +333,8 @@ fun BackupScreen(
                             onPickSettings = { pickSettings = it },
                             pickTools = pickTools,
                             onPickTools = { pickTools = it },
+                            pickStats = pickStats,
+                            onPickStats = { pickStats = it },
                             includeToken = includeToken,
                             onIncludeToken = { includeToken = it },
                             onBack = { backHome() }
@@ -378,12 +385,14 @@ fun BackupScreen(
                         pickMemory = true
                         pickSettings = true
                         pickTools = true
+                        pickStats = true
                         includeToken = true
                     },
                     onSelectNone = {
                         pickMemory = false
                         pickSettings = false
                         pickTools = false
+                        pickStats = false
                         includeToken = false
                     },
                     onAction = { showMode = true }
@@ -481,6 +490,7 @@ private fun BackupHomePage(
     val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
     val settingCount = remember(revision) { AppCore.prefs.all().size }
+    val statsCount = remember(revision) { AppCore.stats.snapshot().requestsTotal }
 
     Column(
         Modifier
@@ -535,6 +545,18 @@ private fun BackupHomePage(
                     subtitle = if (toolCount == 0) L("还没有自定义工具") else L("你在 App 里造的工具"),
                     icon = Icons.Filled.Build,
                     trailing = { OutlineTag(L("%s 个").format(toolCount), MaterialTheme.colorScheme.primary) }
+                ),
+                RowSpec(
+                    title = L("统计"),
+                    subtitle = L("请求热力图、运行时长与启动次数"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.DateRange,
+                    trailing = {
+                        OutlineTag(
+                            L("%s 次请求").format(statsCount),
+                            MaterialTheme.colorScheme.primary
+                        )
+                    }
                 )
             )
         )
@@ -595,6 +617,8 @@ private fun BackupCreatePage(
     onPickSettings: (Boolean) -> Unit,
     pickTools: Boolean,
     onPickTools: (Boolean) -> Unit,
+    pickStats: Boolean,
+    onPickStats: (Boolean) -> Unit,
     includeToken: Boolean,
     onIncludeToken: (Boolean) -> Unit,
     onBack: () -> Unit
@@ -602,6 +626,7 @@ private fun BackupCreatePage(
     val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
     val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
+    val stats = remember(revision) { AppCore.stats.snapshot() }
 
     Column(
         Modifier
@@ -649,6 +674,15 @@ private fun BackupCreatePage(
                     icon = Icons.Filled.Build,
                     onClick = { onPickTools(!pickTools) },
                     trailing = { AppSwitch(pickTools, onPickTools) }
+                ),
+                RowSpec(
+                    title = L("统计"),
+                    subtitle = L("%s 天记录 · %s 次请求 · %s 次启动")
+                        .format(stats.requestsByDay.size, stats.requestsTotal, stats.appLaunches),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.DateRange,
+                    onClick = { onPickStats(!pickStats) },
+                    trailing = { AppSwitch(pickStats, onPickStats) }
                 )
             )
         )
@@ -948,12 +982,14 @@ private fun partLabel(part: Backup.Part): String = when (part) {
     Backup.Part.MEMORY -> L("记忆库")
     Backup.Part.SETTINGS -> L("设置")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
+    Backup.Part.STATS -> L("统计")
 }
 
 private fun partIcon(part: Backup.Part) = when (part) {
     Backup.Part.MEMORY -> Icons.Filled.Star
     Backup.Part.SETTINGS -> Icons.Filled.Lock
     Backup.Part.CUSTOM_TOOLS -> Icons.Filled.Build
+    Backup.Part.STATS -> Icons.Filled.DateRange
 }
 
 /**
@@ -976,7 +1012,19 @@ private fun restoreSummary(item: RestoreItem): String = when (item.part) {
         val n = AppCore.customTools.tools.size
         if (n == 0) L("还没有自定义工具") else L("%s 个工具").format(n)
     }
+
+    // 统计：显示备份文件里的规模（不是当前 App 的），方便判断要不要恢复
+    Backup.Part.STATS -> statsSummary(item.text)
 }
+
+/** 备份里的统计有多大：多少天记录、总请求多少次。 */
+private fun statsSummary(text: String): String = runCatching {
+    val o = org.json.JSONObject(text)
+    L("%s 天记录 · 总请求 %s 次").format(
+        o.optJSONObject("requests")?.length() ?: 0,
+        o.optLong("requestsTotal")
+    )
+}.getOrElse { L("请求热力图、运行时长与启动次数") }
 
 /** 这一部分现在有没有内容（空的就不用问合并还是覆盖）。 */
 private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
@@ -985,6 +1033,9 @@ private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
 
     Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.tools.isNotEmpty()
     Backup.Part.SETTINGS -> true
+    Backup.Part.STATS -> AppCore.stats.snapshot().let {
+        it.requestsTotal > 0L || it.appLaunches > 0L || it.serverMillis > 0L
+    }
 }
 
 @Composable

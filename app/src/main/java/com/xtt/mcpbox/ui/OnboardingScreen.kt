@@ -366,7 +366,8 @@ private suspend fun runRestore(
                 restoreToken = false,
                 settings = AppCore.prefs,
                 memory = AppCore.memory,
-                customTools = AppCore.customTools
+                customTools = AppCore.customTools,
+                stats = AppCore.stats
             )
         }.fold(
             onSuccess = { L("%s：%s").format(partName(rp.part), it) },
@@ -728,12 +729,14 @@ private fun partName(part: Backup.Part): String = when (part) {
     Backup.Part.MEMORY -> L("记忆库")
     Backup.Part.SETTINGS -> L("设置")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
+    Backup.Part.STATS -> L("统计")
 }
 
 private fun partDesc(part: Backup.Part, text: String): String = when (part) {
     Backup.Part.MEMORY -> L("实体与关系")
     Backup.Part.SETTINGS -> if (Backup.settingsHasToken(text)) L("含访问令牌") else L("不含访问令牌")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
+    Backup.Part.STATS -> L("请求次数与运行时长")
 }
 
 @Composable

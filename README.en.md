@@ -37,6 +37,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Custom tools** | Build your own MCP tools from command templates, with placeholders and JSON import/export |
 | **Web console** | Try tools, read logs and handle approvals in a browser; supports **localhost-only** and **password protection** |
 | **Two transports** | Streamable HTTP (`/mcp`) and legacy HTTP+SSE (`/sse` + `/messages`) |
+| **Usage stats** | Daily request heatmap plus total run time, app launches and server starts; only ever grows, survives a settings reset, travels with backups |
 | **Multilingual UI** | Chinese and English built in; export a template, translate it and import any language |
 
 ## Quick start
@@ -147,6 +148,25 @@ upper snake case (`PART_OF`, `HAPPENS_AT`, `INVOLVES`, `CORRECTS`, `UPDATES`…)
 - Duplicate names are skipped rather than overwritten; renaming rewrites both ends of its relations;
   deleting an entity removes all of its relations.
 
+## Statistics
+
+Settings → **Statistics**. Everything here is an ever-growing, never-reset record:
+
+| Metric | How it counts |
+|---|---|
+| **Request heatmap** | One count per JSON-RPC message POSTed to `/mcp` (including `initialize` / `ping` / notifications), grouped by the device's local calendar day |
+| **Total run time** | Accumulated while the server is up; refreshed every second on the page |
+| **App launches** | One per app open (once per process; rotation or switching back doesn't count) |
+| **Server starts** | One per server start (restarts included) |
+| **Days with requests** | How many days in the past year actually saw traffic |
+
+- Storage: `filesDir/stats/stats.json`, written atomically; requests are flushed in 15-second batches,
+  so a killed process loses at most those seconds.
+- **Kept forever**: it lives outside `SharedPreferences`, so "reset all settings" does **not** clear it
+  (and there is no clear button on purpose).
+- Backup: the fourth backup part is "Statistics"; merging takes the **larger** value per day, so
+  restoring the same file twice never doubles the numbers.
+
 ## Tool packs
 
 Tool definitions are re-sent to the model on **every single turn**. All 52 tools are roughly 8600
@@ -255,7 +275,7 @@ app/       Android layer: Compose UI, foreground service, floating approvals, Sh
 ## Building
 
 ```bash
-# End-to-end tests (336 assertions)
+# End-to-end tests (434 assertions)
 ./gradlew :harness:e2e
 
 # Build
