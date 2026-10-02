@@ -171,6 +171,7 @@ fun OnboardingScreen(
 
     fun advance() {
         val now = SystemClock.uptimeMillis()
+        // 连点保护：手快点两下不会跳两步
         if (now - lastAdvance < ADVANCE_GAP_MS) return
         lastAdvance = now
         if (step < STEPS - 1) goTo(step + 1, "下一步按钮")
@@ -293,10 +294,14 @@ fun OnboardingScreen(
                 }
             }
 
+            // 屏幕上还挂着自己的审批浮层时，把底栏按钮禁掉：
+            // 那一下很可能是从浮层「漏」下来的（有过「跳过按钮自己会动、还带波纹」的现象）
+            val approvalShowing = remember(rev) { AppCore.approval.pendingRequests().isNotEmpty() }
+
             BottomBar(
                 label = buttonLabel,
                 outlined = buttonOutlined,
-                enabled = !restoring,
+                enabled = !restoring && !approvalShowing,
                 onClick = {
                     when {
                         step == STEPS - 1 -> finish()
