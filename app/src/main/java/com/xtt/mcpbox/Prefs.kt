@@ -46,6 +46,8 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_SHELL_TIMEOUT_LAST = "shell_timeout_last_sec"
         /** 有 Root / Shizuku 时，进入 App 自动补齐缺失的系统权限。 */
         const val KEY_AUTO_GRANT_PERMS = "auto_grant_perms"
+        /** 审批请求怎么呈现：overlay（悬浮窗，默认）/ notify（通知栏）。 */
+        const val KEY_APPROVAL_PRESENTATION = "approval_presentation"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -236,6 +238,17 @@ class Prefs(context: Context) : SettingsSource {
     var autoGrantPermissions: Boolean
         get() = getBoolean(KEY_AUTO_GRANT_PERMS, true)
         set(value) = putBoolean(KEY_AUTO_GRANT_PERMS, value)
+
+    /**
+     * 审批请求的呈现方式：`overlay`（悬浮窗，默认）/ `notify`（通知栏）。
+     *
+     * 存字符串（不是布尔）：以后要再加「两处都发」之类的模式，不用改数据结构。
+     * 实际行为在 [com.xtt.mcpbox.core.ApprovalPresentation.useOverlay]。
+     */
+    var approvalPresentation: String
+        get() = getString(KEY_APPROVAL_PRESENTATION, com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id)
+            ?: com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id
+        set(value) = putString(KEY_APPROVAL_PRESENTATION, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

@@ -37,7 +37,7 @@ class ApprovalActionReceiver : BroadcastReceiver() {
                     message = if (ok) L("通过通知栏处理了审批请求（%s）").format(L(decision.label))
                     else L("该审批请求已失效")
                 )
-                NotificationHelper.cancelApproval(context)
+                NotificationHelper.cancelApproval(context, id)
             }
             ACTION_STOP_SERVICE -> {
                 AppCore.log.add(LogKind.SYSTEM, message = L("用户从通知栏停止了服务"))

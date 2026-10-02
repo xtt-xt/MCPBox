@@ -26,14 +26,21 @@ import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.NotificationHelper
 import com.xtt.mcpbox.core.ApprovalDecision
+import com.xtt.mcpbox.core.ApprovalPresentation
 import com.xtt.mcpbox.core.ApprovalPresenter
 import com.xtt.mcpbox.core.ApprovalRequest
 import com.xtt.mcpbox.core.LogKind
+import com.xtt.mcpbox.core.useOverlay
 
 /**
- * 审批悬浮窗（Material 3 Expressive 风格）：
+ * 审批的呈现入口（Material 3 Expressive 风格的悬浮窗 + 通知栏两条路）：
  * 近黑底 + 大圆角深灰卡片 + 胶囊按钮，任何应用之上弹出，
  * 用户点完立刻把结果回给等待中的服务器线程。
+ *
+ * 走哪条路由设置决定（设置 → 安全与审批 → 审批方式，默认「悬浮窗」）：
+ *  · 悬浮窗 —— 浮在所有应用之上；没有悬浮窗权限时自动退回通知栏（否则没人看得到请求）
+ *  · 通知栏 —— 只发带按钮的高优先级通知，不弹悬浮窗
+ * 顺带一提：模式是每次 [show] 现读的，所以改设置不用重启服务器。
  */
 class OverlayApproval(private val context: Context) : ApprovalPresenter {
 
@@ -56,8 +63,17 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
     private class Card(val view: View, val ticker: Runnable)
 
     override fun show(request: ApprovalRequest) {
+        val mode = ApprovalPresentation.of(AppCore.prefs.approvalPresentation)
+        if (mode == ApprovalPresentation.NOTIFY) {
+            AppCore.log.add(
+                LogKind.APPROVAL, ok = true,
+                message = L("审批方式为「通知栏」，已发通知：%s").format(request.summary)
+            )
+            NotificationHelper.postApproval(context, request)
+            return
+        }
         main.post {
-            if (!canDrawOverlays()) {
+            if (!mode.useOverlay(canDrawOverlays())) {
                 AppCore.log.add(
                     LogKind.APPROVAL, ok = true,
                     message = L("没有悬浮窗权限，已改用通知栏审批：%s").format(request.summary)
@@ -70,6 +86,8 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
     }
 
     override fun dismiss(id: String) {
+        // 通知栏那条也要收掉：通知栏模式下根本没有卡片，只靠这里取消
+        NotificationHelper.cancelApproval(context, id)
         main.post { removeCard(id) }
     }
 
@@ -145,7 +163,7 @@ class OverlayApproval(private val context: Context) : ApprovalPresenter {
             runCatching { root?.removeView(card.view) }
             if (cards.isEmpty()) detachRoot()
         }
-        NotificationHelper.cancelApproval(context)
+        NotificationHelper.cancelApproval(context, id)
     }
 
     /** 弹出：从下方滑上来 + 淡入 + 轻微放大（带一点点回弹）。 */

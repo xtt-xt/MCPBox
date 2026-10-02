@@ -50,6 +50,36 @@ interface ApprovalPresenter {
     fun dismiss(id: String)
 }
 
+/**
+ * 审批请求的呈现方式（设置 → 安全与审批 → 审批方式）。
+ *
+ * 只有两种，默认 [OVERLAY]（和以前一样）：
+ *  · [OVERLAY] 悬浮窗 —— 浮在所有应用之上；**没有悬浮窗权限时会自动退回通知栏**，
+ *    否则请求就没人看得见，只能等超时被拒。
+ *  · [NOTIFY] 通知栏 —— 只发一条带「允许一次 / 始终允许 / 拒绝」按钮的高优先级通知，
+ *    不弹悬浮窗（不想被挡屏幕、或悬浮窗被系统拦时用）。
+ */
+enum class ApprovalPresentation(val id: String) {
+    OVERLAY("overlay"),
+    NOTIFY("notify");
+
+    companion object {
+        fun of(id: String?): ApprovalPresentation =
+            entries.firstOrNull { it.id == id } ?: OVERLAY
+    }
+}
+
+/**
+ * 这次到底弹不弹悬浮窗。
+ *
+ * 判断单独拎出来是为了能在 JVM harness 里测：
+ * 通知栏模式**永远不弹**（哪怕有权限）；悬浮窗模式没权限时也得退让。
+ */
+fun ApprovalPresentation.useOverlay(canDrawOverlays: Boolean): Boolean = when (this) {
+    ApprovalPresentation.OVERLAY -> canDrawOverlays
+    ApprovalPresentation.NOTIFY -> false
+}
+
 class PermissionDeniedException(message: String) : Exception(message)
 
 /**

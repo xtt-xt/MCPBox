@@ -98,11 +98,14 @@ object NotificationHelper {
         runCatching { nm.notify(ID_SERVICE, serviceNotification(context, title, text, port, token)) }
     }
 
-    /** 悬浮窗不可用时的兜底：带操作按钮的高优先级通知。 */
+    /** 悬浮窗不可用 / 用户选了「通知栏」时的审批通知：带「允许一次 / 始终允许 / 拒绝」按钮。 */
     fun approvalNotification(context: Context, request: ApprovalRequest): Notification {
-        fun decision(code: String, label: String, requestCode: Int): NotificationCompat.Action {
+        // 按钮的 PendingIntent 也按请求分开：requestCode 相同的话，后一条请求会把
+        // 前一条的 extras 顶掉（FLAG_UPDATE_CURRENT），老大按到的是新请求的决定。
+        val codeBase = approvalNotificationId(request.id) * 4
+        fun decision(code: String, label: String, offset: Int): NotificationCompat.Action {
             val pi = PendingIntent.getBroadcast(
-                context, requestCode,
+                context, codeBase + offset,
                 Intent(context, ApprovalActionReceiver::class.java)
                     .setAction(ApprovalActionReceiver.ACTION_APPROVE)
                     .putExtra(ApprovalActionReceiver.EXTRA_ID, request.id)
@@ -111,10 +114,19 @@ object NotificationHelper {
             )
             return NotificationCompat.Action.Builder(0, label, pi).build()
         }
+        // 同时有多条在等：这条通知上顺带说一句还有几条，免得以为只有它
+        val others = runCatching {
+            AppCore.approval.pendingRequests().count { it.id != request.id }
+        }.getOrDefault(0)
         val detail = buildString {
             append(request.summary)
             request.path?.let { append("\n").append(it) }
+            request.command?.let {
+                val shown = if (it.length > 300) it.take(300) + " …" else it
+                append("\n").append(shown)
+            }
             append(L("\n（%s 秒内未处理将自动拒绝）").format(request.timeoutMs / 1000))
+            if (others > 0) append(L("\n还有 %s 条待审批").format(others))
         }
         return NotificationCompat.Builder(context, CH_APPROVAL)
             .setSmallIcon(R.drawable.ic_stat_server)
@@ -124,20 +136,28 @@ object NotificationHelper {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openApp(context))
-            .addAction(decision(ApprovalDecision.ALLOW_ONCE.id, L("允许一次"), 10))
-            .addAction(decision(ApprovalDecision.ALLOW_ALWAYS.id, L("始终允许"), 11))
-            .addAction(decision(ApprovalDecision.DENY_ONCE.id, L("拒绝"), 12))
+            .addAction(decision(ApprovalDecision.ALLOW_ONCE.id, L("允许一次"), 0))
+            .addAction(decision(ApprovalDecision.ALLOW_ALWAYS.id, L("始终允许"), 1))
+            .addAction(decision(ApprovalDecision.DENY_ONCE.id, L("拒绝"), 2))
             .build()
     }
 
+    /**
+     * 每条审批一条独立通知：id 从 [ID_APPROVAL] 往后按请求 id 散列取。
+     * 早先所有审批共用一个 id —— 同时来两条时后一条会把前一条顶掉，
+     * 通知栏模式（用户主动选的）下这会让其中一条彻底看不见。
+     */
+    fun approvalNotificationId(requestId: String): Int =
+        ID_APPROVAL + 1 + Math.floorMod(requestId.hashCode(), 200)
+
     fun postApproval(context: Context, request: ApprovalRequest) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        runCatching { nm.notify(ID_APPROVAL, approvalNotification(context, request)) }
+        runCatching { nm.notify(approvalNotificationId(request.id), approvalNotification(context, request)) }
     }
 
-    fun cancelApproval(context: Context) {
+    fun cancelApproval(context: Context, requestId: String) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        runCatching { nm.cancel(ID_APPROVAL) }
+        runCatching { nm.cancel(approvalNotificationId(requestId)) }
     }
 
     /** AI 通过 notify_user 工具发来的消息。 */

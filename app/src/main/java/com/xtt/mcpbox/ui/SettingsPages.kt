@@ -48,7 +48,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
+import com.xtt.mcpbox.core.ApprovalPresentation
 import com.xtt.mcpbox.core.Config
+import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.ServerMeta
 
@@ -366,8 +368,29 @@ internal fun SecuritySettingsPage(
         GroupLabel(L("审批"))
         Spacer(Modifier.height(0.dp))
         // 开关放上面：打开「不限时」后下面的秒数行会带动画收起来
+        val presentation = remember(revision) {
+            ApprovalPresentation.of(AppCore.prefs.approvalPresentation)
+        }
         CardGroup(
             listOf(
+                dropdownSpec(
+                    title = L("审批方式"),
+                    subtitle = when (presentation) {
+                        ApprovalPresentation.OVERLAY -> L("AI 请求权限时弹悬浮窗；没权限时自动改用通知栏")
+                        ApprovalPresentation.NOTIFY -> L("只发通知栏提醒（带允许 / 拒绝按钮），不弹悬浮窗")
+                    },
+                    icon = Icons.Filled.Notifications,
+                    options = listOf(L("悬浮窗"), L("通知栏")),
+                    selectedIndex = if (presentation == ApprovalPresentation.NOTIFY) 1 else 0
+                ) { index ->
+                    AppCore.prefs.approvalPresentation =
+                        if (index == 1) ApprovalPresentation.NOTIFY.id else ApprovalPresentation.OVERLAY.id
+                    AppCore.log.add(
+                        LogKind.SYSTEM,
+                        message = L("审批方式改为：%s").format(L(if (index == 1) "通知栏" else "悬浮窗"))
+                    )
+                    onChanged()
+                },
                 switchSpec(
                     title = L("审批不限时"),
                     subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复"),

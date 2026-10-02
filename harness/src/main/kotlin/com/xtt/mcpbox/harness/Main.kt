@@ -1788,6 +1788,32 @@ fun main() {
         )
     }
 
+    println("\n[51] 审批呈现方式（悬浮窗 / 通知栏）")
+    run {
+        // 默认必须是悬浮窗（老行为：有权限就弹悬浮窗，没权限自动退通知栏）
+        check("审批方式：认不出的 id 回落到悬浮窗", ApprovalPresentation.of("nonsense") == ApprovalPresentation.OVERLAY)
+        check("审批方式：空值回落到悬浮窗", ApprovalPresentation.of(null) == ApprovalPresentation.OVERLAY)
+        check("审批方式：id 往返", ApprovalPresentation.of("notify") == ApprovalPresentation.NOTIFY)
+
+        check(
+            "审批方式：悬浮窗 + 有权限 → 弹悬浮窗",
+            ApprovalPresentation.OVERLAY.useOverlay(canDrawOverlays = true)
+        )
+        // 没权限还不退让的话，请求就没人看得见，只能等超时被拒
+        check(
+            "审批方式：悬浮窗 + 没权限 → 退回通知栏",
+            !ApprovalPresentation.OVERLAY.useOverlay(canDrawOverlays = false)
+        )
+        check(
+            "审批方式：通知栏模式永远不弹悬浮窗（哪怕有权限）",
+            !ApprovalPresentation.NOTIFY.useOverlay(canDrawOverlays = true)
+        )
+        check(
+            "审批方式：通知栏模式也没权限时同样走通知",
+            !ApprovalPresentation.NOTIFY.useOverlay(canDrawOverlays = false)
+        )
+    }
+
     println("\n====================================")
     println("通过 $passed 项，失败 $failed 项")
     println("====================================")

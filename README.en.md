@@ -25,7 +25,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Tool packs** | Tools are split into 7 packs; only 22 ship enabled by default (roughly 40% of the tokens the full set would cost). Packs are your own setting — the AI never notices |
 | **Session isolation** | Point a client at `/mcp/p/<name>` for an independent session with its own activation state; persist, reset or delete it |
 | **Presets** | One tap in the Permissions tab: all-allow / all-deny / all-ask / custom. Your custom set is remembered when you switch away and restored when you come back |
-| **Per-call approval** | Top-level floating popup with a notification fallback: allow once / always allow / deny / always deny |
+| **Per-call approval** | Top-level floating popup with a notification fallback: allow once / always allow / deny / always deny; the style is switchable in Settings (overlay / notification) |
 | **No timeouts (optional)** | Both the approval timeout and the command timeout can be turned off: the popup never auto-dismisses and commands run to completion |
 | **Permission matrix** | 8 permission keys with three states (allow / ask / deny), plus path rules and command rules (prefix / exact / regex) |
 | **Per-tool permissions** | Individual tools can be set to follow / allow / ask / deny; "ask" ignores the global matrix and prompts every time |

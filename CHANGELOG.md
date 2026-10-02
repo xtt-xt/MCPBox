@@ -32,6 +32,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 | 能力 | 说明 |
 |---|---|
 | **进入 App 自动补齐权限** | 有 Root / Shizuku 时，打开 App（包括刚从系统设置页回来）自动把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉 —— 走 `appops` 与电池白名单，**不会重启进程**。首页「环境检查」多一行「一键补齐」，一次把缺的都开掉并报出结果；设置 → 后台与运行里可以关掉自动（默认开） |
+| **审批方式可选** | 设置 → 安全与审批 → 审批方式：「悬浮窗」（默认，浮在所有应用之上，没有悬浮窗权限时自动退回通知栏）或「通知栏」（只发带「允许一次 / 始终允许 / 拒绝」按钮的通知，不弹悬浮窗）。改完立刻生效，不用重启服务器；同时来多条审批时各占一条通知，互不顶掉 |
 
 ### 说明
 
@@ -39,10 +40,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - 只在**已经有可用特权后端**时才动手（Shizuku 已授权 / root 可用），不支持的项不碰，也不会自己跳系统页面
 - 自动补齐的结果写进日志；同一项失败后不再反复试（免得每次切回前台都弹一次 root 授权框），手动点「一键补齐」会重新试一遍
 - 首页「环境检查」自己每秒校一次状态：从系统设置页回来、或刚被补上的项，卡片立刻跟着变（不再等服务器状态轮询）
+- 审批方式改完**立刻生效**（每次请求现读设置），不用重启服务器；同时来多条审批时各占一条通知、按钮也按请求分开，不会互相顶掉
 
 ### 基线
 
-- 端到端测试 **447 项全绿**（新增 13 项：自动补齐的命令规划、静默范围与「该不该动手」判断）
+- 端到端测试 **454 项全绿**（新增 20 项：自动补齐 13、审批方式 7）
 
 </details>
 
@@ -54,6 +56,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 | Feature | Notes |
 |---|---|
 | **Auto-fill permissions on launch** | With Root / Shizuku, opening the app (including coming back from a system settings page) silently grants the missing *files / overlay / ignore-battery-optimizations* permissions via `appops` and the battery whitelist — **no process restart**. The home screen's environment check gained a "fill all at once" row, and Settings → Background & runtime can turn the automatic pass off (on by default) |
+| **Selectable approval style** | Settings → Security & approval → Approval style: *overlay* (default — floats above every app, falls back to a notification without the overlay permission) or *notification* (a notification with Allow once / Always allow / Deny buttons, no overlay). Takes effect immediately, no server restart; concurrent requests each get their own notification |
 
 ### Notes
 
@@ -61,10 +64,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - It only runs when a privileged backend is already usable (Shizuku authorised / root available); unsupported items are left alone and no system page is opened for you
 - Results go to the log; a failed item is not retried within the same run (so a denied root prompt doesn't pop up on every foreground), while tapping "fill all at once" retries it
 - The environment check re-checks itself every second, so items granted from a system page or by the auto-fill show up immediately
+- The approval style takes effect **immediately** (read per request, no server restart); concurrent requests each get their own notification and action buttons, so they no longer overwrite each other
 
 ### Baseline
 
-- End-to-end tests: **447 green** (+13 for the auto-fill command plan, its silent scope and the "should we run at all" rules)
+- End-to-end tests: **454 green** (+20: 13 for auto-fill, 7 for the approval style)
 
 </details>
 

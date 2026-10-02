@@ -1819,5 +1819,17 @@ object LangEn {
     "需要 Root 或 Shizuku 才能直接补权限" to "Root or Shizuku is required to fill these directly",
     "没有能自动补的项（通知权限要自己在弹窗里点）" to
         "Nothing left to auto-fill (notifications need the system dialog)",
+
+    // ---------------- 审批方式：悬浮窗 / 通知栏
+    "审批方式" to "Approval style",
+    "悬浮窗" to "Overlay",
+    "通知栏" to "Notification",
+    "AI 请求权限时弹悬浮窗；没权限时自动改用通知栏" to
+        "Approval requests pop up in an overlay; without the overlay permission it falls back to a notification",
+    "只发通知栏提醒（带允许 / 拒绝按钮），不弹悬浮窗" to
+        "Only posts a notification (with allow / deny buttons), no overlay",
+    "审批方式改为：%s" to "Approval style set to: %s",
+    "审批方式为「通知栏」，已发通知：%s" to "Approval style is \"notification\", posted: %s",
+    "\n还有 %s 条待审批" to "\n%s more awaiting approval",
     )
 }
