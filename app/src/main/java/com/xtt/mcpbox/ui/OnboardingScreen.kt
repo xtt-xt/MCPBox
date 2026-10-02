@@ -133,7 +133,12 @@ fun OnboardingScreen(
     // 只放内存里（放在 OnboardingState 上）：进程被杀后重开必定回到第一步，
     // 但转屏 / 换主题这种 Activity 重建不会把用户甩回开头
     val step = OnboardingState.step
-    fun goTo(v: Int) { OnboardingState.step = v }
+    // 每一步都留一条日志（logcat key：MCPBoxOnboarding）：万一它还自己跳，
+    // 看日志就知道是「谁」把它推到下一步的
+    fun goTo(v: Int, why: String) {
+        android.util.Log.i("MCPBoxOnboarding", "step $step -> $v（$why）")
+        OnboardingState.step = v
+    }
     // 语言一改就整块重建，否则界面上的 L(...) 还是旧语言
     var langRev by remember { mutableStateOf(0) }
     // 用来重读权限 / 设备状态（轮询 + 操作后手动 +1）
@@ -169,11 +174,11 @@ fun OnboardingScreen(
         val now = SystemClock.uptimeMillis()
         if (now - lastAdvance < ADVANCE_GAP_MS) return
         lastAdvance = now
-        if (step < STEPS - 1) goTo(step + 1)
+        if (step < STEPS - 1) goTo(step + 1, "下一步按钮")
     }
 
     // 系统返回 = 回上一步；第一步没得退（免得一进来就退出整个引导）
-    BackHandler { if (step > 0) goTo(step - 1) }
+    BackHandler { if (step > 0) goTo(step - 1, "系统返回") }
 
     // 第 3 步的权限状态靠系统设置改，回到 App 要能立刻看见，所以轻量轮询
     LaunchedEffect(Unit) {
@@ -752,8 +757,11 @@ private fun privilegedLauncher(): CommandLauncher? {
 private fun autoGrant(ctx: Context): List<String> = run {
     val launcher = privilegedLauncher() ?: return emptyList()
     val pkg = ctx.packageName
+    // 注意：这里**不能**用 `pm grant` 授运行时权限（通知就是运行时权限）——
+    // 给正在运行的自己改运行时权限，系统会当场把进程杀掉重启，
+    // 引导里看着就像「这一步自己往前跳了」。通知权限留给用户点那一行走系统弹窗。
+    // 下面三条都只是 appops / 电池白名单，不会重启进程。
     val tasks = listOf(
-        L("通知权限") to "pm grant $pkg android.permission.POST_NOTIFICATIONS",
         L("悬浮窗权限") to "appops set $pkg SYSTEM_ALERT_WINDOW allow",
         L("文件访问权限") to "appops set $pkg MANAGE_EXTERNAL_STORAGE allow",
         L("忽略电池优化") to "dumpsys deviceidle whitelist +$pkg"
