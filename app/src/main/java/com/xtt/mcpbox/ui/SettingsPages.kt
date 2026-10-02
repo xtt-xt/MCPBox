@@ -515,6 +515,7 @@ internal fun BackgroundSettingsPage(
     val autoStart = remember(revision) { AppCore.prefs.autoStartBoot }
     val wakeScreen = remember(revision) { AppCore.prefs.wakeScreenOnApproval }
     val logEnabled = remember(revision) { AppCore.config.logEnabled }
+    val autoGrantPerms = remember(revision) { AppCore.prefs.autoGrantPermissions }
     SettingsPageShell(L("后台与运行"), L("保活、日志与服务控制"), onBack) {
         GroupLabel(L("后台"))
         CardGroup(
@@ -556,6 +557,22 @@ internal fun BackgroundSettingsPage(
                     AppCore.config.logEnabled = it
                     AppCore.log.enabled = it
                     AppCore.saveConfig()
+                    onChanged()
+                }
+            )
+        )
+
+        GroupLabel(L("权限"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("进入应用自动补齐权限"),
+                    subtitle = L("有 Root / Shizuku 时，打开 App 直接把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉；通知权限仍走系统弹窗"),
+                    subtitleMaxLines = 3,
+                    icon = Icons.Filled.Lock,
+                    checked = autoGrantPerms
+                ) {
+                    AppCore.prefs.autoGrantPermissions = it
                     onChanged()
                 }
             )

@@ -1742,6 +1742,52 @@ fun main() {
         check("分档：没有记录（max = 0）不炸", heatLevel(0L, 0L) == 0)
     }
 
+    println("\n[50] 自动补齐权限（有 Root / Shizuku 时进入 App 自动补）")
+    run {
+        // 这层是不依赖 Android 的那半：把「缺哪几项」翻译成「跑哪几条命令」。
+        // 硬要求：只规划**不会把正在运行的自己杀掉重启**的项，通知永远不碰。
+        val pkg = "com.xtt.mcpbox"
+
+        check(
+            "自动补齐：文件访问走 appops（不重启进程）",
+            AutoGrant.commandFor(AutoGrant.STORAGE, pkg) == "appops set $pkg MANAGE_EXTERNAL_STORAGE allow"
+        )
+        check(
+            "自动补齐：悬浮窗走 appops",
+            AutoGrant.commandFor(AutoGrant.OVERLAY, pkg) == "appops set $pkg SYSTEM_ALERT_WINDOW allow"
+        )
+        check(
+            "自动补齐：电池优化走 deviceidle 白名单",
+            AutoGrant.commandFor(AutoGrant.BATTERY, pkg) == "dumpsys deviceidle whitelist +$pkg"
+        )
+
+        // 通知是运行时权限：pm grant 会把进程杀掉重启 → 永远不给命令，也不在可静默清单里
+        check("自动补齐：通知不给命令", AutoGrant.commandFor(AutoGrant.NOTIFICATION, pkg) == null)
+        check("自动补齐：通知不能静默", !AutoGrant.isSilent(AutoGrant.NOTIFICATION))
+        check(
+            "自动补齐：可静默的正好是三项",
+            AutoGrant.SILENT.size == 3 && AutoGrant.SILENT.all { AutoGrant.isSilent(it) }
+        )
+
+        // 顺序固定（文件访问 → 悬浮窗 → 电池），不认识的 id 直接忽略
+        val plan = AutoGrant.plan(pkg, setOf(AutoGrant.BATTERY, "nonsense", AutoGrant.STORAGE))
+        check(
+            "自动补齐：只规划缺的、按固定顺序",
+            plan.map { it.first } == listOf(AutoGrant.STORAGE, AutoGrant.BATTERY),
+            "得到 ${plan.map { it.first }}"
+        )
+        check("自动补齐：规划里的命令和 id 对得上", plan.all { (id, cmd) -> AutoGrant.commandFor(id, pkg) == cmd })
+
+        check("自动补齐：一项不缺就不动手", !AutoGrant.shouldRun(pkg, emptyList()))
+        check("自动补齐：只缺通知也不动手（没得静默）", !AutoGrant.shouldRun(pkg, listOf(AutoGrant.NOTIFICATION)))
+        check("自动补齐：缺文件访问就该动手", AutoGrant.shouldRun(pkg, listOf(AutoGrant.STORAGE)))
+        check("自动补齐：包名是空的就不动手", !AutoGrant.shouldRun("", listOf(AutoGrant.STORAGE)))
+        check(
+            "自动补齐：ALL 里每项要么有命令、要么明确不可静默",
+            AutoGrant.ALL.all { AutoGrant.commandFor(it, pkg) != null || !AutoGrant.isSilent(it) }
+        )
+    }
+
     println("\n====================================")
     println("通过 $passed 项，失败 $failed 项")
     println("====================================")

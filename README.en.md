@@ -33,6 +33,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **File gateway** | `POST /upload`, `GET /download`, plus an upload web page you can open in the phone's browser |
 | **Private app dirs** | Read/write `/data/data/<package>` in three modes (off / read-only / read-write), forwarded through root |
 | **UI automation** | Screenshot + read the UI tree (nodes & coordinates) + tap / swipe / type (incl. CJK) / key press / launch apps / wait for elements. Needs Shizuku or root |
+| **Auto-filled permissions** | With Root / Shizuku, opening the app silently grants the missing files / overlay / ignore-battery-optimizations permissions (via `appops` and the battery whitelist, no process restart); Home also has "fill all at once" |
 | **Built-in terminal** | Persistent shell with `cd`/`export` state kept, command history, Ctrl-C and clear |
 | **Custom tools** | Build your own MCP tools from command templates, with placeholders and JSON import/export |
 | **Web console** | Try tools, read logs and handle approvals in a browser; supports **localhost-only** and **password protection** |
@@ -45,7 +46,9 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 ## Quick start
 
 1. Install the APK, open the app and turn the server on from the Home tab (default port `8720`)
-2. Grant file access, overlay and notification permissions (the "Environment check" section on Home walks through them)
+2. Grant file access, overlay and notification permissions (the "Environment check" section on Home walks through them).
+   With Root / Shizuku, the silent ones (files / overlay / ignore-battery-optimizations) are filled in automatically
+   when the app opens — or tap "fill all at once" under the environment check; notifications still need the system dialog
 3. Add an MCP server in your AI client:
 
 ```

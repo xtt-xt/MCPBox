@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -34,6 +35,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AndroidHost
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.NetUtil
+import com.xtt.mcpbox.privilegedLauncher
+import kotlinx.coroutines.delay
 import com.xtt.mcpbox.core.ApprovalDecision
 import com.xtt.mcpbox.core.ApprovalRequest
 import com.xtt.mcpbox.core.McpServer
@@ -58,6 +66,7 @@ fun HomeScreen(
     onToggleService: (Boolean) -> Unit,
     onRestartService: () -> Unit,
     onPermNeed: (PermNeed) -> Unit,
+    onAutoGrant: () -> Unit,
     onOpenPermissions: () -> Unit,
     scrollTopTick: Int = 0
 ) {
@@ -156,26 +165,8 @@ fun HomeScreen(
             }
         }
 
-        // 环境检查只列**还没拿到的**：哪项缺就显示哪项，全齐了这一组直接消失。
-        // （状态跟着上面那个每秒刷新一次的 status 一起重算，从系统设置回来后不会留着旧行）
-        val healthRows = listOfNotNull(
-            if (!host.hasAllFilesAccess())
-                healthSpec(L("文件访问权限"), L("AI 才能读写手机文件"), Icons.Filled.List, PermNeed.STORAGE, onPermNeed)
-            else null,
-            if (!host.canDrawOverlays())
-                healthSpec(L("悬浮窗权限"), L("审批弹窗显示在所有应用之上"), Icons.Filled.Lock, PermNeed.OVERLAY, onPermNeed)
-            else null,
-            if (!host.hasNotificationPermission())
-                healthSpec(L("通知权限"), L("显示运行状态与审批提醒"), Icons.Filled.Notifications, PermNeed.NOTIFICATION, onPermNeed)
-            else null,
-            if (!host.isIgnoringBatteryOptimizations())
-                healthSpec(L("忽略电池优化"), L("防止后台被系统清掉"), Icons.Filled.Warning, PermNeed.BATTERY, onPermNeed)
-            else null
-        )
-        if (healthRows.isNotEmpty()) {
-            GroupLabel(L("环境检查"))
-            CardGroup(healthRows)
-        }
+        // 环境检查：只列还没拿到的项；有 Root / Shizuku 时下面多一行「一键补齐」
+        EnvCheckGroup(host = host, onPermNeed = onPermNeed, onAutoGrant = onAutoGrant)
 
         GroupLabel(L("运行统计"))
         CardColumn {
@@ -260,6 +251,65 @@ private fun PendingCard(req: ApprovalRequest) {
             }
         }
     }
+}
+
+/**
+ * 环境检查：只列**还没拿到的**项，一项都不缺时整组消失。
+ *
+ * 这里自己每秒钟校一次状态（不依赖首页那个 status 轮询）：从系统设置页回来、
+ * 或者刚被「一键补齐 / 进入 App 时自动补齐」开掉时，卡片立刻跟着变。
+ * 有 Root / Shizuku（[privilegedLauncher]）时多给一行「一键补齐」。
+ */
+@Composable
+private fun EnvCheckGroup(
+    host: AndroidHost,
+    onPermNeed: (PermNeed) -> Unit,
+    onAutoGrant: () -> Unit
+) {
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000)
+            tick++
+        }
+    }
+    val rows = remember(tick) {
+        listOfNotNull(
+            if (!host.hasAllFilesAccess())
+                healthSpec(L("文件访问权限"), L("AI 才能读写手机文件"), Icons.Filled.List, PermNeed.STORAGE, onPermNeed)
+            else null,
+            if (!host.canDrawOverlays())
+                healthSpec(L("悬浮窗权限"), L("审批弹窗显示在所有应用之上"), Icons.Filled.Lock, PermNeed.OVERLAY, onPermNeed)
+            else null,
+            if (!host.hasNotificationPermission())
+                healthSpec(L("通知权限"), L("显示运行状态与审批提醒"), Icons.Filled.Notifications, PermNeed.NOTIFICATION, onPermNeed)
+            else null,
+            if (!host.isIgnoringBatteryOptimizations())
+                healthSpec(L("忽略电池优化"), L("防止后台被系统清掉"), Icons.Filled.Warning, PermNeed.BATTERY, onPermNeed)
+            else null
+        )
+    }
+    if (rows.isEmpty()) return
+    // 特权后端没必要每秒探一次（Shizuku ping + su 路径检查），10 秒一次够了
+    val privileged = remember(tick / 10) { privilegedLauncher() != null }
+    GroupLabel(L("环境检查"))
+    CardGroup(
+        rows + listOfNotNull(
+            if (!privileged) null else RowSpec(
+                title = L("一键补齐"),
+                subtitle = L("用 Root / Shizuku 把上面缺的直接开掉（通知权限要自己在弹窗里点）"),
+                subtitleMaxLines = 2,
+                icon = Icons.Filled.Build,
+                onClick = onAutoGrant,
+                trailing = {
+                    PillButton(
+                        L("补齐"), outlined = true,
+                        color = MaterialTheme.colorScheme.primary, compact = true
+                    ) { onAutoGrant() }
+                }
+            )
+        )
+    )
 }
 
 /** 环境检查的一行：只有「还没授权」的项才会出现在列表里，所以这行永远是待办的样子。 */

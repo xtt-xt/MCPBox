@@ -44,6 +44,8 @@ class Prefs(context: Context) : SettingsSource {
         /** 「不限时」开关打开前用的秒数（关掉开关时恢复回去）。 */
         const val KEY_APPROVAL_TIMEOUT_LAST = "approval_timeout_last_sec"
         const val KEY_SHELL_TIMEOUT_LAST = "shell_timeout_last_sec"
+        /** 有 Root / Shizuku 时，进入 App 自动补齐缺失的系统权限。 */
+        const val KEY_AUTO_GRANT_PERMS = "auto_grant_perms"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -224,6 +226,16 @@ class Prefs(context: Context) : SettingsSource {
     var shellTimeoutLastSec: Long
         get() = getLong(KEY_SHELL_TIMEOUT_LAST, 60L)
         set(value) = putLong(KEY_SHELL_TIMEOUT_LAST, value)
+
+    /**
+     * 进入 App 时自动补齐缺失的系统权限（默认开）。
+     *
+     * 只在已经拿到 Root / Shizuku 时才动手，而且只做不会重启进程的那几项
+     * （文件访问 / 悬浮窗 / 忽略电池优化）；没有特权后端时这一项等于不存在。
+     */
+    var autoGrantPermissions: Boolean
+        get() = getBoolean(KEY_AUTO_GRANT_PERMS, true)
+        set(value) = putBoolean(KEY_AUTO_GRANT_PERMS, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

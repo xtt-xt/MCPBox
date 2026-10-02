@@ -1802,5 +1802,22 @@ object LangEn {
     "请求次数与运行时长" to "Request counts and run time",
     "把记忆、设置、自定义工具和统计打包导出，或从备份里挑着恢复" to "Pack memory, settings, custom tools and stats into a backup, or pick what to restore",
     "记忆库（实体 · 观察 · 关系）和统计不受影响。" to "Memory (entities · observations · relations) and stats are untouched.",
+
+    // ---------------- 权限：进入 App 自动补齐（appops / 电池白名单）
+    "、" to ", ",
+    "进入应用自动补齐权限" to "Auto-fill permissions on launch",
+    "有 Root / Shizuku 时，打开 App 直接把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉；通知权限仍走系统弹窗" to
+        "With Root / Shizuku, opening the app silently grants the missing ones (files / overlay / battery); notifications still use the system dialog",
+    "已自动补齐 %s" to "Auto-filled %s",
+    "已自动补齐权限：%s" to "Permission auto-filled: %s",
+    "自动补齐权限失败：%s" to "Auto-fill failed: %s",
+    "一键补齐" to "Fill all at once",
+    "用 Root / Shizuku 把上面缺的直接开掉（通知权限要自己在弹窗里点）" to
+        "Use Root / Shizuku to grant the missing ones above (notifications still need the system dialog)",
+    "补齐" to "Fill",
+    "已补齐：%s" to "Filled: %s",
+    "需要 Root 或 Shizuku 才能直接补权限" to "Root or Shizuku is required to fill these directly",
+    "没有能自动补的项（通知权限要自己在弹窗里点）" to
+        "Nothing left to auto-fill (notifications need the system dialog)",
     )
 }

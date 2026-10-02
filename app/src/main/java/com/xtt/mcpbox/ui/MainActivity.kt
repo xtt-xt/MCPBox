@@ -53,12 +53,17 @@ import androidx.compose.ui.platform.LocalContext
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.ShizukuHelper
+import com.xtt.mcpbox.autoGrantJoin
+import com.xtt.mcpbox.autoGrantMissingPermissions
+import com.xtt.mcpbox.autoGrantResultText
+import com.xtt.mcpbox.grantSilently
+import com.xtt.mcpbox.grantId
+import com.xtt.mcpbox.permNeedLabel
+import com.xtt.mcpbox.privilegedLauncher
+import com.xtt.mcpbox.resetBlockedAttempts
 import com.xtt.mcpbox.core.ApprovalRequest
 import com.xtt.mcpbox.core.LogEntry
-import com.xtt.mcpbox.core.CommandLauncher
 import com.xtt.mcpbox.core.McpServer
-import com.xtt.mcpbox.core.ShellBackends
-import com.xtt.mcpbox.core.ShellRunner
 import com.xtt.mcpbox.server.McpService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -69,6 +74,9 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /** 上一次自动补齐的时间（elapsedRealtime）：防止切来切去时反复开 shell。 */
+    private var lastAutoGrantAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -114,6 +122,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     AppRoot(
                         requestPermission = ::handlePermNeed,
+                        onAutoGrant = ::handleAutoGrant,
                         onRequestShizuku = ::requestShizuku,
                         onThemeChanged = { themeRev++ },
                         onLangChanged = { langRev++ },
@@ -121,6 +130,49 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * 进入 App 时补一次权限（回到前台也会走这里，比如刚在系统设置页里给完权限回来）。
+     *
+     * 只在「设有 Root / Shizuku」而且真的缺东西时才动手；整个过程静默，
+     * 结果只写日志 + 补到了才弹一条 Toast —— 没有特权后端时等于不存在。
+     */
+    override fun onStart() {
+        super.onStart()
+        autoGrantIfEnabled()
+    }
+
+    private fun autoGrantIfEnabled() {
+        if (!AppCore.prefs.autoGrantPermissions) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastAutoGrantAt < AUTO_GRANT_MIN_GAP_MS) return
+        lastAutoGrantAt = now
+        lifecycleScope.launch {
+            val done = withContext(Dispatchers.IO) { autoGrantMissingPermissions() }
+            if (done.isNotEmpty()) {
+                toastNow(L("已自动补齐 %s").format(autoGrantJoin(done.map { it.grantId() })))
+            }
+        }
+    }
+
+    /** 首页「一键补齐」：把缺的、能静默开的都开掉，然后把结果告诉用户（含失败原因）。 */
+    private fun handleAutoGrant() {
+        lifecycleScope.launch {
+            val (done, launcher) = withContext(Dispatchers.IO) {
+                // 手动点就是要「再试一次」：把自动那轮记下的失败清掉
+                resetBlockedAttempts()
+                val l = privilegedLauncher()
+                autoGrantMissingPermissions() to l
+            }
+            toastNow(autoGrantResultText(done, launcher))
+        }
+    }
+
+    private fun toastNow(text: String) {
+        runOnUiThread {
+            android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -143,11 +195,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             val ok = withContext(Dispatchers.IO) { grantSilently(need) }
             if (ok) {
-                android.widget.Toast.makeText(
-                    this@MainActivity,
-                    L("已直接授权（%s）").format(needLabel(need)),
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+                toastNow(L("已直接授权（%s）").format(permNeedLabel(need)))
                 return@launch
             }
             openSystemPermission(need)
@@ -202,9 +250,14 @@ class MainActivity : ComponentActivity() {
 /** 底栏「再点一下当前 tab」的双击窗口。单击当前格没有动作，所以放宽一点没副作用。 */
 private const val DOUBLE_TAP_MS = 600L
 
+/** 两次自动补齐之间至少隔这么久：切来切去（onStart 频繁触发）时别反复开 shell。 */
+private const val AUTO_GRANT_MIN_GAP_MS = 4_000L
+
 @Composable
 fun AppRoot(
     requestPermission: (PermNeed) -> Unit,
+    /** 首页「一键补齐」：把缺的、能静默开的系统权限一次开掉。 */
+    onAutoGrant: () -> Unit,
     onRequestShizuku: () -> Unit,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
@@ -428,6 +481,7 @@ fun AppRoot(
                     },
                     onRestartService = { McpService.restart(ctx) },
                     onPermNeed = requestPermission,
+                    onAutoGrant = onAutoGrant,
                     onOpenPermissions = { tab = 1 },
                     scrollTopTick = scrollTopTick
                 )
@@ -469,35 +523,3 @@ fun AppRoot(
 }
 
 /* ------------------------------------------------- 权限：能静默开就直接开 */
-
-/**
- * 试着用特权后端（Shizuku / root）把这项权限直接开掉，返回是否成功。
- *
- * 只做**不会把自己进程搞重启**的那几项：appops（悬浮窗、全部文件访问）和电池白名单。
- * 通知是运行时权限 —— `pm grant` 会让系统把正在运行的自己杀掉重启，所以永远走系统弹窗。
- */
-private fun grantSilently(need: PermNeed): Boolean = run {
-    val launcher = privilegedLauncher() ?: return false
-    val pkg = AppCore.app.packageName
-    val cmd = when (need) {
-        PermNeed.STORAGE -> "appops set $pkg MANAGE_EXTERNAL_STORAGE allow"
-        PermNeed.OVERLAY -> "appops set $pkg SYSTEM_ALERT_WINDOW allow"
-        PermNeed.BATTERY -> "dumpsys deviceidle whitelist +$pkg"
-        PermNeed.NOTIFICATION -> return false
-    }
-    runCatching { ShellRunner().run(launcher, cmd, timeoutMs = 20_000).ok }.getOrDefault(false)
-}
-
-/** 权限的中文名（提示用）。 */
-private fun needLabel(need: PermNeed): String = when (need) {
-    PermNeed.STORAGE -> L("文件访问权限")
-    PermNeed.OVERLAY -> L("悬浮窗权限")
-    PermNeed.NOTIFICATION -> L("通知权限")
-    PermNeed.BATTERY -> L("忽略电池优化")
-}
-
-/** 现在能用的特权后端：Shizuku 优先（已授权才算可用，不会弹任何窗），其次 root。 */
-private fun privilegedLauncher(): CommandLauncher? {
-    val avail = ShellBackends.available()
-    return avail.firstOrNull { it.id == "shizuku" } ?: avail.firstOrNull { it.id == "root" }
-}
