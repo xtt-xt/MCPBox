@@ -59,6 +59,64 @@ private fun http(
     return Resp(code, text, conn.headerFields)
 }
 
+/** 同 [http]，但请求体是原始字节（上传 zip 用）。 */
+private fun httpBytes(
+    method: String,
+    url: String,
+    body: ByteArray,
+    headers: Map<String, String> = emptyMap()
+): Resp {
+    val conn = URL(url).openConnection() as HttpURLConnection
+    conn.requestMethod = method
+    conn.connectTimeout = 5000
+    conn.readTimeout = 20000
+    headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+    conn.doOutput = true
+    conn.outputStream.use { it.write(body) }
+    val code = conn.responseCode
+    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+    val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+    return Resp(code, text, conn.headerFields)
+}
+
+/** 取二进制响应（目录打包成的 zip 用）：返回 (状态码, 原始字节)。 */
+private fun httpRaw(url: String, headers: Map<String, String> = emptyMap()): Pair<Int, ByteArray> {
+    val conn = URL(url).openConnection() as HttpURLConnection
+    conn.connectTimeout = 5000
+    conn.readTimeout = 30000
+    headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+    val code = conn.responseCode
+    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+    val bytes = stream?.use { it.readBytes() } ?: ByteArray(0)
+    return code to bytes
+}
+
+/** 在内存里打一个 zip（测试用）。 */
+private fun zipBytes(entries: Map<String, String>): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    java.util.zip.ZipOutputStream(out).use { zos ->
+        entries.forEach { (name, text) ->
+            zos.putNextEntry(java.util.zip.ZipEntry(name))
+            zos.write(text.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+    }
+    return out.toByteArray()
+}
+
+/** 内存里解开一个 zip：条目名 → 文本。 */
+private fun unzipText(bytes: ByteArray): Map<String, String> {
+    val got = HashMap<String, String>()
+    java.util.zip.ZipInputStream(bytes.inputStream()).use { zis ->
+        var e = zis.nextEntry
+        while (e != null) {
+            if (!e.isDirectory) got[e.name] = zis.readBytes().toString(Charsets.UTF_8)
+            e = zis.nextEntry
+        }
+    }
+    return got
+}
+
 /** 从 tools/list 的响应里精确取出工具名集合（避免描述文本里的词误伤断言）。 */
 private fun toolNamesIn(body: String): Set<String> =
     Regex("\\\"name\\\":\\\"([a-zA-Z_0-9]+)\\\"").findAll(body)
@@ -1671,6 +1729,78 @@ fun main() {
         check("reload 后端口读得到", Config(cfgTarget).port == 18720)
 
         config.shellTimeoutMs = 60_000L
+
+        // ------------------------------------------------------------ 整目录传文件
+        println("\n[52] 整目录传文件（zip 上传解压 / 目录打包下载）")
+        run {
+            val target = File(root, "ziptarget")
+
+            // ① 一个字节都不少的 zip 上传（一个请求 = 一次审批，整个文件夹一起传）
+            answer("上传压缩包", ApprovalDecision.ALLOW_ONCE)
+            val zip = zipBytes(
+                mapOf(
+                    "top.txt" to "TOP",
+                    "docs/a.txt" to "AAA",
+                    "docs/deep/b.txt" to "BBB"
+                )
+            )
+            val up = httpBytes(
+                "POST",
+                "$base/upload?path=${target.absolutePath}&extract=1&name=docs.zip&token=testtoken123",
+                zip,
+                mapOf("Content-Type" to "application/zip")
+            )
+            check("整目录上传：返回 200", up.code == 200, "code=${up.code} ${up.body.take(160)}")
+            check("整目录上传：根层文件落地", File(target, "top.txt").readText() == "TOP")
+            check("整目录上传：多级目录也建出来了", File(target, "docs/deep/b.txt").readText() == "BBB")
+            check("整目录上传：结果里带文件数", up.body.contains("\"files\": 3") || up.body.contains("\"files\":3"), up.body.take(200))
+
+            // ② 没带令牌进不来（和单文件上传一个规矩）
+            val noToken = httpBytes("POST", "$base/upload?path=${target.absolutePath}&extract=1", zip)
+            check("整目录上传：没令牌会被拦", noToken.code == 401, "code=${noToken.code}")
+
+            // ③ 危险条目（../）必须在写盘之前就拒绝
+            val evilPath = File(root, "evil")
+            val evilRes = httpBytes(
+                "POST",
+                "$base/upload?path=${evilPath.absolutePath}&extract=1&name=evil.zip&token=testtoken123",
+                zipBytes(mapOf("../evil.txt" to "hack"))
+            )
+            check("整目录上传：拒绝向上跳目录的条目", evilRes.code == 400, "code=${evilRes.code} ${evilRes.body.take(120)}")
+            check("整目录上传：被拒之后没有文件落盘", !File(root, "evil.txt").exists() && !File(evilPath, "evil.txt").exists())
+
+            // ④ 不是 zip 就明说，不要写出一堆垃圾
+            val badRes = httpBytes(
+                "POST",
+                "$base/upload?path=${File(root, "badzip").absolutePath}&extract=1&name=x.zip&token=testtoken123",
+                "this is not a zip".toByteArray(Charsets.UTF_8)
+            )
+            check("整目录上传：不是 zip 会被拒", badRes.code == 400, "code=${badRes.code} ${badRes.body.take(120)}")
+
+            // ⑤ 目录直接下载要说清楚要加 zip=1
+            val noZip = http("GET", "$base/download?path=${target.absolutePath}&token=testtoken123")
+            check(
+                "整目录下载：不加 zip=1 会提示加它",
+                noZip.code == 400 && noZip.body.contains("zip=1"),
+                noZip.body.take(160)
+            )
+
+            // ⑥ 加 zip=1 → 拿到一个能原样解开的 zip
+            answer("打包下载目录", ApprovalDecision.ALLOW_ONCE)
+            val (code, bytes) = httpRaw("$base/download?path=${target.absolutePath}&zip=1&token=testtoken123")
+            check("整目录下载：返回 200", code == 200, "code=$code")
+            val got = unzipText(bytes)
+            check("整目录下载：解出来还是那三个文件", got.size == 3, "得到 ${got.keys}")
+            check(
+                "整目录下载：目录结构保持",
+                got["docs/a.txt"] == "AAA" && got["docs/deep/b.txt"] == "BBB" && got["top.txt"] == "TOP"
+            )
+
+            // ⑦ 单文件上传/下载不受影响（回归）
+            answer("gateway-regress", ApprovalDecision.ALLOW_ONCE)
+            val single = http("POST", "$base/upload?path=xtt/gateway-regress.txt", "still-works", sessionHeaders)
+            check("单文件上传仍然正常", single.code == 200 && File(root, "xtt/gateway-regress.txt").readText() == "still-works")
+        }
     } finally {
         server.stop()
     }

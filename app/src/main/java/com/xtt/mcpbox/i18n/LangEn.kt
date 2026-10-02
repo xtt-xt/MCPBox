@@ -1831,5 +1831,42 @@ object LangEn {
     "审批方式改为：%s" to "Approval style set to: %s",
     "审批方式为「通知栏」，已发通知：%s" to "Approval style is \"notification\", posted: %s",
     "\n还有 %s 条待审批" to "\n%s more awaiting approval",
+
+    // ---------------- 文件进出通道：整目录（zip 上传解压 / 目录打包下载）
+    "选文件（可多选）或选一个 zip 解压，直接写进手机存储（会按权限设置弹审批）" to
+        "Pick files (multi-select) or a zip to extract; they go straight into phone storage (approvals follow your permission settings)",
+    "文件（可多选；想整个文件夹一起传，就先把文件夹压成一个 zip）" to
+        "Files (multi-select; to send a whole folder, zip it first)",
+    "这是压缩包：解压到目标目录（只传第一个文件，只弹一次审批）" to
+        "This is an archive: extract into the target folder (only the first file is sent, one approval)",
+    "上传中" to "Uploading",
+    "先选文件" to "Pick a file first",
+    "请求体是空的（把 zip 内容放在 body 里发过来）" to "Empty body (send the zip content as the body)",
+    "压缩包太大：%s，上限 %s MB" to "Archive too large: %s, limit %s MB",
+    "写临时文件失败：%s" to "Could not write the temp file: %s",
+    "不是有效的 zip 压缩包：%s" to "Not a valid zip archive: %s",
+    "压缩包里有不安全的条目（%s）：%s" to "Unsafe entry in the archive (%s): %s",
+    "绝对路径" to "absolute path",
+    "带盘符" to "drive letter",
+    "向上跳目录" to "parent-directory escape",
+    "压缩包里没有文件" to "The archive contains no files",
+    "压缩包里文件太多：%s 个，上限 %s 个" to "Too many files in the archive: %s, limit %s",
+    "解压后太大：%s，上限 %s" to "Too large after extraction: %s, limit %s",
+    "解压需要一个目录，但 path 指向的是文件：%s" to
+        "Extraction needs a folder, but path points to a file: %s",
+    "上传压缩包并解压：%s（%s，%s 个文件）" to "Upload & extract %s (%s, %s files)",
+    "解压到：%s" to "Extract to: %s",
+    "\n（解压后 %s）" to "\n(%s after extraction)",
+    "写入失败（第 %s 个）：%s" to "Write failed (entry %s): %s",
+    "解压上传：%s → %s（%s 个文件，%s）" to "Extract-upload: %s → %s (%s files, %s)",
+    "已解压 %s 个文件 → %s" to "Extracted %s files → %s",
+    "（加 &zip=1 可以整个打包下载）" to " (add &zip=1 to download the whole folder as a zip)",
+    "目录太大，打不进一个 zip（上限 %s）" to "Folder too large for a single zip (limit %s)",
+    "目录是空的：%s" to "The folder is empty: %s",
+    "打包下载目录：%s（%s 个文件）" to "Package folder for download: %s (%s files)",
+    "目录：%s" to "Folder: %s",
+    "\n（打包前 %s）" to "\n(%s before packing)",
+    "打包后太大：%s，上限 %s MB" to "Packed size too large: %s, limit %s MB",
+    "打包下载：%s（%s 个文件，%s）" to "Packaged download: %s (%s files, %s)",
     )
 }

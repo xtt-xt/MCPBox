@@ -30,7 +30,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Permission matrix** | 8 permission keys with three states (allow / ask / deny), plus path rules and command rules (prefix / exact / regex) |
 | **Per-tool permissions** | Individual tools can be set to follow / allow / ask / deny; "ask" ignores the global matrix and prompts every time |
 | **Memory** | Long-term memory for the AI: entities + observations + relations (a knowledge graph), browsable and editable in the app |
-| **File gateway** | `POST /upload`, `GET /download`, plus an upload web page you can open in the phone's browser |
+| **File gateway** | `POST /upload`, `GET /download`, plus an upload web page you can open in the phone's browser (multi-select); add `&extract=1` / `&zip=1` to move a **whole folder in one request** (zip, one approval) |
 | **Private app dirs** | Read/write `/data/data/<package>` in three modes (off / read-only / read-write), forwarded through root |
 | **UI automation** | Screenshot + read the UI tree (nodes & coordinates) + tap / swipe / type (incl. CJK) / key press / launch apps / wait for elements. Needs Shizuku or root |
 | **Auto-filled permissions** | With Root / Shizuku, opening the app silently grants the missing files / overlay / ignore-battery-optimizations permissions (via `appops` and the battery whitelist, no process restart); Home also has "fill all at once" |

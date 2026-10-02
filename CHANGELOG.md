@@ -33,6 +33,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 |---|---|
 | **进入 App 自动补齐权限** | 有 Root / Shizuku 时，打开 App（包括刚从系统设置页回来）自动把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉 —— 走 `appops` 与电池白名单，**不会重启进程**。首页「环境检查」多一行「一键补齐」，一次把缺的都开掉并报出结果；设置 → 后台与运行里可以关掉自动（默认开） |
 | **审批方式可选** | 设置 → 安全与审批 → 审批方式：「悬浮窗」（默认，浮在所有应用之上，没有悬浮窗权限时自动退回通知栏）或「通知栏」（只发带「允许一次 / 始终允许 / 拒绝」按钮的通知，不弹悬浮窗）。改完立刻生效，不用重启服务器；同时来多条审批时各占一条通知，互不顶掉 |
+| **整目录一次传** | 文件网关支持压缩包模式：`POST /upload?path=目录&extract=1`（body 是 zip → 解压到该目录）、`GET /download?path=目录&zip=1`（目录打成 zip 一次取走）。**一个请求 = 一次审批**，所以传一整个文件夹不再弹 N 次窗；解压前先校验（条目数 / 解压后总大小 / 拒绝 `../` 这类危险条目），有问题时一个文件都不写；浏览器上传页也支持多选与「这是压缩包」勾选框 |
 
 ### 说明
 
@@ -41,10 +42,20 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - 自动补齐的结果写进日志；同一项失败后不再反复试（免得每次切回前台都弹一次 root 授权框），手动点「一键补齐」会重新试一遍
 - 首页「环境检查」自己每秒校一次状态：从系统设置页回来、或刚被补上的项，卡片立刻跟着变（不再等服务器状态轮询）
 - 审批方式改完**立刻生效**（每次请求现读设置），不用重启服务器；同时来多条审批时各占一条通知、按钮也按请求分开，不会互相顶掉
+- 传一整个文件夹（比如把工作区的一个目录推到手机）：
+
+```bash
+zip -qr /tmp/x.zip 文件夹/
+curl -X POST --data-binary @/tmp/x.zip \
+  "http://127.0.0.1:8720/upload?path=/storage/emulated/0/目标目录&extract=1&token=<token>"
+# 反向：把手机上的目录打包取回
+curl -H "Authorization: Bearer <token>" \
+  "http://127.0.0.1:8720/download?path=/storage/emulated/0/目标目录&zip=1" -o x.zip
+```
 
 ### 基线
 
-- 端到端测试 **454 项全绿**（新增 20 项：自动补齐 13、审批方式 7）
+- 端到端测试 **467 项全绿**（新增 33 项：自动补齐 13、审批方式 7、整目录传 13）
 
 </details>
 
@@ -57,6 +68,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 |---|---|
 | **Auto-fill permissions on launch** | With Root / Shizuku, opening the app (including coming back from a system settings page) silently grants the missing *files / overlay / ignore-battery-optimizations* permissions via `appops` and the battery whitelist — **no process restart**. The home screen's environment check gained a "fill all at once" row, and Settings → Background & runtime can turn the automatic pass off (on by default) |
 | **Selectable approval style** | Settings → Security & approval → Approval style: *overlay* (default — floats above every app, falls back to a notification without the overlay permission) or *notification* (a notification with Allow once / Always allow / Deny buttons, no overlay). Takes effect immediately, no server restart; concurrent requests each get their own notification |
+| **Whole folders in one request** | The file gateway gained an archive mode: `POST /upload?path=<dir>&extract=1` (body is a zip → extracted into that folder) and `GET /download?path=<dir>&zip=1` (folder packed into a zip and streamed back). **One request = one approval**, so moving a folder no longer asks N times; the archive is validated first (entry count, extracted size, `../` entries rejected) and nothing is written when it fails. The browser upload page supports multi-select and an "this is an archive" checkbox |
 
 ### Notes
 
@@ -65,10 +77,20 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - Results go to the log; a failed item is not retried within the same run (so a denied root prompt doesn't pop up on every foreground), while tapping "fill all at once" retries it
 - The environment check re-checks itself every second, so items granted from a system page or by the auto-fill show up immediately
 - The approval style takes effect **immediately** (read per request, no server restart); concurrent requests each get their own notification and action buttons, so they no longer overwrite each other
+- Moving a whole folder (e.g. pushing a workspace directory to the phone):
+
+```bash
+zip -qr /tmp/x.zip folder/
+curl -X POST --data-binary @/tmp/x.zip \
+  "http://127.0.0.1:8720/upload?path=/storage/emulated/0/target&extract=1&token=<token>"
+# the other way round: pack a phone folder and pull it back
+curl -H "Authorization: Bearer <token>" \
+  "http://127.0.0.1:8720/download?path=/storage/emulated/0/target&zip=1" -o x.zip
+```
 
 ### Baseline
 
-- End-to-end tests: **454 green** (+20: 13 for auto-fill, 7 for the approval style)
+- End-to-end tests: **467 green** (+33: 13 auto-fill, 7 approval style, 13 whole-folder transfer)
 
 </details>
 
