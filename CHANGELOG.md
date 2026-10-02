@@ -22,6 +22,92 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.0 · 2026-10-03 —— 第二个正式发行版 / Second stable release
+
+<details open>
+<summary><b>中文</b></summary>
+
+上一个 Release 是 `v1.1.0`（2026-09-28）。从那时到现在（核心版本 `-48` → `-80`）的主要变化：
+
+### 新增能力
+
+| 能力 | 说明 |
+|---|---|
+| **备份与恢复** | 记忆库 / 设置 / 自定义工具 / 统计四部分。可以打成一个 zip，也可以每部分单独导一个 json；恢复时逐项选「合并 / 覆盖」，设置还能单独决定要不要连访问令牌一起恢复（默认不带，免得把客户端全踢下线） |
+| **使用统计** | 设置 → 统计：每日请求热力图（一年 53 列，可横向滑；不满一年自动铺满）+ 累计运行时长 / 打开应用次数 / 服务器启动次数 / 有请求的天数。只增不减，重置设置也不清，随备份走 |
+| **初始引导** | 全新安装第一次打开走五步（欢迎 / 语言 / 权限 / 恢复备份 / 开始使用）；升级不打扰，开发者模式里可以强制重走 |
+| **开发者模式** | 关于页连点图标 7 次解锁：语言菜单、更新弹窗预览（拉 GitHub 最新 Release 的真实内容）、强制检查更新、强制重走引导 |
+| **全项目 i18n 收尾** | 六批补完：App 界面、工具标题与说明、审批弹窗链路、44 个工具返回给 AI 的正文、日志与错误消息、网页控制台与上传页 —— 全项目可见文案清零 |
+
+### 界面重做
+
+- **设置页拆成「入口 + 子页」**：一级只留入口行（外观与语言 / 网络与访问 / 安全与审批 / 终端与命令 / 工具管理 / 记忆库 / 后台与运行 / 备份与恢复 / 统计 / 关于），具体开关都在子页；子页进出场带 1/3 屏宽滑动动画，返回键回设置首页，滚动位置按页保留
+- **底部导航栏重做**：B 站式图标胶囊；全 App 自己处理 `WindowInsets`（适配小白条）；单击不回顶、**双击当前 tab 才回顶**；涟漪只画在图标胶囊里；备份 / 恢复的底栏挪到页面外层，进出只滑一次
+- **设置页收纳**：工具管理、记忆库提到一级（删掉中间的「AI 与工具」子页）；预设会话挪到权限页顶部；超时开关与滑块连成一组；`RowSpec.visible` 支持展开 / 收起动画（收起最后一行时上一行的底部圆角跟着变圆）
+- **文案精简**：去掉各页副标题与一批冗余说明（这是刻意的，不是缺文案）
+
+### 修的问题
+
+- **恢复备份直接闪退**：JSON 分不出 `int` / `long` —— `approval_timeout` 导出再读回来变成 Int，写回后再用 `getLong` 读就 `ClassCastException`。现在导出时额外记一份 `types` 映射、恢复严格照类型写回；老备份跟着当前键的类型走；`Prefs` 读取也加了容错
+- **设置子页的底栏不隐藏**；「后台与运行 / 外观与语言 / 开发者模式」里的开关点了不刷新（缺 `revision` → 调用点 lambda 被 Compose 判定成相等，整页跳过重组）
+- **权限页**：胶囊点不动；点「授权」会自己跳步
+- **初始引导**：把「走到第几步」存进了 saved instance state —— 进程被系统回收再回来会从中间续上，看着像自己跳页；底栏挂着自家审批浮层时点得穿，会把「跳过 / 下一步」误点掉
+- **自动授权会把 App 自己搞重启**：`pm grant` 授运行时权限会让系统杀掉正在运行的进程 → 引导权限页改成只显示状态 + 提供入口，全部由用户自己点；权限入口则先试 `appops` / 电池白名单这类不会重启进程的静默授权
+- **更新弹窗**：正文限高可滚动 + 轻量渲染 Markdown，不再被截断
+- **终端**：支持输入法、支持回到底部
+
+### 基线
+
+- 端到端测试 **434 项全绿**（v1.1.0 时是 336；新增备份与恢复 51 项、类型保真 19 项、使用统计 21 项等）
+- 工具 **52 → 54**（多了记忆库导入导出 `memory_export` / `memory_import`）
+- release APK **2.6 MB**（v1.1.0 时 2.3 MB），仍是三模块（mcpcore + harness + app）
+- 文档：中文 [README.md](README.md) / [README.en.md](README.en.md)（新增「统计」小节）
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+The previous release was `v1.1.0` (2026-09-28). What changed since then (core versions `-48` … `-80`):
+
+### New capabilities
+
+| Feature | Notes |
+|---|---|
+| **Backup & restore** | Memory / settings / custom tools / stats. Export everything as one zip or one json per part; on restore you choose merge or replace per part, and settings can optionally carry the access token (off by default, so your clients don't get kicked out) |
+| **Usage stats** | Settings → Statistics: a daily request heatmap (53 weeks, horizontally scrollable; a shorter history fills the width) plus total run time, app launches, server starts and days with requests. Only ever grows, survives a settings reset, travels with backups |
+| **First-run guide** | Five steps on a fresh install (welcome / language / permissions / restore a backup / start); upgrades are never interrupted, and developer mode can replay it on demand |
+| **Developer mode** | Tap the icon on the About page 7 times to unlock: the language menu, update-dialog preview (pulls the real latest GitHub release), forced update checks, replaying the guide |
+| **Full i18n sweep** | Six batches: app UI, tool titles and descriptions, the approval flow, the body text 44 tools return to the AI, logs and error messages, the web console and upload page — no visible Chinese-only strings left |
+
+### UI rework
+
+- **Settings split into entries + subpages**: the top level only lists entries (Appearance / Network / Security / Shell / Tools / Memory / Background / Backup / Statistics / About); every switch lives in its own subpage with a 1/3-screen slide transition, back-key returns to the settings home, and scroll position is remembered per page
+- **Bottom navigation rebuilt**: Bilibili-style icon pills; the whole app handles its own `WindowInsets` (gesture bar friendly); a single tap no longer scrolls to top — **double-tap the current tab does**; ripples are clipped to the icon pill; the backup/restore bottom bar moved outside the pages so it slides in only once
+- **Settings tidied up**: Tools and Memory are top-level entries (the intermediate "AI & tools" page is gone); presets moved to the top of the Permissions page; timeout switches sit above their sliders; `RowSpec.visible` gives rows an expand/collapse animation (corner radii follow the visible rows)
+- **Copy cleanup**: page subtitles and a batch of redundant explanations were removed on purpose
+
+### Fixes
+
+- **Restoring a backup crashed** — JSON can't tell `int` from `long`: `approval_timeout` came back as an Int, was written back as one, and `getLong` then threw `ClassCastException`. Exports now carry a `types` map, restores write values back in their original type, older backups follow the current key type, and `Prefs` reads coerce mismatched types instead of crashing
+- **Subpage bottom bar stayed visible**; switches in Background / Appearance / Developer mode did nothing (missing `revision` meant Compose skipped the whole page)
+- **Permissions page**: the pill didn't respond; tapping "grant" advanced the steps by itself
+- **First-run guide**: the current step was kept in saved instance state, so a recycled process resumed mid-guide and looked like it jumped pages; taps could punch through the app's own approval overlay and hit "Skip / Next"
+- **Silent granting restarted the app**: `pm grant` for runtime permissions makes the system kill the running process → the guide now only shows status and entry points and lets the user tap; the permissions entry tries `appops` / battery whitelist first, which don't restart the process
+- **Update dialog**: height-capped and scrollable with a lightweight Markdown renderer, no more truncated text
+- **Terminal**: IME support, and it scrolls back to the bottom
+
+### Baseline
+
+- End-to-end tests: **434 green** (336 at v1.1.0; +51 backup/restore, +19 type fidelity, +21 usage stats)
+- Tools **52 → 54** (`memory_export` / `memory_import` added)
+- Release APK **2.6 MB** (2.3 MB at v1.1.0), still three modules (mcpcore + harness + app)
+- Docs: [README.md](README.md) (Chinese) / [README.en.md](README.en.md) — new "Statistics" section
+
+</details>
+
+---
+
 ## v1.1.0 · 2026-09-28 —— 第一个正式发行版 / First stable release
 
 <details open>

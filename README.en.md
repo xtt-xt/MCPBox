@@ -21,8 +21,8 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 
 | | |
 |---|---|
-| **52 MCP tools** | File read/write/delete, search, image preview, trash, device info, shell, custom tools, token, memory, tool packs, UI automation… |
-| **Tool packs** | Tools are split into 7 packs; only 22 ship by default (≈4100 tokens, 52% less than the full set). Packs are your own setting — the AI never notices |
+| **54 MCP tools** | File read/write/delete, search, image preview, trash, device info, shell, custom tools, token, memory import/export, tool packs, UI automation… |
+| **Tool packs** | Tools are split into 7 packs; only 22 ship enabled by default (roughly 40% of the tokens the full set would cost). Packs are your own setting — the AI never notices |
 | **Session isolation** | Point a client at `/mcp/p/<name>` for an independent session with its own activation state; persist, reset or delete it |
 | **Presets** | One tap in the Permissions tab: all-allow / all-deny / all-ask / custom. Your custom set is remembered when you switch away and restored when you come back |
 | **Per-call approval** | Top-level floating popup with a notification fallback: allow once / always allow / deny / always deny |
@@ -38,6 +38,8 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Web console** | Try tools, read logs and handle approvals in a browser; supports **localhost-only** and **password protection** |
 | **Two transports** | Streamable HTTP (`/mcp`) and legacy HTTP+SSE (`/sse` + `/messages`) |
 | **Usage stats** | Daily request heatmap plus total run time, app launches and server starts; only ever grows, survives a settings reset, travels with backups |
+| **Backup & restore** | Memory / settings / custom tools / stats, as one zip or one json per part; merge or replace each part on restore |
+| **First-run guide** | Five steps on a fresh install (welcome / language / permissions / restore a backup / start); upgrades are never interrupted, developer mode can replay it |
 | **Multilingual UI** | Chinese and English built in; export a template, translate it and import any language |
 
 ## Quick start
@@ -169,8 +171,9 @@ Settings → **Statistics**. Everything here is an ever-growing, never-reset rec
 
 ## Tool packs
 
-Tool definitions are re-sent to the model on **every single turn**. All 52 tools are roughly 8600
-tokens; twenty turns means 150k — and most turns don't need nearly that many.
+Tool definitions are re-sent to the model on **every single turn**. All 54 tools add up to roughly 26k
+characters (≈6500 tokens at ~4 characters per token); twenty turns means 130k — and most turns don't need
+nearly that many.
 
 So tools are split into packs, and `tools/list` only returns those in the **core pack plus the active
 packs**:
@@ -185,7 +188,7 @@ packs**:
 | `ui` | 8 | off |
 | `my.tools` | dynamic | off |
 
-22 tools by default ≈ 4100 tokens, **52% less than shipping everything**.
+The 22 tools enabled out of the box cost well under half of shipping everything.
 
 Packs are **your own long-lived setting**: tick them under "Permissions → Tool packs" and the AI simply
 uses whatever it sees. It has no idea packs exist — zero friction, and no wasted turns. You can also
