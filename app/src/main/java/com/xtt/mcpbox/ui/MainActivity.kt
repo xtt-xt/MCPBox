@@ -95,13 +95,22 @@ class MainActivity : ComponentActivity() {
                         outline = cs.outline.toArgb()
                     )
                 }
-                AppRoot(
-                    requestPermission = ::handlePermNeed,
-                    onRequestShizuku = ::requestShizuku,
-                    onThemeChanged = { themeRev++ },
-                    onLangChanged = { langRev++ },
-                    langRev = langRev
-                )
+                // 首次引导盖在整棵界面之前：走完（或跳过走完）才会进 AppRoot
+                if (OnboardingState.visible) {
+                    OnboardingScreen(
+                        onLangChanged = { langRev++ },
+                        onThemeChanged = { themeRev++ },
+                        requestPermission = ::handlePermNeed
+                    )
+                } else {
+                    AppRoot(
+                        requestPermission = ::handlePermNeed,
+                        onRequestShizuku = ::requestShizuku,
+                        onThemeChanged = { themeRev++ },
+                        onLangChanged = { langRev++ },
+                        langRev = langRev
+                    )
+                }
             }
         }
     }

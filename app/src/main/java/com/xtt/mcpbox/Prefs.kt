@@ -37,6 +37,8 @@ class Prefs(context: Context) : SettingsSource {
         /** 下一次启动无条件检查一次更新（开发者模式用）。 */
         const val KEY_FORCE_UPDATE = "force_update_check_next"
         const val KEY_FIRST_RUN = "first_run_done"
+        /** 初始引导走完没有（走完 / 跳过都算走过）。 */
+        const val KEY_ONBOARD_DONE = "onboard_done"
         /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
         const val KEY_PACK_PROFILE = "pack_profile_view"
         /** 「不限时」开关打开前用的秒数（关掉开关时恢复回去）。 */
@@ -188,6 +190,22 @@ class Prefs(context: Context) : SettingsSource {
     var firstRunDone: Boolean
         get() = getBoolean(KEY_FIRST_RUN, false)
         set(value) = putBoolean(KEY_FIRST_RUN, value)
+
+    /** 初始引导走完没有。开发者模式里的「强制进入初始引导」会把它置回 false。 */
+    var onboardDone: Boolean
+        get() = getBoolean(KEY_ONBOARD_DONE, false)
+        set(value) = putBoolean(KEY_ONBOARD_DONE, value)
+
+    /** 这个键到底有没有写过（用来区分「从没写过」和「写成了 false」）。 */
+    fun contains(key: String): Boolean = sp.contains(key)
+
+    /**
+     * 整份配置是不是空的。
+     *
+     * 空 = 装完第一次打开（这时候还没人往 SharedPreferences 里写过任何东西）；
+     * 老用户升级上来时里面早就有值了 —— 靠这个把「全新安装」和「升级」分开。
+     */
+    fun isBlank(): Boolean = sp.all.isEmpty()
 
     /**
      * 权限页里「工具包」正在查看哪个会话。

@@ -88,6 +88,13 @@ object AppCore {
             }
             ServerMeta.deviceLabel = deviceLabel()
             prefs = Prefs(application)
+            // 初始引导只在「装完第一次打开」时自动出现：这时候 SharedPreferences
+            // 完全是空的。老用户升级上来里面已经有值了，直接视作早就走过一遍，
+            // 免得升级后被平白挡一层引导（想再看一次走开发者模式里的强制入口）。
+            if (!prefs.contains(Prefs.KEY_ONBOARD_DONE)) {
+                prefs.onboardDone = !prefs.isBlank()
+            }
+            com.xtt.mcpbox.ui.OnboardingState.visible = !prefs.onboardDone
             config = Config(prefs)
             log = EventLog().also { it.enabled = config.logEnabled }
             permissions = PermissionStore(config, prefs)

@@ -291,7 +291,7 @@ private fun AboutHomePage(
                 // 连点图标 7 次解锁后才出现
                 if (AppCore.prefs.devModeUnlocked) RowSpec(
                     title = L("开发者模式"),
-                    subtitle = L("调试入口：语言菜单、更新弹窗预览、强制检查更新"),
+                    subtitle = L("调试入口：语言菜单、更新预览、初始引导"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Build,
                     onClick = onOpenDev,
@@ -473,6 +473,22 @@ private fun DevModePage(
                     toast(ctx, if (on) L("语言菜单已打开") else L("语言菜单已关闭"))
                     onChanged()
                 }
+            )
+        )
+
+        GroupLabel(L("引导"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("强制进入初始引导"),
+                    subtitle = L("立刻重走一遍五步引导，并清掉「已经走过」的记录（下次打开也会进）"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        AppCore.prefs.onboardDone = false
+                        OnboardingState.visible = true
+                    }
+                )
             )
         )
 
