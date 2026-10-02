@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.ShizukuHelper
 import com.xtt.mcpbox.core.Backup
-import com.xtt.mcpbox.core.CommandLauncher
 import com.xtt.mcpbox.core.ShellBackends
 import com.xtt.mcpbox.core.ShellRunner
 import com.xtt.mcpbox.i18n.L
@@ -568,10 +567,11 @@ private fun LanguageStep(ctx: Context, onPicked: () -> Unit) {
 /* ------------------------------------------------------------------ 3 权限 */
 
 /**
- * 拿到 root / Shizuku 之后顺手能授的那几项。
+ * 权限页：上面两行是提权（Shizuku / Root，点「申请」触发），下面四行是系统权限。
  *
- * 只做**静默能搞定**的：能授就授，授不了（设备没 root 也没 Shizuku）就什么都不做，
- * 让用户自己去点对应那一行。真正的授权动作在 [autoGrant]。
+ * **不做自动授权**：这里只显示状态 + 提供入口，每一项都由用户自己点。
+ * （之前做过「拿到 root / Shizuku 就静默把下面几项开掉」，但给运行中的自己改权限
+ * 会让系统把进程重启，引导页面看着会自己动，得不偿失。）
  */
 @Composable
 private fun PermissionStep(
@@ -584,24 +584,10 @@ private fun PermissionStep(
     val suLauncher = remember(rev) { ShellBackends.byId("root") }
     val rootAvailable = remember(rev) { suLauncher?.isAvailable() == true }
     val shizukuGranted = remember(rev) { ShizukuHelper.isGranted() }
-    val privileged = remember(rev) { privilegedLauncher() }
 
-    var note by remember { mutableStateOf<String?>(null) }
-    // 已经为哪个后端（root / shizuku）跑过自动授权了 —— 同一个后端不重复跑
-    var grantedFor by remember { mutableStateOf<String?>(null) }
-
-    // 拿到了特权后端就把下面能静默开的权限打开
-    LaunchedEffect(privileged?.id) {
-        val id = privileged?.id ?: return@LaunchedEffect
-        if (grantedFor == id) return@LaunchedEffect
-        grantedFor = id
-        val done = autoGrantAsync(ctx)
-        if (done.isNotEmpty()) {
-            note = L("已自动授权：%s").format(done.joinToString("、"))
-            toast(ctx, note ?: "")
-        }
-        onRev()
-    }
+    // 这里**不做自动授权**：之前试过用 root / Shizuku 静默把下面几项直接开掉，
+    // 但给运行中的自己改权限会把进程搞重启，页面看着会自己动。
+    // 现在一律让用户自己点，App 只负责把状态显示准。
 
     val h = AppCore.host
     val storageOk = remember(rev) { h.hasAllFilesAccess() }
@@ -659,17 +645,6 @@ private fun PermissionStep(
             )
         )
     )
-
-    note?.let {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            it,
-            color = MaterialTheme.colorScheme.tertiary,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            modifier = Modifier.padding(horizontal = 24.dp)
-        )
-    }
 
     GroupLabel(L("系统权限"))
     CardGroup(
@@ -738,44 +713,6 @@ private fun allPermissionsReady(): Boolean {
     return h.hasAllFilesAccess() && h.canDrawOverlays() &&
         h.hasNotificationPermission() && h.isIgnoringBatteryOptimizations()
 }
-
-/** 现在能用的特权后端：Shizuku 优先，其次 root；都没有就 null。 */
-private fun privilegedLauncher(): CommandLauncher? {
-    val avail = ShellBackends.available()
-    // Shizuku 要「正在运行 + 已授权」才算可用，选中它不会弹任何窗口；
-    // 只有它不可用时才去碰 su（这时 Magisk 会弹一次授权框，符合「申请提权」的预期）
-    return avail.firstOrNull { it.id == "shizuku" } ?: avail.firstOrNull { it.id == "root" }
-}
-
-/**
- * 用特权后端把能静默授予的权限直接打开。
- *
- * 只有这几条命令是 shell 身份能改的：通知、悬浮窗、全部文件访问、电池白名单。
- * 返回真正成功的那些项（用来提示用户）。授不了的不报错，
- * 界面上那行还是「未授权」，用户自己点一下走系统流程即可。
- */
-private fun autoGrant(ctx: Context): List<String> = run {
-    val launcher = privilegedLauncher() ?: return emptyList()
-    val pkg = ctx.packageName
-    // 注意：这里**不能**用 `pm grant` 授运行时权限（通知就是运行时权限）——
-    // 给正在运行的自己改运行时权限，系统会当场把进程杀掉重启，
-    // 引导里看着就像「这一步自己往前跳了」。通知权限留给用户点那一行走系统弹窗。
-    // 下面三条都只是 appops / 电池白名单，不会重启进程。
-    val tasks = listOf(
-        L("悬浮窗权限") to "appops set $pkg SYSTEM_ALERT_WINDOW allow",
-        L("文件访问权限") to "appops set $pkg MANAGE_EXTERNAL_STORAGE allow",
-        L("忽略电池优化") to "dumpsys deviceidle whitelist +$pkg"
-    )
-    val runner = ShellRunner()
-    tasks.mapNotNull { (label, cmd) ->
-        val ok = runCatching { runner.run(launcher, cmd, timeoutMs = 20_000).ok }.getOrDefault(false)
-        if (ok) label else null
-    }
-}
-
-/** [autoGrant] 的挂起版：跑命令会阻塞，不能占着主线程。 */
-private suspend fun autoGrantAsync(ctx: Context): List<String> =
-    withContext(Dispatchers.IO) { autoGrant(ctx) }
 
 /* ------------------------------------------------------------------ 4 恢复备份 */
 

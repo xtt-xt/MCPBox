@@ -1730,7 +1730,6 @@ object LangEn {
     "高级权限" to "Advanced access",
     "已检测到 su，点击触发授权" to "su found — tap to allow",
     "未检测到 su，设备未 root 时跳过这一项" to "No su found — skip this one if the device isn't rooted",
-    "已自动授权：%s" to "Granted automatically: %s",
     "有备份的话可以现在恢复" to "Restore one now if you have it",
     "支持 zip 备份包或单独的 json 文件" to "A zip backup or a single json file both work",
     "备份内容" to "Backup contents",
