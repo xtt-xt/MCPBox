@@ -4,11 +4,19 @@
 package com.xtt.mcpbox.ui
 
 import android.content.Context
+import android.net.Uri
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,6 +91,9 @@ object OnboardingState {
 /** 引导一共几步。 */
 private const val STEPS = 5
 
+/** 连点保护：两次「下一步」至少隔这么久，手快点两下不会跳两步。 */
+private const val ADVANCE_GAP_MS = 400L
+
 /** 每一步顶部那颗大图标。 */
 private val StepIcons: List<ImageVector> = listOf(
     Icons.Filled.Home,
@@ -97,9 +108,9 @@ private val StepIcons: List<ImageVector> = listOf(
  *
  * 版式统一是「上面图标 / 中间选项 / 下面按钮」：
  *  - 顶部：大图标 + 标题 + 一句说明；
- *  - 中间：这一步要做的事（自己滚动）；
- *  - 底部：左「跳过」右「下一步」；这一步要求的东西全齐了「下一步」才点得动，
- *    没齐就只能跳过（跳过只跳这一步，不是整段引导退出）。最后一步只有「开始使用」。
+ *  - 中间：这一步要做的事（自己滚动，切步带滑动动画）；
+ *  - 底部：**一个**按钮，文案跟着这一步的状态走 ——
+ *    没完成是「跳过」，完成了是「下一步」，恢复页选好文件是「恢复」，最后一步是「开始使用」。
  */
 @Composable
 fun OnboardingScreen(
@@ -109,17 +120,25 @@ fun OnboardingScreen(
     onFinish: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var step by rememberSaveable { mutableStateOf(0) }
     // 语言一改就整块重建，否则界面上的 L(...) 还是旧语言
     var langRev by remember { mutableStateOf(0) }
     // 用来重读权限 / 设备状态（轮询 + 操作后手动 +1）
     var rev by remember { mutableStateOf(0) }
-    // 第 4 步恢复过没有。放 key(langRev) 外面 —— 恢复设置可能带着语言一起换，
-    // 重建之后这一步仍然得算「已完成」
+    // 第 4 步恢复过没有
     var restored by remember { mutableStateOf(false) }
     // 恢复设置可能把语言也一起换掉：真发生时等离开这一页再整块重建，
     // 否则恢复结果那几行字会当场被刷掉
     var langDirty by remember { mutableStateOf(false) }
+    var lastAdvance by remember { mutableStateOf(SystemClock.uptimeMillis()) }
+
+    // 恢复页的状态放在这一层：底栏那个「恢复」按钮要用到
+    var parts by remember { mutableStateOf<List<RestorePart>>(emptyList()) }
+    var merge by remember { mutableStateOf(true) }
+    var restoring by remember { mutableStateOf(false) }
+    var restoreResult by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(step) {
         if (step != 3 && langDirty) {
             langDirty = false
@@ -131,6 +150,13 @@ fun OnboardingScreen(
         AppCore.prefs.onboardDone = true
         OnboardingState.visible = false
         onFinish()
+    }
+
+    fun advance() {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastAdvance < ADVANCE_GAP_MS) return
+        lastAdvance = now
+        if (step < STEPS - 1) step++
     }
 
     // 系统返回 = 回上一步；第一步没得退（免得一进来就退出整个引导）
@@ -146,12 +172,47 @@ fun OnboardingScreen(
 
     val permsAllOk = remember(rev) { allPermissionsReady() }
 
-    // 这一步算不算「全部完成」：完成才让点下一步
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) loadBackup(ctx, uri, scope) { loaded, r ->
+        parts = loaded
+        restoreResult = r
+    } }
+
+    fun doRestore() {
+        if (parts.isEmpty() || restoring) return
+        restoring = true
+        scope.launch {
+            restoreResult = runRestore(ctx, parts, merge)
+            restoring = false
+            restored = true
+            AppCore.config.reload()
+            AppCore.permissions.load()
+            AppCore.customTools.load()
+            AppCore.log.enabled = AppCore.config.logEnabled
+            onThemeChanged()
+            onLangChanged()      // 真换了语言也只是记一下，离开这一页才重建
+            langDirty = true
+            toast(ctx, L("恢复完成"))
+        }
+    }
+
+    // 这一点算不算「全部完成」
     val stepDone = when (step) {
         2 -> permsAllOk
         3 -> restored
         else -> true
     }
+    // 恢复页：选好文件、还没恢复 → 主按钮就是「恢复」
+    val readyToRestore = step == 3 && parts.isNotEmpty() && !restored
+
+    val buttonLabel = when {
+        step == STEPS - 1 -> L("开始使用")
+        readyToRestore -> L("恢复")
+        stepDone -> L("下一步")
+        else -> L("跳过")
+    }
+    val buttonOutlined = buttonLabel == L("跳过")
 
     key(langRev) {
         Column(
@@ -160,48 +221,136 @@ fun OnboardingScreen(
                 .background(MaterialTheme.colorScheme.background)
                 .windowInsetsPadding(WindowInsets.statusBars)
         ) {
-            StepHeader(step)
-
-            Column(
-                Modifier
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    val forward = targetState > initialState
+                    val slide = if (forward) 1 else -1
+                    (
+                        slideInHorizontally(tween(260)) { w -> slide * w / 4 } +
+                            fadeIn(tween(200))
+                        ).togetherWith(
+                        slideOutHorizontally(tween(220)) { w -> -slide * w / 4 } +
+                            fadeOut(tween(150))
+                    )
+                },
+                label = "onboardingStep",
+                modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(bottom = 10.dp)
-            ) {
-                when (step) {
-                    0 -> WelcomeStep()
-                    1 -> LanguageStep(ctx) {
-                        langRev++
-                        onLangChanged()
-                    }
-                    2 -> PermissionStep(ctx, rev, requestPermission) { rev++ }
-                    3 -> RestoreStep(
-                        ctx = ctx,
-                        onRestored = {
-                            restored = true
-                            rev++
-                        },
-                        onThemeChanged = onThemeChanged,
-                        onLangChanged = {
-                            langDirty = true
-                            onLangChanged()
+            ) { current ->
+                Column(Modifier.fillMaxSize()) {
+                    StepHeader(current)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 10.dp)
+                    ) {
+                        when (current) {
+                            0 -> WelcomeStep()
+                            1 -> LanguageStep(ctx) {
+                                langRev++
+                                onLangChanged()
+                            }
+                            2 -> PermissionStep(ctx, rev, requestPermission) { rev++ }
+                            3 -> RestoreStep(
+                                parts = parts,
+                                merge = merge,
+                                restoring = restoring,
+                                result = restoreResult,
+                                onPick = {
+                                    picker.launch(
+                                        arrayOf(
+                                            "application/zip", "application/json",
+                                            "text/plain", "*/*"
+                                        )
+                                    )
+                                },
+                                onMerge = { merge = it }
+                            )
+                            else -> DoneStep(rev, restored, permsAllOk)
                         }
-                    )
-                    else -> DoneStep(rev, restored, permsAllOk)
+                    }
                 }
             }
 
             BottomBar(
-                step = step,
-                nextEnabled = stepDone,
-                onSkip = { if (step < STEPS - 1) step++ },
-                onNext = { if (step < STEPS - 1) step++ },
-                onFinish = { finish() },
-                onBack = { if (step > 0) step-- }
+                label = buttonLabel,
+                outlined = buttonOutlined,
+                enabled = !restoring,
+                onClick = {
+                    when {
+                        step == STEPS - 1 -> finish()
+                        readyToRestore -> doRestore()
+                        else -> advance()
+                    }
+                }
             )
         }
     }
+}
+
+/* ------------------------------------------------------------------ 从备份里读 */
+
+/** 选完文件后解析：zip 直接读包，单个 json 靠嗅探认。 */
+private fun loadBackup(
+    ctx: Context,
+    uri: Uri,
+    scope: kotlinx.coroutines.CoroutineScope,
+    done: (List<RestorePart>, String?) -> Unit
+) {
+    scope.launch {
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                when {
+                    bytes == null || bytes.isEmpty() -> emptyList()
+                    // zip：PK\x03\x04
+                    bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() ->
+                        Backup.readZip(bytes).parts.map { (p, t) -> RestorePart(p, t) }
+                    else -> {
+                        val text = bytes.toString(Charsets.UTF_8)
+                        val p = Backup.sniff(text)
+                        if (p == null) emptyList() else listOf(RestorePart(p, text))
+                    }
+                }
+            }.getOrElse { emptyList() }
+        }
+        if (loaded.isEmpty()) {
+            toast(ctx, L("没有能识别的备份内容"))
+        } else {
+            done(loaded, null)
+        }
+    }
+}
+
+/** 真正写回去，返回一段结果文本。 */
+private suspend fun runRestore(
+    ctx: Context,
+    parts: List<RestorePart>,
+    merge: Boolean
+): String = withContext(Dispatchers.IO) {
+    parts.map { rp ->
+        // 设置这一块没有「合并」的概念，一律整份覆盖（跟备份页一致）
+        val mode = if (merge && rp.part != Backup.Part.SETTINGS) Backup.Mode.MERGE
+        else Backup.Mode.REPLACE
+        runCatching {
+            Backup.apply(
+                part = rp.part,
+                text = rp.text,
+                mode = mode,
+                restoreToken = false,
+                settings = AppCore.prefs,
+                memory = AppCore.memory,
+                customTools = AppCore.customTools
+            )
+        }.fold(
+            onSuccess = { L("%s：%s").format(partName(rp.part), it) },
+            onFailure = { L("%s：失败 —— %s").format(partName(rp.part), it.message ?: "") }
+        )
+    }.joinToString("\n")
 }
 
 /* ------------------------------------------------------------------ 通用零件 */
@@ -216,11 +365,11 @@ private fun StepHeader(step: Int) {
         else -> L("准备就绪")
     }
     val subtitle = when (step) {
-        0 -> L("把手机变成一个 AI 能读写的文件服务器，全程本地运行")
-        1 -> L("随时可以在「设置 → 外观与语言」里再改")
-        2 -> L("有几项必须授权，AI 才真的能用起来")
-        3 -> L("以前导出过备份的话，可以现在恢复回来")
-        else -> L("下面这些随时还能再改")
+        0 -> L("把手机变成 AI 能读写的文件服务器")
+        1 -> L("之后可以在「设置 → 外观与语言」里改")
+        2 -> L("授权后 AI 才能正常读写文件")
+        3 -> L("有备份的话可以现在恢复")
+        else -> L("下面这些之后都能改")
     }
     Column(
         Modifier
@@ -262,63 +411,24 @@ private fun StepHeader(step: Int) {
 
 @Composable
 private fun BottomBar(
-    step: Int,
-    nextEnabled: Boolean,
-    onSkip: () -> Unit,
-    onNext: () -> Unit,
-    onFinish: () -> Unit,
-    onBack: () -> Unit
+    label: String,
+    outlined: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
 ) {
     Column(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)
+            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 14.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (step < STEPS - 1) {
-                PillButton(L("跳过"), Modifier.weight(1f), outlined = true, onClick = onSkip)
-                PillButton(L("下一步"), Modifier.weight(1f), enabled = nextEnabled, onClick = onNext)
-            } else {
-                PillButton(L("开始使用"), Modifier.weight(1f), onClick = onFinish)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(
+        PillButton(
+            label,
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            repeat(STEPS) { i ->
-                val w by animateDpAsState(
-                    targetValue = if (i == step) 18.dp else 6.dp,
-                    animationSpec = tween(200),
-                    label = "dot"
-                )
-                Box(
-                    Modifier
-                        .padding(horizontal = 3.dp)
-                        .height(6.dp)
-                        .width(w)
-                        .clip(CircleShape)
-                        .background(
-                            if (i == step) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-                        )
-                )
-            }
-        }
-        if (step < STEPS - 1) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (step == 0) L("第一步，没什么要弄的")
-                else L("「跳过」只跳过这一步，后面还会继续"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.5.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+            outlined = outlined,
+            enabled = enabled,
+            onClick = onClick
+        )
     }
 }
 
@@ -353,18 +463,10 @@ private fun BulletRow(text: String) {
 private fun WelcomeStep() {
     Column(Modifier.padding(horizontal = 14.dp)) {
         CardBox {
-            BulletRow(L("AI 直接读写手机文件：列目录、看内容、写入、删除"))
-            BulletRow(L("支持 MCP 协议：Cherry Studio、Claude 等客户端填个地址就能连"))
-            BulletRow(L("服务器只跑在本机，令牌关掉就只有你自己能用"))
+            BulletRow(L("AI 直接读写手机文件"))
+            BulletRow(L("支持 MCP 协议，客户端填地址即可连接"))
+            BulletRow(L("只在本机运行，数据不出手机"))
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            L("这个引导一共 5 步，走到最后就可以开始用了。"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
     }
 }
 
@@ -372,7 +474,7 @@ private fun WelcomeStep() {
 
 @Composable
 private fun LanguageStep(ctx: Context, onPicked: () -> Unit) {
-    var sel by remember { mutableStateOf(AppCore.prefs.appLang) }
+    var selected by remember { mutableStateOf(AppCore.prefs.appLang) }
     var note by remember { mutableStateOf<String?>(null) }
     // 导入语言包之后要重新取一次列表
     var listRev by remember { mutableStateOf(0) }
@@ -389,7 +491,7 @@ private fun LanguageStep(ctx: Context, onPicked: () -> Unit) {
             } else {
                 Lang.importPack(ctx, text).fold(
                     onSuccess = { (id, count) ->
-                        note = L("已导入语言包 %s（%s 条译文）").format(id, count)
+                        note = L("已导入 %s（%s 条）").format(id, count)
                         listRev++
                     },
                     onFailure = { toast(ctx, L("导入失败：%s").format(it.message ?: "")) }
@@ -401,20 +503,19 @@ private fun LanguageStep(ctx: Context, onPicked: () -> Unit) {
     fun pick(id: String) {
         AppCore.prefs.appLang = id
         Lang.init(ctx, id, Lang.systemIsEnglish)
-        sel = id
+        selected = id
         onPicked()   // 让外层整块重建，语言立刻生效
     }
 
-    val choices = remember(listRev, sel) { Lang.languageChoices() }
+    val choices = remember(listRev, selected) { Lang.languageChoices() }
 
     CardGroup(
         rows = choices.map { (id, name) ->
             RowSpec(
                 title = name,
-                subtitle = if (id == "system") L("系统不是中文就用英文") else null,
                 onClick = { pick(id) },
                 trailing = {
-                    if (sel == id) {
+                    if (selected == id) {
                         Icon(
                             Icons.Filled.Check,
                             contentDescription = L("使用中"),
@@ -451,8 +552,8 @@ private fun LanguageStep(ctx: Context, onPicked: () -> Unit) {
 /**
  * 拿到 root / Shizuku 之后顺手能授的那几项。
  *
- * 只做**静默能搞定**的：能授就授，授不了（比如设备没 root 也没 Shizuku）就什么都不做，
- * 让用户自己去点对应的那一行。真正的授权动作在 [autoGrant]。
+ * 只做**静默能搞定**的：能授就授，授不了（设备没 root 也没 Shizuku）就什么都不做，
+ * 让用户自己去点对应那一行。真正的授权动作在 [autoGrant]。
  */
 @Composable
 private fun PermissionStep(
@@ -471,18 +572,16 @@ private fun PermissionStep(
     // 已经为哪个后端（root / shizuku）跑过自动授权了 —— 同一个后端不重复跑
     var grantedFor by remember { mutableStateOf<String?>(null) }
 
-    // 拿到了特权后端就尝试自动打开下面那几项
+    // 拿到了特权后端就把下面能静默开的权限打开
     LaunchedEffect(privileged?.id) {
         val id = privileged?.id ?: return@LaunchedEffect
         if (grantedFor == id) return@LaunchedEffect
         grantedFor = id
         val done = autoGrantAsync(ctx)
-        note = if (done.isEmpty()) {
-            L("%s 已就绪，下面几项自己点一下就行").format(id)
-        } else {
-            L("已用 %s 自动打开：%s").format(id, done.joinToString("、"))
+        if (done.isNotEmpty()) {
+            note = L("已自动授权：%s").format(done.joinToString("、"))
+            toast(ctx, note ?: "")
         }
-        toast(ctx, note ?: "")
         onRev()
     }
 
@@ -492,7 +591,20 @@ private fun PermissionStep(
     val notifyOk = remember(rev) { h.hasNotificationPermission() }
     val batteryOk = remember(rev) { h.isIgnoringBatteryOptimizations() }
 
-    GroupLabel(L("提权"))
+    fun askRoot() {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val r = ShellRunner().run(suLauncher!!, "id -u", timeoutMs = 120_000)
+                    r.stdout.trim() == "0"
+                }.getOrDefault(false)
+            }
+            toast(ctx, if (ok) L("Root 已授权") else L("还没拿到 Root 权限"))
+            onRev()
+        }
+    }
+
+    GroupLabel(L("高级权限"))
     CardGroup(
         listOf(
             RowSpec(
@@ -516,32 +628,14 @@ private fun PermissionStep(
             ),
             RowSpec(
                 title = L("Root"),
-                subtitle = if (rootAvailable) L("已检测到 su，点一下触发授权（Magisk 会弹窗）")
-                else L("没检测到 su：设备没 root 就跳过这一项"),
+                subtitle = if (rootAvailable) L("已检测到 su，点击触发授权")
+                else L("未检测到 su，设备未 root 时跳过这一项"),
                 subtitleMaxLines = 2,
                 icon = Icons.Filled.Warning,
-                onClick = if (rootAvailable) ({
-                    scope.launch {
-                        val ok = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val r = ShellRunner().run(suLauncher!!, "id -u", timeoutMs = 120_000)
-                                r.stdout.trim() == "0"
-                            }.getOrDefault(false)
-                        }
-                        toast(ctx, if (ok) L("Root 已授权") else L("还没拿到 Root 权限"))
-                        onRev()
-                    }
-                }) else null,
+                onClick = if (rootAvailable) ({ askRoot() }) else null,
                 trailing = {
                     PillButton(L("申请"), outlined = true, compact = true, enabled = rootAvailable) {
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                runCatching {
-                                    ShellRunner().run(suLauncher!!, "id -u", timeoutMs = 120_000)
-                                }
-                            }
-                            onRev()
-                        }
+                        askRoot()
                     }
                 }
             )
@@ -559,7 +653,7 @@ private fun PermissionStep(
         )
     }
 
-    GroupLabel(L("必需"))
+    GroupLabel(L("系统权限"))
     CardGroup(
         listOf(
             PermRow(
@@ -596,15 +690,6 @@ private fun PermissionStep(
             )
         )
     )
-
-    Spacer(Modifier.height(10.dp))
-    Text(
-        L("全是系统权限，App 自己拿不到。没 root / Shizuku 就只能一个个点过来。"),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize = 12.sp,
-        lineHeight = 18.sp,
-        modifier = Modifier.padding(horizontal = 24.dp)
-    )
 }
 
 @Composable
@@ -636,16 +721,20 @@ private fun allPermissionsReady(): Boolean {
         h.hasNotificationPermission() && h.isIgnoringBatteryOptimizations()
 }
 
-/** 现在能用的特权后端：root 优先，其次 Shizuku；都没有就 null。 */
-private fun privilegedLauncher(): CommandLauncher? =
-    ShellBackends.available().firstOrNull { it.id == "root" || it.id == "shizuku" }
+/** 现在能用的特权后端：Shizuku 优先，其次 root；都没有就 null。 */
+private fun privilegedLauncher(): CommandLauncher? {
+    val avail = ShellBackends.available()
+    // Shizuku 要「正在运行 + 已授权」才算可用，选中它不会弹任何窗口；
+    // 只有它不可用时才去碰 su（这时 Magisk 会弹一次授权框，符合「申请提权」的预期）
+    return avail.firstOrNull { it.id == "shizuku" } ?: avail.firstOrNull { it.id == "root" }
+}
 
 /**
  * 用特权后端把能静默授予的权限直接打开。
  *
  * 只有这几条命令是 shell 身份能改的：通知、悬浮窗、全部文件访问、电池白名单。
- * 返回真正成功的那些项（用来提示用户）。授不了的不报错，界面上那行还是「未授权」，
- * 用户自己点一下走系统流程即可。
+ * 返回真正成功的那些项（用来提示用户）。授不了的不报错，
+ * 界面上那行还是「未授权」，用户自己点一下走系统流程即可。
  */
 private fun autoGrant(ctx: Context): List<String> = run {
     val launcher = privilegedLauncher() ?: return emptyList()
@@ -670,7 +759,7 @@ private suspend fun autoGrantAsync(ctx: Context): List<String> =
 /* ------------------------------------------------------------------ 4 恢复备份 */
 
 /** 从备份文件里读出来的一块内容。 */
-private class RestorePart(val part: Backup.Part, val text: String)
+internal class RestorePart(val part: Backup.Part, val text: String)
 
 private fun partName(part: Backup.Part): String = when (part) {
     Backup.Part.MEMORY -> L("记忆库")
@@ -679,114 +768,37 @@ private fun partName(part: Backup.Part): String = when (part) {
 }
 
 private fun partDesc(part: Backup.Part, text: String): String = when (part) {
-    Backup.Part.MEMORY -> L("AI 的长期记忆：实体与关系")
-    Backup.Part.SETTINGS ->
-        (if (Backup.settingsHasToken(text)) L("含访问令牌") else L("不含访问令牌")) +
-            " · " + L("端口、权限、外观等设置")
-    Backup.Part.CUSTOM_TOOLS -> L("自己造的那些工具")
+    Backup.Part.MEMORY -> L("实体与关系")
+    Backup.Part.SETTINGS -> if (Backup.settingsHasToken(text)) L("含访问令牌") else L("不含访问令牌")
+    Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
 }
 
 @Composable
 private fun RestoreStep(
-    ctx: Context,
-    onRestored: () -> Unit,
-    onThemeChanged: () -> Unit,
-    onLangChanged: () -> Unit
+    parts: List<RestorePart>,
+    merge: Boolean,
+    restoring: Boolean,
+    result: String?,
+    onPick: () -> Unit,
+    onMerge: (Boolean) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
-    var parts by remember { mutableStateOf<List<RestorePart>>(emptyList()) }
-    var merge by remember { mutableStateOf(true) }
-    var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<String?>(null) }
-
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching {
-                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    when {
-                        bytes == null || bytes.isEmpty() -> emptyList()
-                        // zip：PK\x03\x04
-                        bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() ->
-                            Backup.readZip(bytes).parts.map { (p, t) -> RestorePart(p, t) }
-                        else -> {
-                            val text = bytes.toString(Charsets.UTF_8)
-                            val p = Backup.sniff(text)
-                            if (p == null) emptyList() else listOf(RestorePart(p, text))
-                        }
-                    }
-                }.getOrElse { emptyList() }
-            }
-            if (loaded.isEmpty()) {
-                toast(ctx, L("没有能识别的备份内容"))
-            } else {
-                parts = loaded
-                result = null
-            }
-        }
-    }
-
-    fun doRestore() {
-        if (parts.isEmpty() || busy) return
-        busy = true
-        scope.launch {
-            val lines = withContext(Dispatchers.IO) {
-                parts.map { rp ->
-                    // 设置这一块没有「合并」的概念，一律整份覆盖（跟备份页一致）
-                    val mode = if (merge && rp.part != Backup.Part.SETTINGS) Backup.Mode.MERGE
-                    else Backup.Mode.REPLACE
-                    runCatching {
-                        Backup.apply(
-                            part = rp.part,
-                            text = rp.text,
-                            mode = mode,
-                            restoreToken = false,
-                            settings = AppCore.prefs,
-                            memory = AppCore.memory,
-                            customTools = AppCore.customTools
-                        )
-                    }.fold(
-                        onSuccess = { L("%s：%s").format(partName(rp.part), it) },
-                        onFailure = {
-                            L("%s：失败 —— %s").format(partName(rp.part), it.message ?: "")
-                        }
-                    )
-                }
-            }
-            AppCore.config.reload()
-            AppCore.permissions.load()
-            AppCore.customTools.load()
-            AppCore.log.enabled = AppCore.config.logEnabled
-            result = lines.joinToString("\n")
-            busy = false
-            onRestored()
-            onThemeChanged()
-            onLangChanged()
-            toast(ctx, L("恢复完成"))
-        }
-    }
-
     Column(Modifier.padding(horizontal = 14.dp)) {
         CardBox {
-            Text(
-                L("选一个备份包（zip 或单独的 json 都认），看清楚了再恢复。"),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.5.sp,
-                lineHeight = 19.sp
-            )
-            Spacer(Modifier.height(12.dp))
             PillButton(
                 L("选择备份文件"),
                 Modifier.fillMaxWidth(),
                 outlined = true
-            ) { picker.launch(arrayOf("application/zip", "application/json", "text/plain", "*/*")) }
+            ) { onPick() }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                L("支持 zip 备份包或单独的 json 文件"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
         }
 
         if (parts.isNotEmpty()) {
-            GroupLabel(L("这个备份里有"))
+            GroupLabel(L("备份内容"))
             CardGroup(
                 rows = parts.map { rp ->
                     RowSpec(
@@ -797,26 +809,29 @@ private fun RestoreStep(
                 }
             )
 
-            GroupLabel(L("怎么恢复"))
+            GroupLabel(L("恢复方式"))
             CardGroup(
                 rows = listOf(
                     switchSpec(
-                        title = L("合并（不删现有的）"),
-                        subtitle = if (merge) L("备份里没有的保持原样，有的就覆盖过去")
-                        else L("按备份整份替换，现在的内容会被清掉"),
+                        title = L("合并"),
+                        subtitle = if (merge) L("保留现有内容，只写入备份里的")
+                        else L("整份替换，现有内容会被清掉"),
                         subtitleMaxLines = 2,
                         icon = Icons.Filled.Warning,
                         checked = merge
-                    ) { merge = it }
+                    ) { onMerge(it) }
                 )
             )
+        }
 
-            Spacer(Modifier.height(14.dp))
-            PillButton(
-                L("开始恢复"),
-                Modifier.fillMaxWidth(),
-                enabled = !busy
-            ) { doRestore() }
+        if (restoring) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                L("正在恢复…"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 6.dp)
+            )
         }
 
         result?.let {
@@ -830,14 +845,6 @@ private fun RestoreStep(
                 )
             }
         }
-
-        Spacer(Modifier.height(10.dp))
-        Text(
-            L("没备份过就不管这一步，直接跳过。"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 10.dp)
-        )
     }
 }
 
@@ -849,31 +856,16 @@ private fun DoneStep(rev: Int, restored: Boolean, permsAllOk: Boolean) {
 
     Column(Modifier.padding(horizontal = 14.dp)) {
         CardBox {
-            Text(
-                L("都弄好了，点下面「开始使用」进去。"),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 14.sp,
-                lineHeight = 21.sp
-            )
-            Spacer(Modifier.height(12.dp))
             InfoLine(L("界面语言"), langName)
             InfoLine(
                 L("系统权限"),
-                if (permsAllOk) L("4 项都就绪") else L("还没全授权，进去以后在首页可以继续点")
+                if (permsAllOk) L("全部就绪") else L("尚未全部授权，可稍后在首页授权")
             )
             InfoLine(
                 L("备份"),
-                if (restored) L("已经恢复过一份") else L("这次没恢复")
+                if (restored) L("已恢复") else L("未恢复")
             )
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            L("首页那个开关一打开，AI 就能连上来了。"),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
     }
 }
 
