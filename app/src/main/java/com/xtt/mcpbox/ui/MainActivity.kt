@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -156,6 +157,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/** 底栏「再点一下当前 tab」的双击窗口。单击当前格没有动作，所以放宽一点没副作用。 */
+private const val DOUBLE_TAP_MS = 600L
 
 @Composable
 fun AppRoot(
@@ -311,7 +315,14 @@ fun AppRoot(
     // 不然底栏还亮着、点了又跳走，等于给用户两条互相矛盾的出口。
     val inSettingsSubPage = tab == 4 && settingsPage.isNotEmpty()
 
+    // 「再点一下底栏当前 tab」的计数器：每次双击 +1。页面只在自己活着的时候
+    // 看到它变化才滚动（NavReselectEffect），所以切页回来不会误回顶。
     var scrollTopTick by remember { mutableStateOf(0) }
+    // 双击判定：只认「同一格、间隔 < DOUBLE_TAP_MS」的第二次点击。
+    // 切 tab 仍然是按下就响应 —— 没跟着双击改成「等超时」，
+    // 否则点任何一格都要慢半拍；单击当前格本来就什么都不做，等也不会变快。
+    var lastTapTab by remember { mutableStateOf(-1) }
+    var lastTapAt by remember { mutableStateOf(0L) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -323,8 +334,21 @@ fun AppRoot(
                 exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
             ) {
                 BottomPillNav(navItems, tab) { index ->
-                    // 点当前这一格 = 回到顶部（列表滑到最上面）
-                    if (index == tab) scrollTopTick++ else tab = index
+                    if (index != tab) {
+                        // 切页面：切走就清掉双击计数（点 A → 点 B → 再点 A 不算双击）
+                        tab = index
+                        lastTapTab = -1
+                    } else {
+                        // 当前这一格：双击才回顶（终端是回底）
+                        val now = SystemClock.uptimeMillis()
+                        if (lastTapTab == index && now - lastTapAt <= DOUBLE_TAP_MS) {
+                            scrollTopTick++
+                            lastTapTab = -1        // 一次双击只回一次
+                        } else {
+                            lastTapTab = index
+                            lastTapAt = now
+                        }
+                    }
                 }
             }
         }

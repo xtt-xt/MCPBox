@@ -72,9 +72,9 @@ fun TerminalScreen(
     LaunchedEffect(text) {
         runCatching { outScroll.scrollTo(outScroll.maxValue) }
     }
-    // 双击底栏当前 tab：回到输出区顶部
-    LaunchedEffect(scrollTopTick) {
-        if (scrollTopTick > 0) runCatching { outScroll.animateScrollTo(0) }
+    // 双击底栏「终端」：回到输出区**底部**（最新一行），跟新输出自动跟底一致
+    NavReselectEffect(scrollTopTick) {
+        runCatching { outScroll.animateScrollTo(outScroll.maxValue) }
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {

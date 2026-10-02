@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,10 +44,8 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, scrollTopTick: Int = 0, onChan
     }
     val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     val scroll = rememberScrollState()
-    // 双击底栏当前 tab：回到顶部
-    LaunchedEffect(scrollTopTick) {
-        if (scrollTopTick > 0) scroll.animateScrollTo(0)
-    }
+    // 双击底栏「日志」：回到顶部
+    NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     // 日志最多 400 条，一次全渲染会卡首帧：先渲染 60 条，快滑到底之前自动补下一批
     val shownCount = rememberPagedCount(shown.size, scroll, resetKey = filter)
 

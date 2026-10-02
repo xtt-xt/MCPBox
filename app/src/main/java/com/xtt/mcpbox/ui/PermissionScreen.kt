@@ -44,7 +44,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,10 +73,8 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
     var openPerm by remember { mutableStateOf<PermKey?>(null) }
 
     val scroll = rememberScrollState()
-    // 双击底栏当前 tab：回到顶部
-    LaunchedEffect(scrollTopTick) {
-        if (scrollTopTick > 0) scroll.animateScrollTo(0)
-    }
+    // 双击底栏「权限」：回到顶部
+    NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(
         Modifier
             .fillMaxWidth()

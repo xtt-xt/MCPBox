@@ -24,6 +24,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -965,24 +966,29 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
         )
         Box(Modifier.weight(1f)) {
             Column(
-                Modifier
-                    .fillMaxWidth()
-                    // indication = null：整格不画涟漪，视觉上只有图标那圈
-                    .clickable(
-                        interactionSource = interaction,
-                        indication = null
-                    ) { onSelect(index) }
-                    .padding(vertical = 2.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        Modifier
+            .fillMaxWidth()
+            // indication = null：整格不画涟漪（免得出现「一个框套另一个框」），
+            // 波纹改挂在下面那个图标胶囊上，仍是跟着整格的按压走
+            .clickable(
+                interactionSource = interaction,
+                indication = null
+            ) { onSelect(index) }
+            .padding(vertical = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 选中底色只包图标这一块
-                Box(
-                    Modifier
-                        .size(width = 58.dp, height = 32.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(iconBg),
-                    contentAlignment = Alignment.Center
-                ) {
+        // 选中底色只包图标这一块；涟漪也裁在这一层，超不出胶囊圆角
+        Box(
+            Modifier
+                .size(width = 58.dp, height = 32.dp)
+                .clip(RoundedCornerShape(50))
+                .background(iconBg)
+                .indication(
+                    interactionSource = interaction,
+                    indication = ripple(color = MaterialTheme.colorScheme.primary)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
                     Icon(
                         item.icon,
                         contentDescription = item.label,
@@ -1000,6 +1006,24 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
                     maxLines = 1
                 )
             }
+        }
+    }
+}
+
+/**
+ * 「再点一下底栏当前 tab」触发的滚动动作（首页 / 权限 / 日志 / 设置回顶，终端回底）。
+ *
+ * 关键在于**首帧不响应**：`remember` 记下进入组合那一刻的 tick，只有页面活着的时候
+ * tick 真的变了才执行。之前是各页写 `if (scrollTopTick > 0)`，
+ * 结果是点过一次之后那一格永远 > 0，切到任何页面（重新组合）都会被甩到顶上。
+ */
+@Composable
+fun NavReselectEffect(tick: Int, action: suspend () -> Unit) {
+    var lastHandled by remember { mutableStateOf(tick) }
+    LaunchedEffect(tick) {
+        if (tick != lastHandled) {
+            lastHandled = tick
+            action()
         }
     }
 }

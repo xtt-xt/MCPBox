@@ -50,7 +50,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -585,10 +584,8 @@ private fun SettingsHomePage(
     onOpenAbout: () -> Unit
 ) {
     val scroll = rememberScrollState()
-    // 双击底栏「设置」回顶部
-    LaunchedEffect(scrollTopTick) {
-        if (scrollTopTick > 0) scroll.animateScrollTo(0)
-    }
+    // 双击底栏「设置」：回到顶部
+    NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(
         Modifier
             .fillMaxWidth()

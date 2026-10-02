@@ -34,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,10 +62,8 @@ fun HomeScreen(
     scrollTopTick: Int = 0
 ) {
     val scroll = rememberScrollState()
-    // 双击底栏当前 tab：回到顶部
-    LaunchedEffect(scrollTopTick) {
-        if (scrollTopTick > 0) scroll.animateScrollTo(0)
-    }
+    // 双击底栏「首页」：回到顶部
+    NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(
         Modifier
             .fillMaxWidth()
