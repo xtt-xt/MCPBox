@@ -486,6 +486,7 @@ private fun DevModePage(
                     icon = Icons.Filled.Refresh,
                     onClick = {
                         AppCore.prefs.onboardDone = false
+                        OnboardingState.step = 0
                         OnboardingState.visible = true
                     }
                 )

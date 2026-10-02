@@ -55,7 +55,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +85,16 @@ import kotlinx.coroutines.withContext
  */
 object OnboardingState {
     var visible by mutableStateOf(false)
+
+    /**
+     * 当前走到第几步。
+     *
+     * **故意不放 remember / rememberSaveable**：进程被杀后重开时，
+     * 系统恢复 saved instance state 会把「上次走到第几步」一起恢复出来 ——
+     * 那时候再进引导就是从中间续上，看着像「自己往前跳了两页」。
+     * 放这里则：转屏 / 主题重建（Activity 重建）不丢，进程重开就是新的一轮。
+     */
+    var step by mutableStateOf(0)
 }
 
 /** 引导一共几步。 */
@@ -121,7 +130,10 @@ fun OnboardingScreen(
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var step by rememberSaveable { mutableStateOf(0) }
+    // 只放内存里（放在 OnboardingState 上）：进程被杀后重开必定回到第一步，
+    // 但转屏 / 换主题这种 Activity 重建不会把用户甩回开头
+    val step = OnboardingState.step
+    fun goTo(v: Int) { OnboardingState.step = v }
     // 语言一改就整块重建，否则界面上的 L(...) 还是旧语言
     var langRev by remember { mutableStateOf(0) }
     // 用来重读权限 / 设备状态（轮询 + 操作后手动 +1）
@@ -148,6 +160,7 @@ fun OnboardingScreen(
 
     fun finish() {
         AppCore.prefs.onboardDone = true
+        OnboardingState.step = 0
         OnboardingState.visible = false
         onFinish()
     }
@@ -156,11 +169,11 @@ fun OnboardingScreen(
         val now = SystemClock.uptimeMillis()
         if (now - lastAdvance < ADVANCE_GAP_MS) return
         lastAdvance = now
-        if (step < STEPS - 1) step++
+        if (step < STEPS - 1) goTo(step + 1)
     }
 
     // 系统返回 = 回上一步；第一步没得退（免得一进来就退出整个引导）
-    BackHandler { if (step > 0) step-- }
+    BackHandler { if (step > 0) goTo(step - 1) }
 
     // 第 3 步的权限状态靠系统设置改，回到 App 要能立刻看见，所以轻量轮询
     LaunchedEffect(Unit) {

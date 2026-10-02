@@ -156,27 +156,26 @@ fun HomeScreen(
             }
         }
 
-        GroupLabel(L("环境检查"))
-        CardGroup(
-            listOf(
-                healthSpec(
-                    L("文件访问权限"), host.hasAllFilesAccess(), L("AI 才能读写手机文件"),
-                    Icons.Filled.List, PermNeed.STORAGE, onPermNeed
-                ),
-                healthSpec(
-                    L("悬浮窗权限"), host.canDrawOverlays(), L("审批弹窗显示在所有应用之上"),
-                    Icons.Filled.Lock, PermNeed.OVERLAY, onPermNeed
-                ),
-                healthSpec(
-                    L("通知权限"), host.hasNotificationPermission(), L("显示运行状态与审批提醒"),
-                    Icons.Filled.Notifications, PermNeed.NOTIFICATION, onPermNeed
-                ),
-                healthSpec(
-                    L("忽略电池优化"), host.isIgnoringBatteryOptimizations(), L("防止后台被系统清掉"),
-                    Icons.Filled.Warning, PermNeed.BATTERY, onPermNeed
-                )
-            )
+        // 环境检查只列**还没拿到的**：哪项缺就显示哪项，全齐了这一组直接消失。
+        // （状态跟着上面那个每秒刷新一次的 status 一起重算，从系统设置回来后不会留着旧行）
+        val healthRows = listOfNotNull(
+            if (!host.hasAllFilesAccess())
+                healthSpec(L("文件访问权限"), L("AI 才能读写手机文件"), Icons.Filled.List, PermNeed.STORAGE, onPermNeed)
+            else null,
+            if (!host.canDrawOverlays())
+                healthSpec(L("悬浮窗权限"), L("审批弹窗显示在所有应用之上"), Icons.Filled.Lock, PermNeed.OVERLAY, onPermNeed)
+            else null,
+            if (!host.hasNotificationPermission())
+                healthSpec(L("通知权限"), L("显示运行状态与审批提醒"), Icons.Filled.Notifications, PermNeed.NOTIFICATION, onPermNeed)
+            else null,
+            if (!host.isIgnoringBatteryOptimizations())
+                healthSpec(L("忽略电池优化"), L("防止后台被系统清掉"), Icons.Filled.Warning, PermNeed.BATTERY, onPermNeed)
+            else null
         )
+        if (healthRows.isNotEmpty()) {
+            GroupLabel(L("环境检查"))
+            CardGroup(healthRows)
+        }
 
         GroupLabel(L("运行统计"))
         CardColumn {
@@ -263,25 +262,20 @@ private fun PendingCard(req: ApprovalRequest) {
     }
 }
 
-/** 环境检查的一行（状态用右侧标签/按钮表达，图标统一走主题色）。 */
+/** 环境检查的一行：只有「还没授权」的项才会出现在列表里，所以这行永远是待办的样子。 */
 private fun healthSpec(
     title: String,
-    ok: Boolean,
     desc: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     need: PermNeed,
     onPermNeed: (PermNeed) -> Unit
 ): RowSpec = RowSpec(
     title = title,
-    subtitle = if (ok) desc else L("%s（未授权）").format(desc),
+    subtitle = L("%s（未授权）").format(desc),
     icon = icon,
-    onClick = if (ok) null else ({ onPermNeed(need) }),
+    onClick = { onPermNeed(need) },
     trailing = {
-        if (ok) {
-            OutlineTag(L("已就绪"), MaterialTheme.colorScheme.tertiary)
-        } else {
-            PillButton(L("授权"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) { onPermNeed(need) }
-        }
+        PillButton(L("授权"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) { onPermNeed(need) }
     }
 )
 
