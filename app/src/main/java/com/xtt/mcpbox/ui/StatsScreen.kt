@@ -154,8 +154,8 @@ private fun HeatCard(snap: StatsSnapshot) {
 @Composable
 private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
     val gap = 3.dp
-    val minCell = 11.dp
-    val monthRow = 15.dp
+    val minCell = 13.dp
+    val monthRow = 18.dp
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         // 能铺满就铺满，铺不下（一年）就按最小尺寸排、横向滚动
         val fit = (maxWidth - gap * (weeks.size - 1).coerceAtLeast(0)) / weeks.size.coerceAtLeast(1)
@@ -175,14 +175,16 @@ private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
         }
 
         Row {
-            // 左边星期标签：不跟着横滑
-            Column(Modifier.padding(top = monthRow)) {
+            // 左边星期标签：不跟着横滑。字号给够 + 行高放开，别压成一横
+            Column(Modifier.width(18.dp).padding(top = monthRow)) {
                 repeat(7) { i ->
                     Box(Modifier.height(cell), contentAlignment = Alignment.CenterStart) {
                         Text(
                             if (i % 2 == 0) shortDay(L(DAY_KEYS[i])) else "",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 9.5.sp
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            maxLines = 1
                         )
                     }
                     if (i < 6) Spacer(Modifier.height(gap))
@@ -203,10 +205,12 @@ private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
                                     Text(
                                         L("%s月").format(d.monthValue),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 9.5.sp,
+                                        fontSize = 11.sp,
+                                        lineHeight = 13.sp,
+                                        fontWeight = FontWeight.Medium,
                                         maxLines = 1,
                                         softWrap = false,
-                                        modifier = Modifier.width(34.dp)
+                                        modifier = Modifier.width(44.dp)
                                     )
                                 }
                             }
@@ -246,10 +250,17 @@ private fun heatColor(level: Int): Color {
     return when (level) {
         -1 -> Color.Transparent
         0 -> empty
-        else -> lerp(empty, primary, 0.35f + 0.65f * (level - 1) / 3f)
+        // 起点给到 0.45：不然第 1 档和「没有请求」几乎分不出来
+        else -> lerp(empty, primary, 0.45f + 0.55f * (level - 1) / 3f)
     }
 }
 
+/**
+ * 图例：少 → 多 五个色块。
+ *
+ * 不在界面上写口径说明（用户明确不要那种注释）；「多少」是相对分档，
+ * 具体算法见 [heatLevel]，需要时在对话里解释。
+ */
 @Composable
 private fun HeatLegend() {
     Row(
@@ -257,19 +268,19 @@ private fun HeatLegend() {
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(L("少"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.5.sp)
+        Text(L("少"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         Spacer(Modifier.width(6.dp))
         (0..4).forEach { level ->
             Box(
                 Modifier
-                    .size(11.dp)
+                    .size(12.dp)
                     .clip(RoundedCornerShape(3.dp))
                     .background(heatColor(level))
             )
             Spacer(Modifier.width(4.dp))
         }
         Spacer(Modifier.width(2.dp))
-        Text(L("多"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.5.sp)
+        Text(L("多"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
     }
 }
 
