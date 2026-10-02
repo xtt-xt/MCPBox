@@ -1760,6 +1760,7 @@ object LangEn {
     "系统权限" to "System permissions",
     "开始使用" to "Start using",
     "跳过" to "Skip",
+    "已直接授权（%s）" to "Granted directly (%s)",
     "引导" to "Guide",
     "强制进入初始引导" to "Force the intro guide",
     "立刻重走一遍五步引导，并清掉「已经走过」的记录（下次打开也会进）" to "Walk through the five-step guide again right now and clear the “already done” flag (it shows up again next launch)",

@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -54,9 +55,15 @@ import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.ShizukuHelper
 import com.xtt.mcpbox.core.ApprovalRequest
 import com.xtt.mcpbox.core.LogEntry
+import com.xtt.mcpbox.core.CommandLauncher
 import com.xtt.mcpbox.core.McpServer
+import com.xtt.mcpbox.core.ShellBackends
+import com.xtt.mcpbox.core.ShellRunner
 import com.xtt.mcpbox.server.McpService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -122,7 +129,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 权限入口：**有 Shizuku / root 就先试着直接开**，开不了（或这项不能静默开）
+     * 再走原来的系统页面 / 弹窗流程。
+     *
+     * 只对不会把自己进程搞重启的那几项做静默：`appops`（悬浮窗、全部文件访问）
+     * 和电池白名单。通知是**运行时权限**——`pm grant` 会让系统把正在运行的自己杀掉重启，
+     * 所以它永远走系统弹窗。
+     */
     private fun handlePermNeed(need: PermNeed) {
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) { grantSilently(need) }
+            if (ok) {
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    L("已直接授权（%s）").format(needLabel(need)),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            openSystemPermission(need)
+        }
+    }
+
+    private fun openSystemPermission(need: PermNeed) {
         when (need) {
             PermNeed.STORAGE -> {
                 if (Build.VERSION.SDK_INT >= 30) {
@@ -434,4 +464,38 @@ fun AppRoot(
     }
     }
     }
+}
+
+/* ------------------------------------------------- 权限：能静默开就直接开 */
+
+/**
+ * 试着用特权后端（Shizuku / root）把这项权限直接开掉，返回是否成功。
+ *
+ * 只做**不会把自己进程搞重启**的那几项：appops（悬浮窗、全部文件访问）和电池白名单。
+ * 通知是运行时权限 —— `pm grant` 会让系统把正在运行的自己杀掉重启，所以永远走系统弹窗。
+ */
+private fun grantSilently(need: PermNeed): Boolean = run {
+    val launcher = privilegedLauncher() ?: return false
+    val pkg = AppCore.app.packageName
+    val cmd = when (need) {
+        PermNeed.STORAGE -> "appops set $pkg MANAGE_EXTERNAL_STORAGE allow"
+        PermNeed.OVERLAY -> "appops set $pkg SYSTEM_ALERT_WINDOW allow"
+        PermNeed.BATTERY -> "dumpsys deviceidle whitelist +$pkg"
+        PermNeed.NOTIFICATION -> return false
+    }
+    runCatching { ShellRunner().run(launcher, cmd, timeoutMs = 20_000).ok }.getOrDefault(false)
+}
+
+/** 权限的中文名（提示用）。 */
+private fun needLabel(need: PermNeed): String = when (need) {
+    PermNeed.STORAGE -> L("文件访问权限")
+    PermNeed.OVERLAY -> L("悬浮窗权限")
+    PermNeed.NOTIFICATION -> L("通知权限")
+    PermNeed.BATTERY -> L("忽略电池优化")
+}
+
+/** 现在能用的特权后端：Shizuku 优先（已授权才算可用，不会弹任何窗），其次 root。 */
+private fun privilegedLauncher(): CommandLauncher? {
+    val avail = ShellBackends.available()
+    return avail.firstOrNull { it.id == "shizuku" } ?: avail.firstOrNull { it.id == "root" }
 }
