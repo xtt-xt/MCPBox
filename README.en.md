@@ -31,6 +31,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Per-tool permissions** | Individual tools can be set to follow / allow / ask / deny; "ask" ignores the global matrix and prompts every time |
 | **Memory** | Long-term memory for the AI: entities + observations + relations (a knowledge graph), browsable and editable in the app |
 | **File gateway** | `POST /upload`, `GET /download`, plus an upload web page you can open in the phone's browser (multi-select); add `&extract=1` / `&zip=1` to move a **whole folder in one request** (zip, one approval) |
+| **Static site hosting** | Open `http://127.0.0.1:8720/web/` in a browser to preview any web build on the phone: the path is relative to the primary root (e.g. `/web/xtt/web/flat-ui/index.html`), with a directory index, Range and ETag support. **Read-only and token-free** (a page's CSS/JS cannot carry the token); turn on "Localhost only" if you do not want it exposed |
 | **Private app dirs** | Read/write `/data/data/<package>` in three modes (off / read-only / read-write), forwarded through root |
 | **UI automation** | Screenshot + read the UI tree (nodes & coordinates) + tap / swipe / type (incl. CJK) / key press / launch apps / wait for elements. Needs Shizuku or root |
 | **Built-in browser** | The app ships its own WebView: the AI can open pages, read text and interactive elements, click / fill forms / scroll / wait, run JS, screenshot pages, keep several tabs, search across platforms, save pages to files and manage cookies / User-Agent. **No Root or Shizuku needed.** While tabs are open a floating ball appears; tap it to watch the page, switch tabs, pause the AI or take over yourself |
@@ -259,6 +260,25 @@ curl -o back.apk \
 Uploads go through the write permission and downloads through the read permission, so both still
 prompt. Opening `http://127.0.0.1:8720/upload` in the phone's browser gives you a small upload page
 (pick a file, type a path).
+
+## Static site hosting
+
+Drop a web build anywhere on the phone and open it in a browser - no cable, no server:
+
+```
+http://127.0.0.1:8720/            ->  the site list (also linked from the web console)
+http://127.0.0.1:8720/web/xtt/web/flat-ui/index.html
+```
+
+- Paths are relative to the **primary root**: `/web/a/b.html` is `<primary root>/a/b.html`.
+  A directory returns an index page, and an `index.html` inside it is marked as the entry page.
+- **Read-only**: there is no PUT / DELETE. Writing files still goes through `/upload` (with approval).
+- **No token**: a page's CSS / JS sub-resources cannot carry `?token=`, so this route is public
+  read-only - anyone who can reach port 8720 can read these files. Turn on **"Localhost only"** in
+  Settings if that is not what you want, and keep private files out of the primary root.
+- Single-file limit is 32MB (a preview reads it into memory); use `/download` for anything bigger.
+- Permission rule: only a **"deny"** on `fs.read` blocks it ("ask" does not prompt - a single page
+  has dozens of sub-resources and per-file approvals would make it unusable).
 
 ## Private app directories
 

@@ -2097,6 +2097,111 @@ fun main() {
         permissions.setSwitch(PermKey.BROWSER, PermAction.ASK)
     }
 
+    println("\n[54] 静态站点托管（/web，只读 + 免令牌）")
+    run {
+        // 一个站点：入口页 + 静态资源 + 子目录 + 一个超过上限的大文件
+        val site = File(root, "site")
+        File(site, "sub").mkdirs()
+        File(site, "index.html").writeText("<!doctype html><title>站点</title><p>HELLO-SITE</p>")
+        File(site, "app.js").writeText("console.log('hi');\n")
+        File(site, "sub/page.html").writeText("<p>SUB-PAGE</p>")
+        val big = File(site, "big.bin")
+        java.io.RandomAccessFile(big, "rw").use { it.setLength(WebSites.MAX_FILE_BYTES + 1) }
+
+        // ① 不收令牌就能取到文件（页面里的 CSS/JS 没法带 token，这就是这个路由的立身之本）
+        val idx = http("GET", "$base/web/site/index.html")
+        check("静态站点：不带令牌也能打开页面", idx.code == 200 && idx.body.contains("HELLO-SITE"), "code=${idx.code}")
+        check(
+            "静态站点：html 的 Content-Type 正确",
+            idx.headers["Content-Type"]?.firstOrNull()?.startsWith("text/html") == true,
+            idx.headers["Content-Type"]?.toString() ?: "无"
+        )
+        val js = http("GET", "$base/web/site/app.js")
+        check(
+            "静态站点：js 的 Content-Type 正确",
+            js.code == 200 && js.headers["Content-Type"]?.firstOrNull()?.startsWith("text/javascript") == true,
+            js.headers["Content-Type"]?.toString() ?: "无"
+        )
+
+        // ② 目录索引页
+        val list = http("GET", "$base/web/site/")
+        check(
+            "静态站点：目录给索引页，列出子目录与文件",
+            list.code == 200 && list.body.contains("app.js") && list.body.contains("sub/"),
+            "code=${list.code}"
+        )
+        check("静态站点：索引页把 index.html 标成入口", list.body.contains("这个目录的入口页"))
+        val rootList = http("GET", "$base/web")
+        check(
+            "静态站点：/web 就是主根目录的索引",
+            rootList.code == 200 && rootList.body.contains("site/"),
+            "code=${rootList.code}"
+        )
+        val subList = http("GET", "$base/web/site/sub/")
+        check("静态站点：子目录能列出内容", subList.code == 200 && subList.body.contains("page.html"))
+
+        // ③ 越权 / 不存在 / 只读
+        val escape = http("GET", "$base/web/%2e%2e/%2e%2e/etc/passwd")
+        check("静态站点：越权路径被拒", escape.code == 403 || escape.code == 404, "code=${escape.code}")
+        check("静态站点：越权时没有漏出文件内容", !escape.body.contains("root:"))
+        val missing = http("GET", "$base/web/site/nope.html")
+        check("静态站点：不存在的文件 404", missing.code == 404, "code=${missing.code}")
+        val post = http("POST", "$base/web/site/index.html", "x")
+        check("静态站点：只读（POST 被拒）", post.code == 405, "code=${post.code}")
+
+        // ④ Range / ETag / HEAD
+        val ranged = http("GET", "$base/web/site/app.js", null, mapOf("Range" to "bytes=0-6"))
+        check(
+            "静态站点：Range 请求返回 206 且只给这一段",
+            ranged.code == 206 && ranged.body == "console",
+            "code=${ranged.code} body=${ranged.body.take(20)}"
+        )
+        check(
+            "静态站点：Content-Range 正确",
+            ranged.headers["Content-Range"]?.firstOrNull() == "bytes 0-6/${File(site, "app.js").length()}",
+            ranged.headers["Content-Range"]?.toString() ?: "无"
+        )
+        val etag = idx.headers["ETag"]?.firstOrNull()
+        check("静态站点：响应带 ETag", etag != null, "无 ETag")
+        if (etag != null) {
+            val cached = http("GET", "$base/web/site/index.html", null, mapOf("If-None-Match" to etag))
+            check("静态站点：带 If-None-Match 时返回 304", cached.code == 304, "code=${cached.code}")
+        }
+        val head = http("HEAD", "$base/web/site/index.html")
+        check("静态站点：HEAD 返回 200 且没有正文", head.code == 200 && head.body.isEmpty(), "code=${head.code}")
+
+        // ⑤ 32MB 上限（稀疏文件，不真占盘）
+        val tooBig = http("GET", "$base/web/site/big.bin")
+        check("静态站点：超过 32MB 的文件给 413 并提示改用 /download", tooBig.code == 413, "code=${tooBig.code}")
+
+        // ⑥ 纯函数：MIME 表 / 大小 / 链接编码 / 前缀判定
+        check("静态站点：woff2 认成字体", WebSites.mimeOf("a.woff2") == "font/woff2", WebSites.mimeOf("a.woff2"))
+        check("静态站点：未知后缀兜底 octet-stream", WebSites.mimeOf("a.qqq") == "application/octet-stream")
+        check("静态站点：大小可读化", WebSites.humanSize(1536) == "1.5 KB", WebSites.humanSize(1536))
+        check(
+            "静态站点：链接会编码中文与空格",
+            WebSites.linkOf("xtt/我的 站点/index.html", false) ==
+                "/web/xtt/%E6%88%91%E7%9A%84%20%E7%AB%99%E7%82%B9/index.html",
+            WebSites.linkOf("xtt/我的 站点/index.html", false)
+        )
+        check("静态站点：目录链接带结尾斜杠", WebSites.linkOf("a/b", true) == "/web/a/b/", WebSites.linkOf("a/b", true))
+        check(
+            "静态站点：只有 /web 前缀归它管",
+            WebSites.owns("/web") && WebSites.owns("/web/a") &&
+                !WebSites.owns("/website") && !WebSites.owns("/download")
+        )
+
+        // ⑦ 权限总开关：只有「拒绝」能拦住它（「询问」不弹窗，否则一个页面几十个子资源没法用）
+        val before = permissions.decide(PermKey.READ, File(site, "index.html").path, null).action
+        check("静态站点：「询问」不拦静态托管", before != PermAction.DENY, before.toString())
+        permissions.setSwitch(PermKey.READ, PermAction.DENY)
+        val denied = http("GET", "$base/web/site/index.html")
+        check("静态站点：读权限设成「拒绝」后整个托管读不到", denied.code == 403, "code=${denied.code}")
+        permissions.setSwitch(PermKey.READ, before)
+        val back = http("GET", "$base/web/site/index.html")
+        check("静态站点：权限恢复后又能打开", back.code == 200, "code=${back.code}")
+    }
+
     } finally {
         server.stop()
     }

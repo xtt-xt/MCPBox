@@ -76,6 +76,9 @@ class McpServer(
     }
 
     private val gateway = FileGateway(config, sandbox, approval, log, bridge)
+
+    /** 静态站点托管：/web/<相对主根目录的路径>（只读、不收令牌，见 WebSites 的说明）。 */
+    private val sites = WebSites(config, sandbox, permissions, log, bridge)
     /** 内置工具。 */
     val builtinTools: List<ToolSpec> =
         ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
@@ -197,7 +200,12 @@ class McpServer(
         }
 
         // ② 网页密码保护：没登录就跳登录页（带 token 的程序调用不受影响）
-        if (config.consoleAuthEnabled && path != "/login" && path != "/logout" && !webAuthorized(req)) {
+        //    /web 例外：静态托管是给浏览器直接打开的，页面里的子资源带不上 token，
+        //    真要做鉴权就得引入 cookie 会话；它的口径是「只读 + 谁连得上谁看」，
+        //    不想暴露就开「仅本机访问」（那条在任何路由之前就拦掉了）。
+        if (config.consoleAuthEnabled && path != "/login" && path != "/logout" &&
+            !WebSites.owns(path) && !webAuthorized(req)
+        ) {
             return ex.respond(302, null, ByteArray(0), cors + mapOf("Location" to "/login"))
         }
 
@@ -211,6 +219,11 @@ class McpServer(
         if (path.startsWith("/sse/p/")) {
             val profile = ProfileStore.sanitize(path.removePrefix("/sse/p/"))
             return handleLegacySse(req, ex, cors, profile)
+        }
+
+        // 静态站点托管：把手机里的网页目录当网站跑（只读、不收令牌）
+        if (WebSites.owns(path)) {
+            return respondGateway(ex, cors, sites.handle(req))
         }
 
         return when (path) {

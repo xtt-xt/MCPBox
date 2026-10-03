@@ -2231,5 +2231,32 @@ object LangEn {
 
     "点页面上的东西。by=index：点 browser_content(mode=elements) 里的第 N 项（推荐，最稳）；by=text：点文字里含这个词的第一个元素；by=selector：CSS 选择器；by=point：页面绝对坐标 \"x,y\"（就是 elements 列表里给的那对数字）。点击后页面可能要加载，接着用 browser_wait 或再读一次内容。" to "Click something on the page. by=index: the Nth item from browser_content(mode=elements) (recommended, most stable); by=text: first element whose text contains it; by=selector: CSS selector; by=point: absolute page coordinates \"x,y\" (the pair shown in the elements list). The page may load afterwards - use browser_wait or read again.",
 
+    // ---------------- i18n 第十一批：静态站点托管（/web）
+
+    "静态站点" to "Static sites",
+    "MCP 文件盒 · 本地网页预览" to "MCP File Box - local web preview",
+    "静态站点只支持 GET" to "Static hosting is GET-only",
+    "这里是只读入口。要往手机里写文件请用 /upload（那条路要过审批）。" to "This is a read-only entry. To write files into the phone use /upload (that path goes through approval).",
+    "这个路径不在允许访问的范围内" to "That path is outside the allowed directories",
+    "找不到：%s" to "Not found: %s",
+    "读取权限被拒绝了" to "Read permission was denied",
+    "检查一下路径和文件名（区分大小写）。" to "Check the path and the file name (it is case-sensitive).",
+    "读不出这个路径的信息" to "Cannot read info for this path",
+    "这个文件太大了，预览只支持 32MB 以内" to "This file is too large - preview is limited to 32MB",
+    "%s 有 %s，请用 /download 取出去看。" to "%s is %s - use /download to pull it out instead.",
+    "网页预览：%s" to "Web preview: %s",
+    "网页预览 %s（分段 %s-%s）" to "Web preview %s (range %s-%s)",
+    "网页预览 %s（%s）" to "Web preview %s (%s)",
+    "列不出这个目录" to "Cannot list this directory",
+    "上一层目录" to "Parent directory",
+    "这个目录的入口页" to "Entry page of this directory",
+    "这个目录是空的" to "This directory is empty",
+    "路径相对「主根目录」，当前目录：" to "Paths are relative to the primary root. Current directory: ",
+    "点目录进去、点文件直接打开。" to "Tap a directory to go in, tap a file to open it.",
+    "这个入口不收令牌（页面里的 CSS/JS 子资源带不上 token），能连上本机服务的人都能看这些文件。不想暴露就在设置里打开「仅本机访问」。" to "This entry does not require the token (a page's CSS/JS sub-resources cannot carry it), so anyone who can reach the server can read these files. To avoid that, turn on \"Localhost only\" in Settings.",
+    "回到主根目录" to "Back to the primary root",
+    "把网页产物放进主根目录，浏览器打开 /web/ 就能预览；不收令牌，只读。" to "Drop a web build anywhere under the primary root and open /web/ in a browser to preview it; read-only and token-free.",
+    "打开站点列表" to "Open the site list",
+
     )
 }

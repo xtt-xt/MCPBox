@@ -82,6 +82,8 @@ object WebConsole {
   button { background:#7cd98f; color:#06210d; border:0; border-radius:50px; padding:10px 18px; font-size:13px; font-weight:500; cursor:pointer; }
   button.sec { background:#31313a; color:#e8e6ea; border:none; }
   button.warn { background:transparent; color:#ffb4ab; border:1px solid rgba(255,180,171,.6); }
+  a.btn { display:inline-block; background:#a8c7fa; color:#0b0b0d; border-radius:50px;
+          padding:10px 18px; font-size:13px; font-weight:600; text-decoration:none; }
   button:active { opacity:.8; }
   select, input, textarea { width:100%; background:#0d1117; color:#e6edf3; border:1px solid #30363d;
          border-radius:16px; padding:10px; font-size:13px; font-family:ui-monospace,Menlo,Consolas,monospace; }
@@ -109,6 +111,14 @@ object WebConsole {
     <div class="muted">${L("MCP 地址（HTTP）：")}<code id="ep"></code></div>
     <div class="muted">${L("允许目录：")}__ROOTS__</div>
     <div class="muted">${L("访问令牌：")}<code id="tk"></code>${L("（客户端需带 Authorization: Bearer 或 ?token=）")}</div>
+  </div>
+
+  <div class="card">
+    <h2>${L("静态站点")}</h2>
+    <div class="muted">${L("把网页产物放进主根目录，浏览器打开 /web/ 就能预览；不收令牌，只读。")}</div>
+    <div class="row" style="margin-top:12px">
+      <a class="btn" href="/web/">${L("打开站点列表")}</a>
+    </div>
   </div>
 
   <div class="card">
