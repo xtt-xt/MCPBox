@@ -518,6 +518,26 @@ object BrowserRedirects {
         runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
 }
 
+/**
+ * 两个域名算不算「同一个站」。
+ *
+ * 为什么需要它：搜索引擎的导航、翻页、广告链接都在引擎自己的域名下，
+ * 而引擎常常换域名（`www.bing.com` → `cn.bing.com`），直接 `endsWith` 会判错 ——
+ * 结果就是满屏「打开必应主页 / 图片 / 视频 / 24 小时内」，真正的结果一个都看不到。
+ *
+ * 取最后两段来比（`cn.bing.com` 与 `www.bing.com` 都是 `bing.com`）。
+ * `co.uk` 这类二级后缀会偏宽，但这里只用来剔除引擎自家链接，偏宽可以接受。
+ */
+fun sameSiteHost(a: String, b: String): Boolean {
+    if (a.isBlank() || b.isBlank()) return false
+    fun tail(host: String): String {
+        val parts = host.lowercase().trim('.').split('.').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return ""
+        return if (parts.size <= 2) parts.joinToString(".") else parts.takeLast(2).joinToString(".")
+    }
+    return tail(a) == tail(b)
+}
+
 /** 内置搜索引擎。查询词统一放在 `%s`。 */object BrowserEngines {
 
     val BUILTIN: List<SearchEngine> = listOf(
@@ -990,6 +1010,16 @@ JSON.stringify({
   }
 })()
 """
+
+    /**
+     * CSP 拒绝 eval 时的退路（必应这类站点 `script-src` 里没有 `unsafe-eval`）。
+     *
+     * 把用户代码**直接当脚本**发过去：`evaluateJavascript` 本身不受页面 CSP 限制，
+     * 而 `try { … }` 的完成值就是花括号里最后那个表达式的值，语义正好一样。
+     * 代价是拿不到结构化的错误信息，出错时以 `[js error] …` 这样的字符串回来。
+     */
+    fun userDirect(js: String): String =
+        "try {\n" + js + "\n} catch (e) {\n  (\"[js error] \" + String((e && e.message) || e));\n}\n"
 
     /** 组装：先把公共函数拼在前面。 */
     private fun prelude(): String = "$PRELUDE\n"

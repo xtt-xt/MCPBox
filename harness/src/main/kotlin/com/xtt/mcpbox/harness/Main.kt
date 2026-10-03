@@ -1914,6 +1914,23 @@ fun main() {
         check("解不出来就原样返回（百度 link?url=）",
             BrowserRedirects.unwrap("https://www.baidu.com/link?url=abc").startsWith("https://www.baidu.com/link"))
 
+        // ---- 同站判断（引擎换域名时最容易判错） ----
+        check("同站：cn.bing.com 与 www.bing.com 算同一个站",
+            sameSiteHost("cn.bing.com", "www.bing.com"))
+        check("同站：cloud.google.com 与 www.google.com 算同一个站",
+            sameSiteHost("cloud.google.com", "www.google.com"))
+        check("不同站：zhihu.com 与 bing.com", !sameSiteHost("zhihu.com", "bing.com"))
+        check("不同站：zhuanlan.zhihu.com 与 bing.com", !sameSiteHost("zhuanlan.zhihu.com", "bing.com"))
+        check("空域名不算同站", !sameSiteHost("", "bing.com") && !sameSiteHost("bing.com", ""))
+
+        // ---- 注入 JS 的另一条路（CSP 禁 eval 时用） ----
+        check("userDirect 把用户代码原样放在 try 里（不走 eval）",
+            BrowserJs.userDirect("document.title").startsWith("try {") &&
+                BrowserJs.userDirect("document.title").contains("document.title") &&
+                !BrowserJs.userDirect("document.title").contains("eval("))
+        check("userDirect 出错时回一个 [js error] 字符串",
+            BrowserJs.userDirect("x").contains("[js error]"))
+
         // ---- 页面模型 ----
         fakeBrowser.closeAll()
         config.browserMaxPages = 3

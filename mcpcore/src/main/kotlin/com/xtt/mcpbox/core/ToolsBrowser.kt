@@ -722,18 +722,29 @@ object ToolsBrowser {
         )
         try {
             val page = if (target == null) hub.resolvePage(null) else hub.resolvePage(target.id)
-            val json = hub.evalJson(page.id, BrowserJs.user(code))
-            if (json == null) ctx.fail(L("JS 执行失败：页面没有返回结果"))
-            val o = asObject(ctx, json)
-            if (!o.boolOr("ok", false)) {
-                ctx.fail(L("JS 报错：%s").format(o.str("err").orEmpty()))
-            }
-            val value = o["v"]?.let { hub.unquoteJs(it.toString()) }.orEmpty()
             val max = ctx.args.intOr("maxChars", 4000).coerceIn(100, 100_000)
-            ToolResult(
-                L("返回值：\n") +
-                    (if (value.length > max) value.take(max) + L("\n…（共 %s 字符，已截断）").format(value.length) else value)
-            )
+            val json = hub.evalJson(page.id, BrowserJs.user(code))
+            val o = json as? JsonObject
+            if (o == null || !o.boolOr("ok", false)) {
+                val err = o?.str("err").orEmpty()
+                val csp = err.contains("Content Security Policy", true) ||
+                    err.contains("unsafe-eval", true) || err.contains("EvalError", true)
+                if (!csp) ctx.fail(L("JS 报错：%s").format(err))
+                // 有些站点（必应）的 CSP 禁 eval：换一种注入方式再来一次
+                val raw = hub.engine().eval(page.id, BrowserJs.userDirect(code))
+                val text = hub.unquoteJs(raw ?: "")
+                if (text.isBlank()) ctx.fail(L("JS 执行失败：页面没有返回结果"))
+                ToolResult(
+                    L("返回值：\n") +
+                        (if (text.length > max) text.take(max) + L("\n…（共 %s 字符，已截断）").format(text.length) else text)
+                )
+            } else {
+                val value = o["v"]?.let { hub.unquoteJs(it.toString()) }.orEmpty()
+                ToolResult(
+                    L("返回值：\n") +
+                        (if (value.length > max) value.take(max) + L("\n…（共 %s 字符，已截断）").format(value.length) else value)
+                )
+            }
         } finally {
             done(hub)
         }
@@ -826,7 +837,9 @@ object ToolsBrowser {
             }
             if (wait > 0) Thread.sleep(wait.toLong())
             if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
-            val linksJson = hub.evalJson(page.id, BrowserJs.links(null, limit + 20))
+            // 多抓一些：结果页前面全是导航 / 广告链接，抓少了会被它们占满
+            val maxLinks = (limit * 8 + 40).coerceAtMost(400)
+            val linksJson = hub.evalJson(page.id, BrowserJs.links(null, maxLinks))
             val allLinks = (linksJson as? JsonObject)?.get("links")?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
             val engineHost = runCatching { java.net.URI(engine.url).host.orEmpty() }.getOrDefault("")
             // 先把跳转壳（bing ck/a、google /url、ddg /l/、知乎 link）还原成真实地址，
@@ -839,8 +852,10 @@ object ToolsBrowser {
                 val host = runCatching { java.net.URI(real).host.orEmpty() }.getOrDefault("")
                 Triple(o.str("text").orEmpty(), real, host)
             }
-            val offsite = parsed.filterNot { it.third.endsWith(engineHost) }
-            // 站外链接够多就用站外的（顶栏 / 翻页那些都是搜索引擎自己的域名）；不够就全都给
+            // 同站判断按「后两段域名」比：引擎常换域名（www.bing.com → cn.bing.com），
+            // 直接 endsWith 判错的话，导航 / 翻页 / 广告会冒充结果链接
+            val offsite = parsed.filterNot { sameSiteHost(it.third, engineHost) }
+            // 站外链接够多就用站外的；不够就全都给（免得一条都不剩）
             val useful = (if (offsite.size >= 3) offsite else parsed)
                 .distinctBy { it.second }
                 .take(limit)
