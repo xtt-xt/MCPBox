@@ -801,7 +801,9 @@ JSON.stringify({
     /** 全部链接（去重，绝对地址）。 */
     fun links(filter: String?, maxItems: Int): String = prelude() + """
 (function () {
-  var as = document.querySelectorAll('a[href]'), out = [], seen = {}, f = ${jsStr(filter)}.toLowerCase();
+  var as = document.querySelectorAll('a[href]'), out = [], seen = {};
+  var raw = ${jsStr(filter)};
+  var f = raw ? String(raw).toLowerCase() : '';
   for (var i = 0; i < as.length; i++) {
     var a = as[i];
     var href = a.href || '';

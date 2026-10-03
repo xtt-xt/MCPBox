@@ -1954,6 +1954,23 @@ fun main() {
         check("解析成 JSON 对象", hub.parseJsResult("\"{\\\"a\\\":1}\"")?.jsonObject?.get("a") != null)
         check("null 应对得上", hub.parseJsResult("null") == null)
 
+        // 注入的 JS 在 harness 里跑不了（没有 JS 引擎），只能守住「明显会崩的写法」——
+        // 之前 links 脚本就是 `${'$'}{jsStr(filter)}.toLowerCase()`，filter=null 时整段抛异常，
+        // 结果 browser_content(mode=links) 与 browser_search 的结果链接永远是空的。
+        check(
+            "links 脚本对 filter=null 有保护（回归）",
+            BrowserJs.links(null, 5).contains("var raw = null") &&
+                !BrowserJs.links(null, 5).contains("null.toLowerCase()"),
+            BrowserJs.links(null, 5).lineSequence().first { it.contains("raw") }.trim()
+        )
+        check(
+            "elements 脚本对 null filter 有保护",
+            BrowserJs.elements(true, null, 10).contains("filter ? String(filter)")
+        )
+        check("links 脚本带真实的过滤条件时也能拼对",
+            BrowserJs.links("知乎", 10).contains("\"知乎\""))
+        check("meta 脚本是自执行表达式", BrowserJs.META.contains("JSON.stringify"))
+
         // ---- 真调工具（走 HTTP + 审批矩阵） ----
         fakeBrowser.closeAll()
         permissions.setSwitch(PermKey.BROWSER, PermAction.ALLOW)
