@@ -448,7 +448,7 @@ object ToolsBrowser {
             val raw = o.str("href").orEmpty()
             if (raw.isBlank() || !raw.startsWith("http")) return@mapNotNull null
             val real = BrowserRedirects.unwrap(raw)
-            val host = runCatching { java.net.URI(real).host.orEmpty() }.getOrDefault("")
+            val host = hostOf(real)
             Triple(o.str("text").orEmpty(), real, host)
         }
         return parsed to parsed.filterNot { sameSiteHost(it.third, engineHost) }
@@ -898,7 +898,8 @@ object ToolsBrowser {
                 hub.navigateOrOpen(url).first
             }
             if (wait > 0) Thread.sleep(wait.toLong())
-            val engineHost = runCatching { java.net.URI(engine.url).host.orEmpty() }.getOrDefault("")
+            // engine.host 会先把模板里的 %s 换掉再解析（直接 URI("%s") 会抛异常 → 域名变空）
+            val engineHost = engine.host
             // 多抓一些：结果页前面全是导航 / 广告链接，抓少了会被它们占满
             val maxLinks = (limit * 8 + 40).coerceAtMost(400)
             if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
@@ -1203,7 +1204,7 @@ object ToolsBrowser {
         val maxMb = ctx.args.intOr("max_mb", 200).coerceIn(1, 4096)
         ctx.guard(
             PermKey.WRITE, target,
-            L("下载 %s → %s").format(runCatching { java.net.URI(url).host }.getOrNull() ?: url, target.name),
+            L("下载 %s → %s").format(hostOf(url).ifBlank { url }, target.name),
             url
         )
         hub.status(L("AI：下载文件"))

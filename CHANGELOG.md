@@ -43,6 +43,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - **搜索等结果真的渲染出来**：搜索结果页是流式渲染的，打开一两秒后 DOM 里常常只有顶栏（首页 / 图片 / 视频 / 翻页…）。`browser_search` 现在会**一直轮询到真的拿到结果**（站外链接够多就停；一条都没有时绝不提前收工，上限 25 秒）—— 必应带 AI 摘要的页面会先静止几秒再一次性把结果挂上去，实测打开 4 秒时 DOM 里只有 10 个顶栏链接、结果要十几秒才出现；实在拿不到时会把「页面当时有多少链接 / 元素」一并报出来
 - **搜索引擎的「同站」判断**改成按后两段域名比：引擎会换域名（`www.bing.com` 跳到 `cn.bing.com`），原来用 `endsWith` 判错，导航 / 翻页 / 广告链接冒充成了结果链接；同时结果链接从「只抓 30 条」改成按需抓（最多 400 条）再筛，避免真结果被顶栏挤掉
 - **`browser_eval` 兼容严格 CSP 的站点**：必应这类站点禁止页面里 `eval`，原来的包装方式会直接报错；现在检测到 CSP 拒绝 eval 时自动换成「把代码直接当脚本执行」（`try { … }` 的完成值语义一样，只是错误以 `[js error] …` 字符串回来）
+- **又一个真机才暴露的坑（这次是搜索为什么只给导航链接）**：搜索引擎的 URL 模板里有 `%s`，而 `java.net.URI("https://www.bing.com/search?q=%s")` 会抛 `Malformed escape pair` —— 被 `runCatching` 吞掉之后引擎域名变成空字符串，「去掉搜索引擎自己域名的链接」那一步就整个失效（空域名一律判不同站），于是 `browser_search` 把顶栏导航当成搜索结果返回。现在统一走 `SearchEngine.host` / `hostOf()`（先把占位符换掉、URI 失败再退回 `URL`），并加了回归断言
 - **修一个真机才暴露的坑**：注入的 `links` 脚本里写着 `filter.toLowerCase()`，而 `filter` 默认是 `null` —— 整段脚本抛异常，于是 `browser_content(mode=links)` 与 `browser_search` 的结果链接**永远是空的**（正文照样有，所以很容易看漏）。现在脚本对 null 做了保护，并加了回归断言（JS 在 harness 里跑不了，这类写法只能靠断言守）
 - **搜索 / 读内容**：`browser_search` 现在会**还原跳转壳**（必应 `bing.com/ck/a?u=a1…`、Google `/url?q=`、DuckDuckGo `/l/?uddg=`、知乎 `link.zhihu.com`、搜狗 `/link`），所以在必应这类页面上能真的拿到结果链接了（之前会被「去掉搜索引擎自己的域名」整批滤掉）；`browser_content` / `browser_search` / `browser_save` 默认**先自动滚到底**（滚完停在底部、不回顶 —— 回顶会把客户端流式渲染出来的内容抖掉），把「滚了才加载」的长列表、图片、评论区喂出来（`auto_scroll=false` 关掉，`scroll_rounds` 控制最多滚几屏）
 - **后台照样能用**：悬浮窗收起时窗口缩成 1×1 像素，但 WebView 仍按整屏尺寸排版（懒加载、媒体查询、元素坐标都不会错位），截图走 `View.draw`，不需要窗口真的显示在屏幕上
@@ -72,7 +73,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### 基线
 
-- 端到端测试 **556 项全绿**（新增 89 项：浏览器工具包 71、跳转壳还原 6、注入 JS 回归 4、同站判断与 CSP 退路 7、内置包清单 1；更早的 33 项见下）
+- 端到端测试 **561 项全绿**（新增 94 项：浏览器工具包 71、跳转壳还原 6、注入 JS 回归 4、同站判断与 CSP 退路 7、引擎域名与 %s 坑 5、内置包清单 1；更早的 33 项见下）
 
 </details>
 
@@ -95,6 +96,7 @@ curl -H "Authorization: Bearer <token>" \
 - **Search waits for results to actually render**: result pages stream in, so a second or two after opening the DOM often only holds the header (home / images / videos / paging). `browser_search` now **polls until it really has results** (stops as soon as there are enough off-site links; never gives up early when there are none; 25 s cap) - Bing's AI-summary pages sit still for a few seconds and then attach everything at once: at 4 s the DOM held only 10 header links and the results took over ten seconds. When nothing is found it reports how many links / elements the page had at the time
 - **"Same site" detection for search engines** now compares the last two domain labels: engines switch domains (`www.bing.com` redirects to `cn.bing.com`) and the old `endsWith` check misfired, letting nav / paging / ad links impersonate results; result links are also scraped on demand (up to 400) instead of a fixed 30, so real results are no longer crowded out by the header
 - **`browser_eval` now works on strict-CSP sites**: Bing and friends forbid page `eval`, which made the old wrapper fail outright; when a CSP eval rejection is detected the code is injected directly as a script instead (same completion-value semantics, errors come back as an `[js error] …` string)
+- **Second device-only bug (why search returned nothing but header links)**: engine URL templates contain `%s`, and `java.net.URI("https://www.bing.com/search?q=%s")` throws `Malformed escape pair`. `runCatching` swallowed it, leaving the engine host empty, which silenced the "drop the engine's own domain" filter (an empty host never matches a site) - so `browser_search` handed back the header nav as results. Everything now goes through `SearchEngine.host` / `hostOf()` (replace the placeholder first, fall back to `URL` parsing) with regression assertions
 - **Fixed a device-only bug**: the injected `links` script called `filter.toLowerCase()` while `filter` defaults to `null`, so the whole script threw and the result links of `browser_content(mode=links)` and `browser_search` were **always empty** (the body text still came back, which made it easy to miss). The script now guards null and a regression assertion was added (JS cannot run in the harness, so such patterns are guarded by assertions only)
 - **Search / reading**: `browser_search` now **unwraps redirect shells** (Bing `bing.com/ck/a?u=a1…`, Google `/url?q=`, DuckDuckGo `/l/?uddg=`, Zhihu `link.zhihu.com`, Sogou `/link`), so result links actually come back on pages like Bing (they used to be filtered out wholesale as "the engine's own domain"); `browser_content` / `browser_search` / `browser_save` now **auto-scroll to the bottom** by default so lazy lists, images and comments get loaded - and stop there, because scrolling back up makes some client-rendered pages drop what they had just rendered (`auto_scroll=false` to disable, `scroll_rounds` to cap the passes)
 - **It keeps working in the background**: when the panel is collapsed the window shrinks to 1×1 px while the WebView still lays out at full screen size (lazy loading, media queries and element coordinates stay correct); screenshots go through `View.draw`, so the window never has to be visible
@@ -124,7 +126,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### Baseline
 
-- End-to-end tests: **556 green** (+89: 71 for the browser toolkit, 6 for redirect unwrapping, 4 for injected-JS regressions, 7 for same-site detection and the CSP fallback, 1 for the built-in pack list; the earlier 33 are listed above)
+- End-to-end tests: **561 green** (+94: 71 for the browser toolkit, 6 for redirect unwrapping, 4 for injected-JS regressions, 7 for same-site detection and the CSP fallback, 5 for engine hosts and the %s trap, 1 for the built-in pack list; the earlier 33 are listed above)
 
 </details>
 

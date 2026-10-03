@@ -31,8 +31,7 @@ data class BrowserPageInfo(
     val error: String? = null
 ) {
     /** 域名（给 AI 看的一行用）。 */
-    val host: String
-        get() = runCatching { java.net.URI(url).host ?: "" }.getOrDefault("")
+    val host: String get() = hostOf(url)
 
     /** 短标签：标题优先，其次域名，最后 URL。 */
     fun label(max: Int = 60): String {
@@ -52,7 +51,23 @@ data class SearchEngine(
     /** 把查询词拼进模板。 */
     fun build(query: String): String =
         url.replace("%s", java.net.URLEncoder.encode(query.trim(), "UTF-8"))
+
+    /**
+     * 模板里的域名。
+     *
+     * **注意**：不能直接 `URI(url)` —— 模板里的 `%s` 是非法百分号转义，
+     * `java.net.URI` 会抛 `Malformed escape pair`，于是这里变成空字符串，
+     * 「去掉搜索引擎自己域名的链接」那一步就整个失效（空域名一律判不同站），
+     * 结果是搜索结果里全是顶栏导航。先把占位符换掉再解析。
+     */
+    val host: String get() = hostOf(url.replace("%s", "q"))
 }
+
+/** 尽力从一个 URL 里拿域名（URI 太严格，某些真实网址会被它拒掉，退回 URL）。 */
+fun hostOf(url: String): String =
+    runCatching { java.net.URI(url).host }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: runCatching { java.net.URL(url).host }.getOrNull()?.takeIf { it.isNotBlank() }
+        ?: ""
 
 /**
  * app 层（WebView）要实现的能力。所有方法都必须在**主线程**上被调用
@@ -302,8 +317,8 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
             }
             url = "https://$url"
         }
-        val host = runCatching { java.net.URI(url).host }.getOrNull()
-            ?: throw ToolFailure(L("网址解析不了：%s").format(url.take(80)))
+        val host = hostOf(url)
+        if (host.isBlank()) throw ToolFailure(L("网址解析不了：%s").format(url.take(80)))
         checkHost(host)
         return url
     }

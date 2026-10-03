@@ -1914,6 +1914,21 @@ fun main() {
         check("解不出来就原样返回（百度 link?url=）",
             BrowserRedirects.unwrap("https://www.baidu.com/link?url=abc").startsWith("https://www.baidu.com/link"))
 
+        // ---- 引擎域名（这是个踩过的坑） ----
+        // 模板里带 %s，直接 java.net.URI(...) 会抛 "Malformed escape pair"，
+        // 结果 engineHost 变空、「同站过滤」整个失效 → 搜索结果里全是顶栏导航。
+        check("直接 URI(模板) 会失败（坑本身）",
+            runCatching { java.net.URI("https://www.bing.com/search?q=%s").host }.isFailure)
+        check("SearchEngine.host 会把 %s 换掉再解析",
+            BrowserEngines.BUILTIN.all { it.host.isNotBlank() },
+            BrowserEngines.BUILTIN.filter { it.host.isBlank() }.map { it.id }.toString())
+        check("必应引擎的域名是 www.bing.com",
+            BrowserEngines.BUILTIN.first { it.id == "bing" }.host == "www.bing.com")
+        check("引擎域名要和真实结果页的域名同站",
+            sameSiteHost(BrowserEngines.BUILTIN.first { it.id == "bing" }.host, "cn.bing.com"))
+        check("hostOf 对畸形网址也不崩（退回 URL 解析）",
+            hostOf("https://example.com/100%") == "example.com")
+
         // ---- 同站判断（引擎换域名时最容易判错） ----
         check("同站：cn.bing.com 与 www.bing.com 算同一个站",
             sameSiteHost("cn.bing.com", "www.bing.com"))
