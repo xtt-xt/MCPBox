@@ -14,16 +14,22 @@ import java.util.Locale
  *
  *   GET /web/<相对主根目录的路径>     只读的静态文件服务（目录会给一张索引页）
  *
- * 设计取舍（都是刻意这么定的）：
- * - **不收令牌**：这是给浏览器用的入口，页面里的 CSS/JS 子资源没法带上 `?token=`，
- *   要鉴权就得引入 cookie 会话，太重。代价是「谁能连上 8720 谁就能看这些文件」——
- *   不想暴露就给服务打开设置里的「仅本机访问」，或者别把私密的东西放在主根目录下。
+ * 鉴权（这条路由和其它路由不一样的地方）：
+ * - **要令牌**，但浏览器不能只靠 `?token=`：打开一个页面会连着发几十个请求，
+ *   只有第一个（你在地址栏里敲的那个）带得上 query，页面里的 CSS / JS / 字体
+ *   是浏览器自己再去要的，只会自动带 cookie。所以做法是：
+ *   第一次带 `?token=…` 打开 → 服务端种一个会话 cookie（`Path=/web` 的 HttpOnly）
+ *   → 之后的子资源请求靠 cookie 通过。跟网页控制台登录是同一套思路。
+ * - cookie 只存在内存里，服务重启即失效；`tokenEnabled=false` 时（令牌功能关掉）
+ *   这条路由跟着放开——与 `/download` 的口径一致。
+ *
+ * 其它取舍（都是刻意这么定的）：
  * - **路径走同一个 PathSandbox**：`/web/xtt/web/flat-ui/index.html` 就是手机上的
  *   `<主根目录>/xtt/web/flat-ui/index.html`；越权路径（`../../` 之类）直接 403。
  * - **只读**：写文件仍然只能走 `/upload`（那条路要过审批）。
  * - 权限口径：**只有 `fs.read` 的「拒绝」能拦住它**，不看「询问」。一个页面会带几十个
- *   子资源，每个都弹一次审批根本没法用；而这个路由本来就是免令牌的公开只读通道，
- *   拿权限键的「拒绝」当总开关就够了。
+ *   子资源，每个都弹一次审批根本没法用；要整体关掉这条路由就用权限键的「拒绝」。
+ * - `<主根目录>/.MCPBox`（App 自己的目录，含回收站）永远不给看。
  * - 单文件上限 [MAX_FILE_BYTES]：FileBridge 没有分片读取，只能整个读进内存再发。
  */
 class WebSites(
@@ -31,7 +37,9 @@ class WebSites(
     private val sandbox: PathSandbox,
     private val permissions: PermissionStore,
     private val log: EventLog,
-    private val bridge: FileBridge
+    private val bridge: FileBridge,
+    /** 令牌校验：直接复用服务器的 `checkAuth`（Bearer / X-MCP-Token / ?token=）。 */
+    private val checkAuth: (HttpRequest) -> Boolean
 ) {
 
     companion object {
@@ -39,6 +47,12 @@ class WebSites(
 
         /** App 自己的数据目录名（回收站、内部文件都在这里）。 */
         const val APP_DIR = ".MCPBox"
+
+        /** 浏览器会话 cookie：只对 /web 生效，HttpOnly。 */
+        const val COOKIE = "mcpbox_web"
+
+        /** 会话有效期（12 小时）：够看完站点，过了要重新带一次令牌。 */
+        const val SESSION_TTL_MS = 12L * 60 * 60 * 1000
 
         /** 单个文件上限（32MB）：超过这个大小请用 /download 取出去。 */
         const val MAX_FILE_BYTES = 32L * 1024 * 1024
@@ -107,9 +121,35 @@ class WebSites(
         }
     }
 
+    /** 浏览器会话：cookie 值 → 过期时间戳（只在内存里）。 */
+    private val sessions = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     // ------------------------------------------------------------------ 入口
 
     fun handle(req: HttpRequest): FileGateway.Result {
+        // ① 鉴权：令牌（?token= / Authorization / X-MCP-Token）或上一次种下的会话 cookie
+        val byToken = checkAuth(req)
+        val cookie = req.cookie(COOKIE)
+        val sessionOk = cookie != null && (sessions[cookie] ?: 0L) > System.currentTimeMillis()
+        if (!byToken && !sessionOk) {
+            if (cookie != null) sessions.remove(cookie)
+            return needTokenPage()
+        }
+        // 令牌带来的第一次访问：种一个 cookie，后面浏览器自己发子资源就能过
+        val extra = mutableMapOf<String, String>()
+        if (byToken && !sessionOk) {
+            val sid = java.util.UUID.randomUUID().toString().replace("-", "")
+            sessions[sid] = System.currentTimeMillis() + SESSION_TTL_MS
+            extra["Set-Cookie"] =
+                "$COOKIE=$sid; Path=$PREFIX; Max-Age=${SESSION_TTL_MS / 1000}; HttpOnly; SameSite=Lax"
+        }
+
+        // ② 剩下的响应统一带上 Set-Cookie
+        val result = route(req)
+        return if (extra.isEmpty()) result else result.copy(headers = result.headers + extra)
+    }
+
+    private fun route(req: HttpRequest): FileGateway.Result {
         if (req.method != "GET" && req.method != "HEAD") {
             return page(
                 405, L("静态站点只支持 GET"),
@@ -129,7 +169,7 @@ class WebSites(
             )
         }
         val stat = bridge.stat(target) ?: return page(500, L("读不出这个路径的信息"), target.path)
-        // App 自己的数据目录（回收站等）不挂在这条免令牌的路由后面
+        // App 自己的数据目录（回收站等）不挂在这条路由后面
         if (isAppInternal(target)) {
             return page(
                 403, L("这个目录不给看"),
@@ -278,7 +318,7 @@ class WebSites(
   <div class="hint">
     ${L("路径相对「主根目录」，当前目录：")}<code>${htmlEscape(here)}</code><br>
     ${L("点目录进去、点文件直接打开。")}<br>
-    ${L("这个入口不收令牌（页面里的 CSS/JS 子资源带不上 token），能连上本机服务的人都能看这些文件。不想暴露就在设置里打开「仅本机访问」。")}
+    ${L("这条路由要访问令牌：地址里带一次 ?token=… 就会种下会话 cookie，之后的子资源由浏览器自动带上（会话 12 小时，服务重启即失效）。")}
   </div>
 </main>
 """
@@ -299,6 +339,27 @@ class WebSites(
     }
 
     // ------------------------------------------------------------------ 小件
+
+    /** 没带令牌时给的说明页：教怎么把令牌带上，但**不会**把令牌漏给未授权的人。 */
+    private fun needTokenPage(): FileGateway.Result {
+        val body = """
+<header><h1>${L("这个入口要访问令牌")}</h1><div class="muted">/web</div></header>
+<main>
+  <div class="card">
+    <div>${L("在地址后面加上 ?token=你的令牌 就能打开，例如：")}</div>
+    <div class="crumb" style="margin-top:8px"><code>/web/?token=…</code></div>
+  </div>
+  <div class="hint">
+    ${L("令牌在 App 首页的「连接信息」里，也可以点「复制地址」拿带令牌的地址。")}<br>
+    ${L("从网页控制台的「静态站点」卡片点进来则不用手输令牌。")}
+  </div>
+</main>
+"""
+        return FileGateway.Result(
+            401, "text/html; charset=utf-8", shell(body).toByteArray(Charsets.UTF_8),
+            mapOf("WWW-Authenticate" to "Bearer")
+        )
+    }
 
     private fun page(status: Int, title: String, detail: String): FileGateway.Result {
         val body = """

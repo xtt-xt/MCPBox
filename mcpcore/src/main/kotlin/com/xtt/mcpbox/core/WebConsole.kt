@@ -9,8 +9,13 @@ object WebConsole {
     fun html(config: Config, server: McpServer): String {
         val token = if (config.tokenEnabled) config.token else ""
         val roots = config.roots.joinToString(" / ")
+        // 静态站点入口：带上令牌，点一下就去 /web/，顺带把会话 cookie 种下来
+        val webEntry =
+            if (token.isEmpty()) "/web/"
+            else "/web/?token=" + java.net.URLEncoder.encode(token, "UTF-8")
         return TEMPLATE
             .replace("__TOKEN__", token)
+            .replace("__WEB__", webEntry)
             .replace("__ROOTS__", roots)
             .replace("__VERSION__", ServerMeta.version)
             .replace("__PORT__", config.port.toString())
@@ -115,9 +120,9 @@ object WebConsole {
 
   <div class="card">
     <h2>${L("静态站点")}</h2>
-    <div class="muted">${L("把网页产物放进主根目录，浏览器打开 /web/ 就能预览；不收令牌，只读。")}</div>
+    <div class="muted">${L("把网页产物放进主根目录，浏览器打开 /web/ 就能预览；只读，要访问令牌。")}</div>
     <div class="row" style="margin-top:12px">
-      <a class="btn" href="/web/">${L("打开站点列表")}</a>
+      <a class="btn" href="__WEB__">${L("打开站点列表")}</a>
     </div>
   </div>
 

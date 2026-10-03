@@ -2097,8 +2097,10 @@ fun main() {
         permissions.setSwitch(PermKey.BROWSER, PermAction.ASK)
     }
 
-    println("\n[54] 静态站点托管（/web，只读 + 免令牌）")
+    println("\n[54] 静态站点托管（/web，只读 + 要令牌）")
     run {
+        // 带令牌访问：静态托管现在要令牌，第一次带 ?token= 会种下会话 cookie
+        fun webUrl(p: String) = "$base/web$p?token=testtoken123"
         // 一个站点：入口页 + 静态资源 + 子目录 + 一个超过上限的大文件
         val site = File(root, "site")
         File(site, "sub").mkdirs()
@@ -2108,15 +2110,40 @@ fun main() {
         val big = File(site, "big.bin")
         java.io.RandomAccessFile(big, "rw").use { it.setLength(WebSites.MAX_FILE_BYTES + 1) }
 
-        // ① 不收令牌就能取到文件（页面里的 CSS/JS 没法带 token，这就是这个路由的立身之本）
-        val idx = http("GET", "$base/web/site/index.html")
-        check("静态站点：不带令牌也能打开页面", idx.code == 200 && idx.body.contains("HELLO-SITE"), "code=${idx.code}")
+        // ① 鉴权：不带令牌 401；带令牌 200 并种下会话 cookie；之后的子资源靠 cookie 通过
+        //   （浏览器打开页面时，CSS/JS 是它自己去要的，带不上地址栏里的 ?token=）
+        val noToken = http("GET", "$base/web/site/index.html")
+        check("静态站点：不带令牌是 401", noToken.code == 401, "code=${noToken.code}")
+        check("静态站点：401 页面里没有文件内容", !noToken.body.contains("HELLO-SITE"))
+        check("静态站点：401 页面教怎么带令牌", noToken.body.contains("这个入口要访问令牌"))
+        val idx = http("GET", webUrl("/site/index.html"))
+        check("静态站点：带令牌能打开页面", idx.code == 200 && idx.body.contains("HELLO-SITE"), "code=${idx.code}")
         check(
             "静态站点：html 的 Content-Type 正确",
             idx.headers["Content-Type"]?.firstOrNull()?.startsWith("text/html") == true,
             idx.headers["Content-Type"]?.toString() ?: "无"
         )
-        val js = http("GET", "$base/web/site/app.js")
+        val sid = idx.headers["Set-Cookie"]?.firstOrNull()
+            ?.substringAfter("${WebSites.COOKIE}=", "")?.substringBefore(";")
+        check("静态站点：带令牌的响应会种下会话 cookie", !sid.isNullOrEmpty(), sid ?: "无 Set-Cookie")
+        val byCookie = http(
+            "GET", "$base/web/site/app.js", null, mapOf("Cookie" to "${WebSites.COOKIE}=$sid")
+        )
+        check(
+            "静态站点：cookie 能让子资源（不带 token）通过",
+            byCookie.code == 200 && byCookie.body.contains("console.log"),
+            "code=${byCookie.code}"
+        )
+        val badCookie = http(
+            "GET", "$base/web/site/app.js", null, mapOf("Cookie" to "${WebSites.COOKIE}=nope")
+        )
+        check("静态站点：乱编的 cookie 过不去", badCookie.code == 401, "code=${badCookie.code}")
+        val headerToken = http(
+            "GET", "$base/web/site/index.html", null, mapOf("X-MCP-Token" to "testtoken123")
+        )
+        check("静态站点：请求头里的令牌也认", headerToken.code == 200, "code=${headerToken.code}")
+        check("静态站点：cookie 只发给 /web", (idx.headers["Set-Cookie"]?.firstOrNull() ?: "").contains("Path=/web"))
+        val js = http("GET", webUrl("/site/app.js"))
         check(
             "静态站点：js 的 Content-Type 正确",
             js.code == 200 && js.headers["Content-Type"]?.firstOrNull()?.startsWith("text/javascript") == true,
@@ -2124,33 +2151,33 @@ fun main() {
         )
 
         // ② 目录索引页
-        val list = http("GET", "$base/web/site/")
+        val list = http("GET", webUrl("/site/"))
         check(
             "静态站点：目录给索引页，列出子目录与文件",
             list.code == 200 && list.body.contains("app.js") && list.body.contains("sub/"),
             "code=${list.code}"
         )
         check("静态站点：索引页把 index.html 标成入口", list.body.contains("这个目录的入口页"))
-        val rootList = http("GET", "$base/web")
+        val rootList = http("GET", webUrl(""))
         check(
             "静态站点：/web 就是主根目录的索引",
             rootList.code == 200 && rootList.body.contains("site/"),
             "code=${rootList.code}"
         )
-        val subList = http("GET", "$base/web/site/sub/")
+        val subList = http("GET", webUrl("/site/sub/"))
         check("静态站点：子目录能列出内容", subList.code == 200 && subList.body.contains("page.html"))
 
         // ③ 越权 / 不存在 / 只读
-        val escape = http("GET", "$base/web/%2e%2e/%2e%2e/etc/passwd")
+        val escape = http("GET", webUrl("/%2e%2e/%2e%2e/etc/passwd"))
         check("静态站点：越权路径被拒", escape.code == 403 || escape.code == 404, "code=${escape.code}")
         check("静态站点：越权时没有漏出文件内容", !escape.body.contains("root:"))
-        val missing = http("GET", "$base/web/site/nope.html")
+        val missing = http("GET", webUrl("/site/nope.html"))
         check("静态站点：不存在的文件 404", missing.code == 404, "code=${missing.code}")
-        val post = http("POST", "$base/web/site/index.html", "x")
+        val post = http("POST", webUrl("/site/index.html"), "x")
         check("静态站点：只读（POST 被拒）", post.code == 405, "code=${post.code}")
 
         // ④ Range / ETag / HEAD
-        val ranged = http("GET", "$base/web/site/app.js", null, mapOf("Range" to "bytes=0-6"))
+        val ranged = http("GET", webUrl("/site/app.js"), null, mapOf("Range" to "bytes=0-6"))
         check(
             "静态站点：Range 请求返回 206 且只给这一段",
             ranged.code == 206 && ranged.body == "console",
@@ -2164,14 +2191,14 @@ fun main() {
         val etag = idx.headers["ETag"]?.firstOrNull()
         check("静态站点：响应带 ETag", etag != null, "无 ETag")
         if (etag != null) {
-            val cached = http("GET", "$base/web/site/index.html", null, mapOf("If-None-Match" to etag))
+            val cached = http("GET", webUrl("/site/index.html"), null, mapOf("If-None-Match" to etag))
             check("静态站点：带 If-None-Match 时返回 304", cached.code == 304, "code=${cached.code}")
         }
-        val head = http("HEAD", "$base/web/site/index.html")
+        val head = http("HEAD", webUrl("/site/index.html"))
         check("静态站点：HEAD 返回 200 且没有正文", head.code == 200 && head.body.isEmpty(), "code=${head.code}")
 
         // ⑤ 32MB 上限（稀疏文件，不真占盘）
-        val tooBig = http("GET", "$base/web/site/big.bin")
+        val tooBig = http("GET", webUrl("/site/big.bin"))
         check("静态站点：超过 32MB 的文件给 413 并提示改用 /download", tooBig.code == 413, "code=${tooBig.code}")
 
         // ⑥ 纯函数：MIME 表 / 大小 / 链接编码 / 前缀判定
@@ -2195,20 +2222,20 @@ fun main() {
         val before = permissions.decide(PermKey.READ, File(site, "index.html").path, null).action
         check("静态站点：「询问」不拦静态托管", before != PermAction.DENY, before.toString())
         permissions.setSwitch(PermKey.READ, PermAction.DENY)
-        val denied = http("GET", "$base/web/site/index.html")
+        val denied = http("GET", webUrl("/site/index.html"))
         check("静态站点：读权限设成「拒绝」后整个托管读不到", denied.code == 403, "code=${denied.code}")
         permissions.setSwitch(PermKey.READ, before)
-        val back = http("GET", "$base/web/site/index.html")
+        val back = http("GET", webUrl("/site/index.html"))
         check("静态站点：权限恢复后又能打开", back.code == 200, "code=${back.code}")
 
         // ⑧ App 自己的目录不挂在这条免令牌的路由后面（回收站里是用户删掉的东西）
         File(root, ".MCPBox/trash").mkdirs()
         File(root, ".MCPBox/trash/secret.txt").writeText("DELETED-SECRET")
-        val internal = http("GET", "$base/web/.MCPBox/trash/secret.txt")
+        val internal = http("GET", webUrl("/.MCPBox/trash/secret.txt"))
         check("静态站点：App 自己的目录（回收站）不给看", internal.code == 403, "code=${internal.code}")
         check("静态站点：回收站内容没有漏出去", !internal.body.contains("DELETED-SECRET"))
         File(root, ".hidden.txt").writeText("hidden")
-        val fresh = http("GET", "$base/web")
+        val fresh = http("GET", webUrl(""))
         check(
             "静态站点：列表里不显示隐藏项",
             !fresh.body.contains(".hidden.txt") && !fresh.body.contains(".MCPBox"),
