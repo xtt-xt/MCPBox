@@ -37,6 +37,9 @@ class WebSites(
     companion object {
         const val PREFIX = "/web"
 
+        /** App 自己的数据目录名（回收站、内部文件都在这里）。 */
+        const val APP_DIR = ".MCPBox"
+
         /** 单个文件上限（32MB）：超过这个大小请用 /download 取出去。 */
         const val MAX_FILE_BYTES = 32L * 1024 * 1024
 
@@ -126,7 +129,21 @@ class WebSites(
             )
         }
         val stat = bridge.stat(target) ?: return page(500, L("读不出这个路径的信息"), target.path)
+        // App 自己的数据目录（回收站等）不挂在这条免令牌的路由后面
+        if (isAppInternal(target)) {
+            return page(
+                403, L("这个目录不给看"),
+                L("它是 App 自己的数据目录（里面是回收站这类东西）。")
+            )
+        }
         return if (stat.dir) indexPage(rel, target) else serveFile(req, rel, target, stat)
+    }
+
+    /** `<主根目录>/.MCPBox` 是 App 的内部目录：删掉的文件（回收站）也在里面。 */
+    private fun isAppInternal(file: File): Boolean {
+        val app = File(sandbox.primaryRoot(), APP_DIR)
+        val path = file.path
+        return path == app.path || path.startsWith(app.path + File.separator)
     }
 
     // ------------------------------------------------------------------ 文件
@@ -202,8 +219,10 @@ class WebSites(
     private fun indexPage(rel: String, dir: File): FileGateway.Result {
         val entries = bridge.listDir(dir)
             ?: return page(500, L("列不出这个目录"), dir.path)
-        val dirs = entries.filter { it.dir }.sortedBy { it.name.lowercase() }
-        val files = entries.filter { !it.dir }.sortedBy { it.name.lowercase() }
+        // 隐藏项不进列表（点对点 URL 还能用，但列表干净一点：主根目录里一堆 .xxx 是噪音）
+        val visible = entries.filter { !it.name.startsWith(".") }
+        val dirs = visible.filter { it.dir }.sortedBy { it.name.lowercase() }
+        val files = visible.filter { !it.dir }.sortedBy { it.name.lowercase() }
         val hasIndex = files.any { it.name.equals("index.html", ignoreCase = true) }
 
         val crumbs = StringBuilder()

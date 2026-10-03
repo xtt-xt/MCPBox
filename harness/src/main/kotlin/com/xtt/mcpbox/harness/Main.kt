@@ -2200,6 +2200,20 @@ fun main() {
         permissions.setSwitch(PermKey.READ, before)
         val back = http("GET", "$base/web/site/index.html")
         check("静态站点：权限恢复后又能打开", back.code == 200, "code=${back.code}")
+
+        // ⑧ App 自己的目录不挂在这条免令牌的路由后面（回收站里是用户删掉的东西）
+        File(root, ".MCPBox/trash").mkdirs()
+        File(root, ".MCPBox/trash/secret.txt").writeText("DELETED-SECRET")
+        val internal = http("GET", "$base/web/.MCPBox/trash/secret.txt")
+        check("静态站点：App 自己的目录（回收站）不给看", internal.code == 403, "code=${internal.code}")
+        check("静态站点：回收站内容没有漏出去", !internal.body.contains("DELETED-SECRET"))
+        File(root, ".hidden.txt").writeText("hidden")
+        val fresh = http("GET", "$base/web")
+        check(
+            "静态站点：列表里不显示隐藏项",
+            !fresh.body.contains(".hidden.txt") && !fresh.body.contains(".MCPBox"),
+            "code=${fresh.code}"
+        )
     }
 
     } finally {

@@ -2240,6 +2240,8 @@ object LangEn {
     "这个路径不在允许访问的范围内" to "That path is outside the allowed directories",
     "找不到：%s" to "Not found: %s",
     "读取权限被拒绝了" to "Read permission was denied",
+    "这个目录不给看" to "This directory is not served",
+    "它是 App 自己的数据目录（里面是回收站这类东西）。" to "It is the app's own data directory (it holds the recycle bin and similar).",
     "检查一下路径和文件名（区分大小写）。" to "Check the path and the file name (it is case-sensitive).",
     "读不出这个路径的信息" to "Cannot read info for this path",
     "这个文件太大了，预览只支持 32MB 以内" to "This file is too large - preview is limited to 32MB",
