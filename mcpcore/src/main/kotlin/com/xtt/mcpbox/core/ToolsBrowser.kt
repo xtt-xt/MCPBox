@@ -272,7 +272,7 @@ object ToolsBrowser {
             "text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；" +
             "elements=可交互元素列表（带序号、文字、类型、坐标 —— 看这个再决定点什么，省 token）；" +
             "links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。" +
-            "默认会**先自动滚到底再回顶**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。" +
+            "默认会**先自动滚到底**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。" +
             "长内容用 offset / maxChars 分段读。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
@@ -284,7 +284,7 @@ object ToolsBrowser {
                 "maxItems" to Schema.int("elements / links 最多列几条", 80, 1, 500),
                 "maxChars" to Schema.int("文本最多返回多少字符", 6000, 200, 200_000),
                 "offset" to Schema.int("从第几个字符开始（分段读长文），默认 0", 0, 0, 5_000_000),
-                "auto_scroll" to Schema.bool("读之前先自动滚到底再回顶（把「滚了才加载」的内容喂出来），默认 true", true),
+                "auto_scroll" to Schema.bool("读之前先自动滚到底（把「滚了才加载」的内容喂出来），默认 true", true),
                 "scroll_rounds" to Schema.int("自动最多往下滚几屏", 6, 1, 20)
             )
         )
@@ -410,10 +410,11 @@ object ToolsBrowser {
         (el as? JsonObject) ?: ctx.fail(L("页面返回的数据看不懂（多半是还没加载完，用 browser_wait 等一等）。"))
 
     /**
-     * 自动滚到底再回顶：把「滚了才加载」的内容（长列表、图片、评论区）喂出来。
+     * 自动滚到底：把「滚了才加载」的内容（长列表、图片、评论区）喂出来。
      *
-     * 一屏一屏往下走，连续两轮位置没变就认为到底了；最后回到顶部，
-     * 这样元素坐标、用户看到的画面都还是页面开头，不会让人一脸问号。
+     * 一屏一屏往下走，连续两轮位置没变就认为到底了；**滚完就停在底部**，
+     * 不回顶部 —— 有些站点（比如必应的搜索结果）是客户端流式渲染的，
+     * 滚走之后会把已经渲染好的内容撤掉，回顶反而读不到东西。
      */
     private fun autoScroll(hub: BrowserHub, pageId: String, rounds: Int) {
         val max = rounds.coerceIn(1, 20)
@@ -435,7 +436,54 @@ object ToolsBrowser {
             }
             last = pos
         }
-        hub.evalJson(pageId, BrowserJs.scroll("top", null))
+    }
+
+    /** 读一次页面链接（还原跳转壳 + 算好「站外」的那批）。 */
+    private fun readLinks(hub: BrowserHub, pageId: String, engineHost: String, maxLinks: Int):
+        Pair<List<Triple<String, String, String>>, List<Triple<String, String, String>>> {
+        val json = hub.evalJson(pageId, BrowserJs.links(null, maxLinks))
+        val all = (json as? JsonObject)?.get("links")?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+        val parsed = all.mapNotNull { el ->
+            val o = el.jsonObject
+            val raw = o.str("href").orEmpty()
+            if (raw.isBlank() || !raw.startsWith("http")) return@mapNotNull null
+            val real = BrowserRedirects.unwrap(raw)
+            val host = runCatching { java.net.URI(real).host.orEmpty() }.getOrDefault("")
+            Triple(o.str("text").orEmpty(), real, host)
+        }
+        return parsed to parsed.filterNot { sameSiteHost(it.third, engineHost) }
+    }
+
+    /**
+     * 等结果链接出现。
+     *
+     * 搜索结果页是**流式渲染**的：打开一两秒后 DOM 里常常只有顶栏（首页 / 图片 / 视频…），
+     * 真正的结果要再等一会儿。只读一次的话，AI 会拿到一堆导航链接还以为搜到了。
+     */
+    private fun waitForLinks(
+        hub: BrowserHub,
+        pageId: String,
+        engineHost: String,
+        maxLinks: Int,
+        want: Int,
+        timeoutMs: Long
+    ): Pair<List<Triple<String, String, String>>, List<Triple<String, String, String>>> {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var result = readLinks(hub, pageId, engineHost, maxLinks)
+        var stale = 0
+        while (result.second.size < want && System.currentTimeMillis() < deadline && stale < 4) {
+            Thread.sleep(500)
+            val next = readLinks(hub, pageId, engineHost, maxLinks)
+            if (next.second.size > result.second.size) {
+                // 只在「变多了」的时候替换，免得某次抽风读少了把好的覆盖掉
+                result = next
+                stale = 0
+            } else if (result.second.isNotEmpty()) {
+                // 已经有一些站外链接、而且连着两秒没再变多 → 大概就这么多了，别白等
+                stale++
+            }
+        }
+        return result
     }
 
     private class Sliced(val text: String, val note: String)
@@ -815,7 +863,7 @@ object ToolsBrowser {
                 "limit" to Schema.int("最多给几条链接", 20, 1, 60),
                 "read_text" to Schema.bool("顺便把结果页的正文也读一段给你（默认 true）", true),
                 "new_page" to Schema.bool("新开页面（false = 用当前页面导航）", true),
-                "auto_scroll" to Schema.bool("读结果前先自动滚到底再回顶（默认 true）", true),
+                "auto_scroll" to Schema.bool("读结果前先自动滚到底（默认 true）", true),
                 "wait_ms" to Schema.int("等结果加载多久（毫秒）", 1800, 0, 30_000)
             ),
             listOf("query")
@@ -836,26 +884,17 @@ object ToolsBrowser {
                 hub.navigateOrOpen(url).first
             }
             if (wait > 0) Thread.sleep(wait.toLong())
-            if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
+            val engineHost = runCatching { java.net.URI(engine.url).host.orEmpty() }.getOrDefault("")
             // 多抓一些：结果页前面全是导航 / 广告链接，抓少了会被它们占满
             val maxLinks = (limit * 8 + 40).coerceAtMost(400)
-            val linksJson = hub.evalJson(page.id, BrowserJs.links(null, maxLinks))
-            val allLinks = (linksJson as? JsonObject)?.get("links")?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-            val engineHost = runCatching { java.net.URI(engine.url).host.orEmpty() }.getOrDefault("")
-            // 先把跳转壳（bing ck/a、google /url、ddg /l/、知乎 link）还原成真实地址，
-            // 不然「去掉搜索引擎自己的域名」那一步会把结果链接全滤没。
-            val parsed = allLinks.mapNotNull { el ->
-                val o = el.jsonObject
-                val raw = o.str("href").orEmpty()
-                if (raw.isBlank() || !raw.startsWith("http")) return@mapNotNull null
-                val real = BrowserRedirects.unwrap(raw)
-                val host = runCatching { java.net.URI(real).host.orEmpty() }.getOrDefault("")
-                Triple(o.str("text").orEmpty(), real, host)
-            }
-            // 同站判断按「后两段域名」比：引擎常换域名（www.bing.com → cn.bing.com），
-            // 直接 endsWith 判错的话，导航 / 翻页 / 广告会冒充结果链接
-            val offsite = parsed.filterNot { sameSiteHost(it.third, engineHost) }
-            // 站外链接够多就用站外的；不够就全都给（免得一条都不剩）
+            if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
+            // 结果页是流式渲染的：等「站外」链接真的出现（最多 8 秒）再读，不然只会拿到顶栏
+            val (parsed, offsite) = waitForLinks(
+                hub, page.id, engineHost, maxLinks,
+                want = limit.coerceAtMost(5),
+                timeoutMs = 8_000
+            )
+            // 站外链接够多就用站外的（引擎自己的顶栏 / 翻页 / 广告都在它自己域名下）；不够就全都给
             val useful = (if (offsite.size >= 3) offsite else parsed)
                 .distinctBy { it.second }
                 .take(limit)
@@ -899,7 +938,7 @@ object ToolsBrowser {
                 "path" to Schema.str("存到哪（完整路径或目录，目录会自动用页面标题当文件名）"),
                 "format" to Schema.str("格式", "markdown", listOf("markdown", "text", "html")),
                 "page" to Schema.str("页面 id 或序号；省略 = 当前页面"),
-                "auto_scroll" to Schema.bool("存之前先自动滚到底再回顶（默认 true）", true)
+                "auto_scroll" to Schema.bool("存之前先自动滚到底（默认 true）", true)
             ),
             listOf("path")
         )
