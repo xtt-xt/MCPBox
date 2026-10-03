@@ -23,6 +23,7 @@ import com.xtt.mcpbox.core.ShellBackends
 import com.xtt.mcpbox.core.ShellEnv
 import com.xtt.mcpbox.core.StatsStore
 import com.xtt.mcpbox.core.SuLauncher
+import com.xtt.mcpbox.browser.BrowserController
 import com.xtt.mcpbox.ui.OverlayApproval
 
 /**
@@ -56,6 +57,10 @@ object AppCore {
     lateinit var stats: StatsStore
         private set
     lateinit var terminal: TerminalController
+        private set
+
+    /** 内置浏览器（WebView + 悬浮球 + 悬浮窗）。 */
+    lateinit var browser: BrowserController
         private set
 
     /** Compose 主题变化时由 MainActivity 写进来，供悬浮窗使用。 */
@@ -137,6 +142,7 @@ object AppCore {
             terminal = TerminalController(application)
             // AI 执行的命令也显示在 App 的「终端」页里
             com.xtt.mcpbox.core.ShellMirror.attach { text -> terminal.append(text) }
+            browser = BrowserController(application)
             server = McpServer(
                 config = config,
                 permissions = permissions,
@@ -148,7 +154,8 @@ object AppCore {
                 toolMeta = toolMeta,
                 packs = packs,
                 profiles = profiles,
-                stats = stats
+                stats = stats,
+                browserBridge = browser
             )
             initialized = true
         }

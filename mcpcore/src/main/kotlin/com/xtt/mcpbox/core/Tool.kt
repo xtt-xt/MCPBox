@@ -33,6 +33,8 @@ class CallContext(
     val bridge: FileBridge,
     /** 记忆库。 */
     val memory: MemoryStore,
+    /** 内置浏览器（App 里才有 WebView；harness 里可以换成假的）。 */
+    val browser: BrowserHub? = null,
     /** 内置工具文案覆盖。 */
     val toolMeta: ToolMetaStore,
     /** 当前会话（URL profile），决定哪些工具包是激活的。 */
@@ -84,6 +86,32 @@ class CallContext(
     }
 
     fun fail(message: String): Nothing = throw ToolFailure(message)
+
+    /**
+     * 和 [guard] 一样，但 `target` 是**原样的字符串**（不是文件路径）。
+     * 浏览器工具用它传 URL：审批卡片上会显示网址，将来也能按域名做规则。
+     */
+    fun guardTarget(
+        perm: PermKey,
+        target: String?,
+        summary: String,
+        detail: String? = null,
+        command: String? = null,
+        mediaType: String? = null,
+        bytes: Long? = null
+    ) {
+        approval.guard(
+            perm = perm,
+            tool = tool,
+            path = target,
+            summary = summary,
+            detail = detail,
+            client = client,
+            command = command,
+            mediaType = mediaType,
+            byteSize = bytes
+        )
+    }
 
     val sizeFormat: (Long) -> String get() = { sandbox.humanSize(it) }
 }

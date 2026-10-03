@@ -118,6 +118,8 @@ class McpService : Service() {
         stopTicker()
         releaseWakeLock()
         AppCore.overlay?.releaseAll()
+        // 服务停了：把浏览器的窗口和 WebView 一起收掉（不然会留下没人管的悬浮球）
+        runCatching { AppCore.browser.release() }
         if (AppCore.server.isRunning) AppCore.server.stop()
         isRunning = false
         NotificationHelper.cancelService(this)

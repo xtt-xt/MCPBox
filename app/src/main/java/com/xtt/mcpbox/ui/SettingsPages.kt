@@ -21,20 +21,28 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.core.ApprovalPresentation
+import com.xtt.mcpbox.core.BrowserEngines
 import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.core.McpServer
@@ -517,6 +526,284 @@ internal fun ShellSettingsPage(
                     }
                 )
             )
+        )
+    }
+}
+
+/* ------------------------------------------------------------ 浏览器 */
+
+/**
+ * 内置浏览器（工具包 browser）的设置。
+ *
+ * 页面本身不控制「开不开浏览器」—— 那是权限页里「浏览器控制」的事；
+ * 这里管的是行为：能不能碰内网、最多几个页面、搜索引擎、身份与登录态。
+ */
+@Composable
+internal fun BrowserSettingsPage(
+    revision: Int,
+    onChanged: () -> Unit,
+    onBack: () -> Unit
+) {
+    val config = AppCore.config
+    val allowLan = remember(revision) { config.browserAllowLan }
+    var maxPages by remember(revision) { mutableStateOf(config.browserMaxPages) }
+    val engines = remember(revision) { BrowserEngines.BUILTIN + BrowserEngines.custom(config) }
+    val custom = remember(revision) { BrowserEngines.custom(config) }
+    val defaultEngine = remember(revision) { config.browserDefaultEngine }
+    val ua = remember(revision) { config.browserUserAgent }
+    val pageCount = remember(revision) { runCatching { AppCore.browser.pages().size }.getOrDefault(0) }
+    val overlayOk = remember(revision) { runCatching { AppCore.browser.available() }.getOrDefault(false) }
+
+    var notice by remember { mutableStateOf("") }
+    var showAdd by remember { mutableStateOf(false) }
+    var newTitle by remember { mutableStateOf("") }
+    var newUrl by remember { mutableStateOf("") }
+    var clearWhat by remember { mutableStateOf("") }
+
+    SettingsPageShell(L("浏览器"), L("内置 WebView：内网限制、页面数、搜索引擎与登录态"), onBack) {
+        if (!overlayOk) {
+            CardGroup(
+                listOf(
+                    RowSpec(
+                        title = L("浏览器现在用不了"),
+                        subtitle = L("页面靠悬浮窗承载，需要「悬浮窗」权限：首页 → 环境检查 → 悬浮窗 → 授权"),
+                        subtitleMaxLines = 3,
+                        icon = Icons.Filled.Warning
+                    )
+                )
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+
+        GroupLabel(L("安全"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("允许访问内网地址"),
+                    subtitle = L("默认禁止 localhost / 127.0.0.1 / 192.168.x 等地址。原因：这台手机上跑着 MCP 服务器，网页脚本能访问本机就等于绕过审批"),
+                    subtitleMaxLines = 4,
+                    icon = Icons.Filled.Warning,
+                    checked = allowLan
+                ) { on ->
+                    config.browserAllowLan = on
+                    AppCore.saveConfig()
+                    onChanged()
+                }
+            )
+        )
+
+        GroupLabel(L("页面"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("最多同时打开的页面"),
+                    subtitle = L("%s 个 · 每个页面一块 WebView，很吃内存").format(maxPages),
+                    icon = Icons.Filled.List,
+                    content = {
+                        Slider(
+                            value = maxPages.toFloat(),
+                            onValueChange = { maxPages = it.toInt().coerceIn(1, 12) },
+                            onValueChangeFinished = {
+                                config.browserMaxPages = maxPages
+                                AppCore.saveConfig()
+                                onChanged()
+                            },
+                            valueRange = 1f..12f,
+                            steps = 10
+                        )
+                    }
+                ),
+                RowSpec(
+                    title = L("当前打开的页面"),
+                    subtitle = if (pageCount == 0) L("没有页面（悬浮球不显示）")
+                    else L("%s 个 · 点这里全部关掉").format(pageCount),
+                    icon = Icons.Filled.Clear,
+                    onClick = if (pageCount == 0) null else ({
+                        runCatching { AppCore.browser.closeAll() }
+                        notice = L("已关闭全部页面")
+                        onChanged()
+                    })
+                )
+            )
+        )
+
+        GroupLabel(L("搜索"))
+        CardGroup(
+            listOf(
+                dropdownSpec(
+                    title = L("默认搜索引擎"),
+                    subtitle = L("AI 调 browser_search 不指定 engine 时用它"),
+                    icon = Icons.Filled.Search,
+                    options = engines.map { it.title },
+                    selectedIndex = engines.indexOfFirst { it.id == defaultEngine }.coerceAtLeast(0)
+                ) { index ->
+                    config.browserDefaultEngine = engines.getOrNull(index)?.id ?: "bing"
+                    AppCore.saveConfig()
+                    onChanged()
+                }
+            ) + custom.map { e ->
+                RowSpec(
+                    title = e.title,
+                    subtitle = e.url,
+                    subtitleMaxLines = 1,
+                    icon = Icons.Filled.Search,
+                    trailing = {
+                        TextButton(onClick = {
+                            // 和 browser_engines 工具共用 core 里的那份数据与校验
+                            val removed = BrowserEngines.remove(config, e.id)
+                            notice = if (removed != null) L("已删除搜索引擎「%s」").format(removed.title)
+                            else L("没找到这个搜索引擎")
+                            onChanged()
+                        }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+                    }
+                )
+            } + listOf(
+                RowSpec(
+                    title = L("新增搜索引擎"),
+                    subtitle = L("模板里用 %s 表示查询词的位置，例如 https://example.com/search?q=%s"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Add,
+                    onClick = { newTitle = ""; newUrl = ""; showAdd = true }
+                )
+            )
+        )
+
+        GroupLabel(L("身份与登录态"))
+        CardGroup(
+            listOf(
+                dropdownSpec(
+                    title = L("User-Agent"),
+                    subtitle = L("桌面版能拿到完整网页，手机版更接近真实手机浏览"),
+                    icon = Icons.Filled.Share,
+                    options = listOf(L("手机版"), L("桌面版"), L("WebView 默认")),
+                    selectedIndex = when (ua.lowercase()) {
+                        "desktop" -> 1
+                        "default" -> 2
+                        else -> 0
+                    }
+                ) { index ->
+                    config.browserUserAgent = listOf("mobile", "desktop", "default")[index]
+                    AppCore.saveConfig()
+                    notice = L("改完对已打开的页面要先刷新才生效")
+                    onChanged()
+                },
+                RowSpec(
+                    title = L("清空 cookie"),
+                    subtitle = L("所有站点的登录态都会没掉"),
+                    icon = Icons.Filled.Delete,
+                    onClick = { clearWhat = "cookies" }
+                ),
+                RowSpec(
+                    title = L("清空缓存"),
+                    subtitle = L("页面缓存、表单记录、本地存储"),
+                    icon = Icons.Filled.Refresh,
+                    onClick = { clearWhat = "cache" }
+                ),
+                RowSpec(
+                    title = L("在悬浮窗里手动登录"),
+                    subtitle = L("打开任意页面 → 点悬浮球 → 直接在页面上登录；之后 AI 也能用这份登录态（注意隐私）"),
+                    subtitleMaxLines = 3,
+                    icon = Icons.Filled.Lock
+                )
+            )
+        )
+
+        if (notice.isNotBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                notice,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.5.sp,
+                modifier = Modifier.padding(horizontal = 22.dp)
+            )
+        }
+    }
+
+    if (showAdd) {
+        AlertDialog(
+            onDismissRequest = { showAdd = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            title = { Text(L("新增搜索引擎"), fontSize = 20.sp) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newTitle,
+                        onValueChange = { newTitle = it.take(20) },
+                        label = { Text(L("名字")) },
+                        singleLine = true,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = newUrl,
+                        onValueChange = { newUrl = it.take(300) },
+                        label = { Text(L("搜索链接模板（查询词写 %s）")) },
+                        singleLine = true,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val u = newUrl.trim()
+                    if (newTitle.isBlank() || !u.startsWith("http") || !u.contains("%s")) {
+                        notice = L("名字要有，模板要是网址并且带 %s（查询词插在哪）")
+                    } else {
+                        runCatching { BrowserEngines.add(config, newTitle, u) }
+                            .onSuccess {
+                                notice = L("已添加搜索引擎「%s」").format(it.title)
+                                showAdd = false
+                            }
+                            .onFailure { notice = it.message ?: L("添加失败") }
+                    }
+                    onChanged()
+                }) { Text(L("添加"), color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAdd = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
+    if (clearWhat.isNotBlank()) {
+        AlertDialog(
+            onDismissRequest = { clearWhat = "" },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+            title = {
+                Text(if (clearWhat == "cookies") L("清空 cookie") else L("清空缓存"), fontSize = 20.sp)
+            },
+            text = {
+                Text(
+                    if (clearWhat == "cookies") L("所有站点的登录态都会没掉，确定吗？")
+                    else L("会清掉页面缓存、表单记录和本地存储，确定吗？"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (clearWhat == "cookies") {
+                        runCatching { AppCore.browser.clearCookies() }
+                        notice = L("已清空 cookie")
+                    } else {
+                        runCatching { AppCore.browser.clearCache() }
+                        notice = L("已清空缓存")
+                    }
+                    clearWhat = ""
+                    onChanged()
+                }) { Text(L("确定"), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearWhat = "" }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         )
     }
 }

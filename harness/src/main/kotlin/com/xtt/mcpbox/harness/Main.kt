@@ -178,6 +178,9 @@ fun main() {
     // 统计：和 App 里一样挂在 files/stats/stats.json 上
     val statsStore = StatsStore(File(root, "stats/stats.json"))
 
+    // 浏览器：JVM 上没有 WebView，用假的引擎替上（真机上由 BrowserController 实现）
+    val fakeBrowser = FakeBrowser()
+
     val server = McpServer(
         config = config, customTools = customTools, permissions = permissions,
         approval = approval, log = log, host = null,
@@ -185,7 +188,8 @@ fun main() {
         toolMeta = ToolMetaStore(settings),
         packs = PackStore(settings),
         profiles = ProfileStore(File(root, "profiles"), config),
-        stats = statsStore
+        stats = statsStore,
+        browserBridge = fakeBrowser
     )
     // 默认会话把所有包都打开：下面大量老测试都假设「tools/list 返回全部工具」。
     // 工具包的过滤行为在 [37] 段用独立的会话单独验证。
@@ -917,9 +921,11 @@ fun main() {
 
         println("\n[36] 工具包：模型与存储")
         val ps = PackStore(settings)
-        check("内置包有 6 个", BuiltinPacks.ALL.size == 6)
+        check("内置包有 7 个", BuiltinPacks.ALL.size == 7)
         check("UI 自动化包存在且默认关", BuiltinPacks.UI.id == "ui" && !BuiltinPacks.UI.defaultActive &&
             BuiltinPacks.UI.tools.size == 8)
+        check("浏览器包存在且默认关", BuiltinPacks.BROWSER.id == "browser" &&
+            !BuiltinPacks.BROWSER.defaultActive && BuiltinPacks.BROWSER.tools.size == 18)
         check("UI 包的 8 个工具都在内置工具表里",
             BuiltinPacks.UI.tools.all { n -> server.tools.any { it.name == n } },
             BuiltinPacks.UI.tools.filterNot { n -> server.tools.any { it.name == n } }.toString())
@@ -1801,6 +1807,205 @@ fun main() {
             val single = http("POST", "$base/upload?path=xtt/gateway-regress.txt", "still-works", sessionHeaders)
             check("单文件上传仍然正常", single.code == 200 && File(root, "xtt/gateway-regress.txt").readText() == "still-works")
         }
+    println("\n[53] 浏览器工具包（内置 WebView）")
+    run {
+        val browserNames = setOf(
+            "browser_open", "browser_navigate", "browser_history", "browser_pages",
+            "browser_switch", "browser_close", "browser_content", "browser_click",
+            "browser_input", "browser_scroll", "browser_wait", "browser_eval",
+            "browser_screenshot", "browser_search", "browser_save", "browser_storage",
+            "browser_engines", "browser_download"
+        )
+        check(
+            "18 个浏览器工具都注册了",
+            browserNames.all { n -> server.tools.any { it.name == n } },
+            browserNames.filterNot { n -> server.tools.any { it.name == n } }.toString()
+        )
+        check(
+            "工具包清单与实现一致（不多不少）",
+            BuiltinPacks.BROWSER.tools.toSet() == browserNames,
+            (BuiltinPacks.BROWSER.tools.toSet() - browserNames).toString() +
+                " | " + (browserNames - BuiltinPacks.BROWSER.tools.toSet()).toString()
+        )
+        check(
+            "读类工具挂在「浏览器控制」下",
+            server.tools.filter { it.name in browserNames && it.name != "browser_save" && it.name != "browser_download" }
+                .all { it.perm == PermKey.BROWSER }
+        )
+        check("浏览器包默认不激活（省 token）", "browser" !in BuiltinPacks.defaults())
+        check("「浏览器控制」是独立开关", permissions.snapshot().containsKey("browser.control"))
+        check("「浏览器控制」默认是询问", PermKey.BROWSER.default == PermAction.ASK)
+
+        // ---- URL 规则 / 内网拦截（纯函数） ----
+        val hub = BrowserHub(config, fakeBrowser)
+        check("裸域名自动补 https", hub.normalizeUrl("example.com") == "https://example.com")
+        check("已经带协议的保持原样", hub.normalizeUrl("http://example.com/a") == "http://example.com/a")
+        check("javascript: 被拒", runCatching { hub.normalizeUrl("javascript:alert(1)") }.isFailure)
+        check("file:// 被拒", runCatching { hub.normalizeUrl("file:///sdcard/a.html") }.isFailure)
+        check("搜索词当网址填会被劝", runCatching { hub.normalizeUrl("怎么装 kotlin") }.isFailure)
+
+        check(
+            "默认拦 127.0.0.1（本机 MCP 服务器）",
+            runCatching { hub.normalizeUrl("http://127.0.0.1:8720/mcp") }.isFailure
+        )
+        check(
+            "默认拦局域网",
+            runCatching { hub.normalizeUrl("http://192.168.1.7:8080/") }.isFailure
+        )
+        check(
+            "默认拦 .local 内网名",
+            runCatching { hub.normalizeUrl("http://nas.local/") }.isFailure
+        )
+        check("公网地址照常放行", runCatching { hub.normalizeUrl("https://www.bing.com/") }.isSuccess)
+        val blockedText = runCatching { hub.normalizeUrl("http://10.0.0.5/") }.exceptionOrNull()?.message.orEmpty()
+        check("拦截文案说清了原因和开关", blockedText.contains("MCP") && blockedText.contains("设置"), blockedText.take(160))
+
+        config.browserAllowLan = true
+        check(
+            "打开「允许内网」之后放行",
+            runCatching { hub.normalizeUrl("http://192.168.1.7:8080/") }.isSuccess
+        )
+        config.browserAllowLan = false
+        check(
+            "关回去又拦上",
+            runCatching { hub.normalizeUrl("http://192.168.1.7:8080/") }.isFailure
+        )
+
+        // ---- 搜索引擎 ----
+        val (bingEngine, bingUrl) = hub.searchUrl("bing", "安卓 手机")
+        check("搜索链接拼对了", bingUrl.startsWith("https://www.bing.com/search?q="), bingUrl)
+        check("查询词做了 URL 编码", bingUrl.contains("%20") || bingUrl.contains("+"), bingUrl)
+        check("内置引擎有 9 个", BrowserEngines.BUILTIN.size == 9, BrowserEngines.BUILTIN_IDS.toString())
+        check("认不出的引擎会报错并列出可用的",
+            runCatching { hub.engineById("nope") }.exceptionOrNull()?.message?.contains("bing") == true)
+
+        val added = hub.addEngine("测试引擎", "https://x.test/s?q=%s")
+        check("自定义引擎能加", hub.engines().any { it.id == added.id })
+        check("自定义引擎写进了配置", config.browserEngines.contains("x.test"))
+        check("模板没有 %s 会被拒", runCatching { hub.addEngine("坏的", "https://x.test/s") }.isFailure)
+        check("同名不能重复加", runCatching { hub.addEngine("测试引擎", "https://x.test/s?q=%s") }.isFailure)
+        check("自定义引擎能删", hub.removeEngine(added.id).contains("已删除"))
+        check("删完就没了", hub.engines().none { it.id == added.id })
+        check("内置引擎不给删", runCatching { hub.removeEngine("bing") }.isFailure)
+
+        // ---- 页面模型 ----
+        fakeBrowser.closeAll()
+        config.browserMaxPages = 3
+        val p1 = hub.open("https://example.com/1")
+        val p2 = hub.open("https://example.com/2")
+        check("新开页面拿到 id", p1.id == "p1" && p2.id == "p2", "${p1.id} ${p2.id}")
+        check("当前页跟着最新开的走", hub.current()?.id == "p2")
+        check("按序号解析页面", hub.resolvePage("1").id == "p1")
+        check("按 id 解析页面", hub.resolvePage("p2").id == "p2")
+        check("按前缀解析页面（唯一时才行）", hub.resolvePage("p1").id == "p1")
+        check("前缀有歧义时会要求给完整 id",
+            runCatching { hub.resolvePage("p") }.exceptionOrNull()?.message?.contains("多个") == true)
+        check("找不到的页面会报错并列出全部",
+            runCatching { hub.resolvePage("zzz") }.exceptionOrNull()?.message?.contains("p1") == true)
+        check("页面列表排版带 * 标记", hub.formatPages(fakeBrowser.pages(), "p1").startsWith("* 1."))
+
+        hub.open("https://example.com/3")
+        check(
+            "超过上限会被拦住并说明去哪改",
+            runCatching { hub.open("https://example.com/4") }.exceptionOrNull()?.message?.contains("上限") == true
+        )
+        check("拦住之后没有真开出来", fakeBrowser.pages().size == 3, fakeBrowser.pages().size.toString())
+
+        fakeBrowser.pausedFlag = true
+        check("暂停时动作被拦", runCatching { hub.checkPaused() }.isFailure)
+        fakeBrowser.pausedFlag = false
+        check("继续后可以动作", runCatching { hub.checkPaused() }.isSuccess)
+
+        check(
+            "没有引擎时给的是「没接上」而不是崩溃",
+            BrowserHub(config, null).let { h -> runCatching { h.engine() }.exceptionOrNull()?.message.orEmpty() }
+                .contains("WebView")
+        )
+
+        // ---- JS 返回值解析 ----
+        check("evaluateJavascript 的引号会拆掉",
+            hub.unquoteJs("\"{\\\"a\\\":1}\"") == "{\"a\":1}")
+        check("解析成 JSON 对象", hub.parseJsResult("\"{\\\"a\\\":1}\"")?.jsonObject?.get("a") != null)
+        check("null 应对得上", hub.parseJsResult("null") == null)
+
+        // ---- 真调工具（走 HTTP + 审批矩阵） ----
+        fakeBrowser.closeAll()
+        permissions.setSwitch(PermKey.BROWSER, PermAction.ALLOW)
+
+        val (openOk, openText) = call("browser_open", """{"url":"example.com"}""")
+        check("browser_open 成功", openOk, openText.take(200))
+        check("交给引擎的是补好协议的地址", fakeBrowser.opened.last() == "https://example.com", fakeBrowser.opened.toString())
+        check("返回里带页面 id 和标题", openText.contains("[p1]") && openText.contains("示例页面"), openText.take(200))
+
+        val (elsOk, elsText) = call("browser_content", """{"mode":"elements"}""")
+        check("browser_content(elements) 成功", elsOk, elsText.take(200))
+        check("元素列表带序号和文字", elsText.contains("[0]") && elsText.contains("更多"), elsText.take(300))
+
+        val (textOk, textText) = call("browser_content", """{"mode":"text"}""")
+        check("browser_content(text) 读到正文", textOk && textText.contains("正文内容"), textText.take(200))
+
+        val (clickOk, clickText) = call("browser_click", """{"by":"index","value":"0"}""")
+        check("browser_click 成功", clickOk, clickText.take(200))
+
+        val (inputOk, inputText) = call("browser_input", """{"by":"index","value":"0","text":"hello","submit":true}""")
+        check("browser_input 成功", inputOk, inputText.take(200))
+        check("提交方式回传了", inputText.contains("form"), inputText.take(200))
+
+        val (scrollOk, scrollText) = call("browser_scroll", """{"to":"bottom"}""")
+        check("browser_scroll 成功", scrollOk && scrollText.contains("y=500"), scrollText.take(200))
+
+        val (waitOk, waitText) = call("browser_wait", """{"text":"正文内容","timeoutMs":2000}""")
+        check("browser_wait 成功", waitOk, waitText.take(200))
+
+        val (evalOk, evalText) = call("browser_eval", """{"js":"1+1"}""")
+        check("browser_eval 拿到返回值", evalOk && evalText.contains("fake-value"), evalText.take(200))
+
+        val (pagesOk, pagesText) = call("browser_pages", "{}")
+        check("browser_pages 列出页面", pagesOk && pagesText.contains("共 1 个页面"), pagesText.take(200))
+
+        val (searchOk, searchText) = call("browser_search", """{"query":"安卓 测试","engine":"bing"}""")
+        check("browser_search 成功", searchOk, searchText.take(200))
+        check("搜索页真的打开了", fakeBrowser.opened.last().startsWith("https://www.bing.com/search?q="), fakeBrowser.opened.last())
+        check("结果里带链接列表", searchText.contains("结果链接"), searchText.take(300))
+
+        val (cookieOk, cookieText) = call("browser_storage", """{"action":"get_cookies"}""")
+        check("browser_storage 能读 cookie", cookieOk && cookieText.contains("session=fake"), cookieText.take(200))
+
+        val (engOk, engText) = call("browser_engines", """{"action":"list"}""")
+        check("browser_engines 列出内置引擎", engOk && engText.contains("bing") && engText.contains("必应"), engText.take(300))
+
+        val (shotOk, shotText) = call("browser_screenshot", "{}")
+        check("截图拿不到时会说清原因（JVM 上必然失败）", !shotOk && shotText.contains("截图失败"), shotText.take(200))
+
+        val (blockedOk, blockedToolText) = call("browser_open", """{"url":"http://127.0.0.1:8720/mcp"}""")
+        check("工具层同样拦住内网", !blockedOk && blockedToolText.contains("内网"), blockedToolText.take(200))
+
+        val (closeOk, closeText) = call("browser_close", """{"page":"all"}""")
+        check("browser_close 全部关掉", closeOk && closeText.contains("已关闭全部"), closeText.take(200))
+        check("引擎里真的空了", fakeBrowser.pages().isEmpty())
+
+        // ---- 审批：默认每次都问 ----
+        permissions.setSwitch(PermKey.BROWSER, PermAction.ASK)
+        answer("打开网页", ApprovalDecision.ALLOW_ONCE)
+        val (askOk, askText) = call("browser_open", """{"url":"https://example.com/ask"}""")
+        check("默认「询问」时允许一次就能过", askOk, askText.take(200))
+
+        answer("跳转", ApprovalDecision.DENY_ONCE)
+        val (denyOk, denyText) = call("browser_navigate", """{"url":"https://example.com/nope"}""")
+        check("被拒绝时工具会失败并说明", !denyOk && denyText.contains("拒绝"), denyText.take(200))
+
+        permissions.setSwitch(PermKey.BROWSER, PermAction.ALLOW)
+        val (pauseOk, _) = call("browser_open", """{"url":"https://example.com/pause"}""")
+        check("先有个页面", pauseOk)
+        fakeBrowser.pausedFlag = true
+        val (pausedOk, pausedText) = call("browser_close", """{"page":"all"}""")
+        check("用户暂停后 AI 不能动页面", !pausedOk && pausedText.contains("暂停"), pausedText.take(200))
+        fakeBrowser.pausedFlag = false
+        fakeBrowser.closeAll()
+        config.browserMaxPages = 5
+        permissions.setSwitch(PermKey.BROWSER, PermAction.ASK)
+    }
+
     } finally {
         server.stop()
     }
@@ -2054,4 +2259,90 @@ private fun mcpSseStream(base: String, headers: Map<String, String>): String {
     }
     socket.close()
     return acc.toString()
+}
+
+/**
+ * 假的浏览器引擎：JVM 上没有 WebView，但工具链的行为（URL 规则、页面模型、审批、
+ * 排版）都能在这里跑到。真机上由 `BrowserController` 实现同一个接口。
+ *
+ * 它按注入的 JS 里出现的特征词回不同的假数据 —— 够用来验证「工具把 JS 发出去了、
+ * 又把结果排版回来了」这条链路。
+ */
+private class FakeBrowser : BrowserBridge {
+
+    val map = LinkedHashMap<String, BrowserPageInfo>()
+    var current: String? = null
+    var pausedFlag = false
+    val opened = mutableListOf<String>()
+
+    override fun available(): Boolean = true
+
+    override fun open(url: String): String {
+        val id = "p${map.size + 1}"
+        map[id] = BrowserPageInfo(id = id, url = url, title = "示例页面", loading = false)
+        current = id
+        opened.add(url)
+        return id
+    }
+
+    override fun close(id: String) {
+        map.remove(id)
+        if (current == id) current = map.keys.lastOrNull()
+    }
+
+    override fun closeAll() {
+        map.clear()
+        current = null
+    }
+
+    override fun navigate(id: String, url: String) {
+        map[id] = (map[id] ?: BrowserPageInfo(id)).copy(url = url)
+    }
+
+    override fun history(id: String, action: String) {}
+
+    override fun pages(): List<BrowserPageInfo> = map.values.toList()
+
+    override fun currentId(): String? = current
+
+    override fun switchTo(id: String) {
+        if (map.containsKey(id)) current = id
+    }
+
+    override fun screenshot(id: String): ByteArray? = null
+
+    override fun setStatus(text: String) {}
+
+    override fun paused(): Boolean = pausedFlag
+
+    override fun setPaused(value: Boolean) {
+        pausedFlag = value
+    }
+
+    override fun cookies(url: String?): String = "session=fake"
+
+    override fun eval(id: String, js: String): String {
+        val payload = when {
+            js.contains("items: MCP.list(") ->
+                """{"title":"示例页面","url":"https://example.com","items":[""" +
+                    """{"i":0,"tag":"input","type":"text","text":"","name":"q","placeholder":"搜索","x":100,"y":200,"w":80,"h":30},""" +
+                    """{"i":1,"tag":"a","type":"","text":"更多","href":"https://example.com/more","x":10,"y":40,"w":40,"h":20}]}"""
+            js.contains("links: out") ->
+                """{"url":"https://example.com","links":[{"text":"链接一","href":"https://example.com/a"}]}"""
+            js.contains("var sc = MCP.scroller()") -> """{"ok":true,"y":500,"scroller":false}"""
+            js.contains("var sel = ") -> """{"ok":true,"what":"正文内容","text":"正文内容"}"""
+            js.contains("MCP.setValue(") ->
+                """{"ok":true,"how":"form","target":{"tag":"input","name":"q"},"value":"hello"}"""
+            js.contains("MCP.click(e)") ->
+                """{"ok":true,"target":{"tag":"a","text":"更多"},"urlBefore":"https://example.com"}"""
+            js.contains("var code = ") -> """{"ok":true,"v":"fake-value"}"""
+            js.contains("outerHTML") -> "正文内容"
+            js.contains("var root = MCP.contentRoot()") -> "正文内容"
+            else ->
+                """{"title":"示例页面","url":"https://example.com","ready":"complete","loading":false,""" +
+                    """"scrollY":0,"innerHeight":800,"scrollHeight":2000,"elements":12,"links":3,"textLength":345}"""
+        }
+        // WebView 的 evaluateJavascript 会把返回值再 JSON 编码一次，text / html 这类纯字符串也一样
+        return kotlinx.serialization.json.JsonPrimitive(payload).toString()
+    }
 }

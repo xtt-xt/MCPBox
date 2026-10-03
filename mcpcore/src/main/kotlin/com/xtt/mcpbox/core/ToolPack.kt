@@ -131,7 +131,25 @@ object BuiltinPacks {
         defaultActive = false
     )
 
-    val ALL: List<ToolPack> = listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL, UI)
+    val BROWSER = ToolPack(
+        id = "browser",
+        title = "浏览器",
+        description = "内置浏览器（不需要 Root / Shizuku）：打开网页、读正文与可交互元素、" +
+            "点击 / 填表 / 滚页 / 等元素、执行 JS、网页截图、多页面管理、用各平台搜索、" +
+            "把网页存成文件、管 cookie 与 User-Agent。要上网查资料或操作网页时激活它。" +
+            "每个动作都会在手机上过一次审批。",
+        tools = listOf(
+            "browser_open", "browser_navigate", "browser_history", "browser_pages",
+            "browser_switch", "browser_close", "browser_content", "browser_click",
+            "browser_input", "browser_scroll", "browser_wait", "browser_eval",
+            "browser_screenshot", "browser_search", "browser_save", "browser_storage",
+            "browser_engines", "browser_download"
+        ),
+        builtin = true,
+        defaultActive = false
+    )
+
+    val ALL: List<ToolPack> = listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL, UI, BROWSER)
 
     fun byId(id: String): ToolPack? = ALL.firstOrNull { it.id == id }
 

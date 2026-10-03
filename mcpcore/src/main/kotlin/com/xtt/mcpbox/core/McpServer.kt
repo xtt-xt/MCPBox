@@ -51,11 +51,16 @@ class McpServer(
     /** 各会话（URL profile）的工具包激活状态。 */
     val profiles: ProfileStore = ProfileStore(null, config),
     /** 使用统计（请求次数 / 运行时长 / 启动次数）。 */
-    val stats: StatsStore = StatsStore()
+    val stats: StatsStore = StatsStore(),
+    /** 内置浏览器引擎（App 层实现 WebView；不给 = 浏览器工具一律报「没接上」）。 */
+    val browserBridge: BrowserBridge? = null
 ) {
 
     val sandbox = PathSandbox(config)
     val trash = TrashManager(sandbox)
+
+    /** 浏览器门面（URL 规整 / 内网拦截 / 搜索引擎 / 页面模型）。 */
+    val browserHub = BrowserHub(config, browserBridge)
 
     /**
      * 文件桥：应用自己读写不了的路径（别家私有目录）在 root / Shizuku 可用时自动转发。
@@ -75,7 +80,7 @@ class McpServer(
     val builtinTools: List<ToolSpec> =
         ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
             ToolsToken.specs() + ToolsMemory.specs(memory) + ToolsPacks.specs(packs, profiles) +
-            ToolsUi.specs()
+            ToolsUi.specs() + ToolsBrowser.specs()
 
     /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
     val tools: List<ToolSpec>
@@ -735,6 +740,7 @@ class McpServer(
             customTools = customTools,
             bridge = bridge,
             memory = memory,
+            browser = browserHub,
             toolMeta = toolMeta,
             profile = profile,
             packs = packs,

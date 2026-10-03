@@ -72,6 +72,12 @@ class Config(private val src: SettingsSource) {
         const val SHELL_PREFERENCE = "shell_preference"
         const val TERMINAL_BACKEND = "terminal_backend"
         const val TERMINAL_CWD = "terminal_cwd"
+        /** 浏览器工具包 */
+        const val BROWSER_ALLOW_LAN = "browser_allow_lan"
+        const val BROWSER_MAX_PAGES = "browser_max_pages"
+        const val BROWSER_ENGINES = "browser_engines_json"
+        const val BROWSER_UA = "browser_user_agent"
+        const val BROWSER_ENGINE = "browser_default_engine"
     }
 
     object Modes {
@@ -141,6 +147,21 @@ class Config(private val src: SettingsSource) {
      */
     @Volatile var profileTtlEnabled: Boolean = true
     @Volatile var profileTtlMinutes: Int = 30
+    /**
+     * 内置浏览器（工具包 `browser`）。
+     *
+     * [browserAllowLan] 默认 **false**：AI 打开的网页里跑的是别人写的脚本，而这个手机上
+     * 跑着 MCP 服务器（`/mcp` 不校验 token），默认不准碰 127.0.0.1 / 局域网。
+     */
+    @Volatile var browserAllowLan: Boolean = false
+    /** 同时最多开几个页面（WebView 很吃内存）。 */
+    @Volatile var browserMaxPages: Int = 5
+    /** 用户自建的搜索引擎（JSON 列表）。 */
+    @Volatile var browserEngines: String = ""
+    /** 浏览器身份：mobile（手机版）/ desktop（桌面版）/ default（WebView 默认）/ 自定义 UA。 */
+    @Volatile var browserUserAgent: String = "mobile"
+    /** browser_search 不指定 engine 时用哪个。 */
+    @Volatile var browserDefaultEngine: String = "bing"
     @Volatile var revision: Long = 0
 
     companion object {
@@ -188,6 +209,11 @@ class Config(private val src: SettingsSource) {
         aiPackControl = src.getBoolean(Keys.AI_PACK_CONTROL, false)
         profileTtlEnabled = src.getBoolean(Keys.PROFILE_TTL_ENABLED, true)
         profileTtlMinutes = src.getInt(Keys.PROFILE_TTL_MINUTES, 30).coerceIn(1, 1440)
+        browserAllowLan = src.getBoolean(Keys.BROWSER_ALLOW_LAN, false)
+        browserMaxPages = src.getInt(Keys.BROWSER_MAX_PAGES, 5).coerceIn(1, 12)
+        browserEngines = src.getString(Keys.BROWSER_ENGINES, "") ?: ""
+        browserUserAgent = src.getString(Keys.BROWSER_UA, "mobile") ?: "mobile"
+        browserDefaultEngine = src.getString(Keys.BROWSER_ENGINE, "bing") ?: "bing"
         revision++
     }
 
@@ -220,6 +246,11 @@ class Config(private val src: SettingsSource) {
         src.putBoolean(Keys.AI_PACK_CONTROL, aiPackControl)
         src.putBoolean(Keys.PROFILE_TTL_ENABLED, profileTtlEnabled)
         src.putInt(Keys.PROFILE_TTL_MINUTES, profileTtlMinutes)
+        src.putBoolean(Keys.BROWSER_ALLOW_LAN, browserAllowLan)
+        src.putInt(Keys.BROWSER_MAX_PAGES, browserMaxPages)
+        src.putString(Keys.BROWSER_ENGINES, browserEngines)
+        src.putString(Keys.BROWSER_UA, browserUserAgent)
+        src.putString(Keys.BROWSER_ENGINE, browserDefaultEngine)
         revision++
     }
 

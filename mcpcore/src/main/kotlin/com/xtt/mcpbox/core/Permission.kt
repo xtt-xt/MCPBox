@@ -33,6 +33,11 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
         "截屏、读界面结构、点击、滑动、输入文字（需要 Root 或 Shizuku）",
         PermAction.ASK
     ),
+    BROWSER(
+        "browser.control", "浏览器控制",
+        "打开网页、点击、填表、执行脚本、读写 cookie（默认每次动作都问）",
+        PermAction.ASK
+    ),
     TOOLS(
         "tools.manage", "自定义工具",
         "创建、修改、删除自定义工具",

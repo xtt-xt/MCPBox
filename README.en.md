@@ -21,18 +21,19 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 
 | | |
 |---|---|
-| **54 MCP tools** | File read/write/delete, search, image preview, trash, device info, shell, custom tools, token, memory import/export, tool packs, UI automation… |
-| **Tool packs** | Tools are split into 7 packs; only 22 ship enabled by default (roughly 40% of the tokens the full set would cost). Packs are your own setting — the AI never notices |
+| **72 MCP tools** | File read/write/delete, search, image preview, trash, device info, shell, custom tools, token, memory import/export, tool packs, UI automation, built-in browser… |
+| **Tool packs** | Tools are split into 8 packs; only 27 ship enabled by default (roughly 40% of the tokens the full set would cost). Packs are your own setting — the AI never notices |
 | **Session isolation** | Point a client at `/mcp/p/<name>` for an independent session with its own activation state; persist, reset or delete it |
 | **Presets** | One tap in the Permissions tab: all-allow / all-deny / all-ask / custom. Your custom set is remembered when you switch away and restored when you come back |
 | **Per-call approval** | Top-level floating popup with a notification fallback: allow once / always allow / deny / always deny; the style is switchable in Settings (overlay / notification) |
 | **No timeouts (optional)** | Both the approval timeout and the command timeout can be turned off: the popup never auto-dismisses and commands run to completion |
-| **Permission matrix** | 8 permission keys with three states (allow / ask / deny), plus path rules and command rules (prefix / exact / regex) |
+| **Permission matrix** | 9 permission keys with three states (allow / ask / deny), plus path rules and command rules (prefix / exact / regex) |
 | **Per-tool permissions** | Individual tools can be set to follow / allow / ask / deny; "ask" ignores the global matrix and prompts every time |
 | **Memory** | Long-term memory for the AI: entities + observations + relations (a knowledge graph), browsable and editable in the app |
 | **File gateway** | `POST /upload`, `GET /download`, plus an upload web page you can open in the phone's browser (multi-select); add `&extract=1` / `&zip=1` to move a **whole folder in one request** (zip, one approval) |
 | **Private app dirs** | Read/write `/data/data/<package>` in three modes (off / read-only / read-write), forwarded through root |
 | **UI automation** | Screenshot + read the UI tree (nodes & coordinates) + tap / swipe / type (incl. CJK) / key press / launch apps / wait for elements. Needs Shizuku or root |
+| **Built-in browser** | The app ships its own WebView: the AI can open pages, read text and interactive elements, click / fill forms / scroll / wait, run JS, screenshot pages, keep several tabs, search across platforms, save pages to files and manage cookies / User-Agent. **No Root or Shizuku needed.** While tabs are open a floating ball appears; tap it to watch the page, switch tabs, pause the AI or take over yourself |
 | **Auto-filled permissions** | With Root / Shizuku, opening the app silently grants the missing files / overlay / ignore-battery-optimizations permissions (via `appops` and the battery whitelist, no process restart); Home also has "fill all at once" |
 | **Built-in terminal** | Persistent shell with `cd`/`export` state kept, command history, Ctrl-C and clear |
 | **Custom tools** | Build your own MCP tools from command templates, with placeholders and JSON import/export |
@@ -73,6 +74,12 @@ Token:  the one from "Connection addresses" on the Home tab (a full URL with the
 
 **Tool packs (5)**: `list_packs` `activate_pack` `deactivate_pack` `reset_packs` (no approval; visibility only), `manage_pack` (create/update/delete custom packs; gated by the "custom tools" permission)
 
+**Built-in browser (18)**: `browser_open` `browser_navigate` `browser_history` `browser_pages` `browser_switch` `browser_close` `browser_content` `browser_click` `browser_input` `browser_scroll` `browser_wait` `browser_eval` `browser_screenshot` `browser_search` `browser_save` `browser_storage` `browser_engines` `browser_download`
+(Pages run inside the app's WebView, so **no Root or Shizuku needed**. Intranet and localhost URLs are
+blocked by default so that page scripts cannot reach the MCP port on the device. While tabs are open a
+floating ball appears: tap it to watch the page, switch tabs, pause the AI or take over by hand. Its
+cookies live in MCPBox only and are separate from your system browser.)
+
 **Memory (10)**: `create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
 
 ## Permission model
@@ -85,6 +92,7 @@ Token:  the one from "Connection addresses" on the Home tab (a full URL with the
 | `shell.exec` | ask | Running commands (commands you type in the terminal yourself excluded) |
 | `tools.manage` | ask | Creating / updating / deleting custom tools |
 | `ui.control` | ask | Screen control: screenshot, read UI tree, tap, swipe, type (needs Root / Shizuku) |
+| `browser.control` | ask | Browser: open pages, click, fill forms, run scripts, read/write cookies (asks **every time** by default) |
 | `system.info` | allow | Device info, storage info, fetching the token |
 | `memory` | allow | Memory reads/writes (turn the master switch off and the memory tools disappear from `tools/list`) |
 
@@ -174,8 +182,8 @@ Settings → **Statistics**. Everything here is an ever-growing, never-reset rec
 
 ## Tool packs
 
-Tool definitions are re-sent to the model on **every single turn**. All 54 tools add up to roughly 26k
-characters (≈6500 tokens at ~4 characters per token); twenty turns means 130k — and most turns don't need
+Tool definitions are re-sent to the model on **every single turn**. All 72 tools add up to roughly 36k
+characters (≈9000 tokens at ~4 characters per token); twenty turns means 180k — and most turns don't need
 nearly that many.
 
 So tools are split into packs, and `tools/list` only returns those in the **core pack plus the active
@@ -189,9 +197,10 @@ packs**:
 | `file.write` | 9 | off |
 | `shell` | 8 | off |
 | `ui` | 8 | off |
+| `browser` | 18 | off |
 | `my.tools` | dynamic | off |
 
-The 22 tools enabled out of the box cost well under half of shipping everything.
+The 27 tools enabled out of the box are about 40% of shipping everything.
 
 Packs are **your own long-lived setting**: tick them under "Permissions → Tool packs" and the AI simply
 uses whatever it sees. It has no idea packs exist — zero friction, and no wasted turns. You can also
@@ -333,6 +342,7 @@ git tag v1.1.0 && git push origin v1.1.0
 app/                          Android app (Compose UI + service + floating overlay)
   src/main/java/com/xtt/mcpbox/
     ui/                       Screens: home / terminal / permissions / logs / settings / tools / memory
+    browser/BrowserController.kt  Built-in browser: WebView + floating ball + draggable window
     server/                   Foreground service, approval receiver, boot autostart
     AndroidHost.kt            Device info, notifications and other system capabilities
     ShizukuShell.kt           Shizuku process launcher
@@ -347,6 +357,8 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   Memory.kt                   Memory: entities + observations + relations, atomic graph.json
   ToolPack.kt                 Tool packs: built-in definitions and custom pack storage
   ToolsUi.kt                  UI automation: screenshot / view tree / tap / swipe / input
+  ToolsBrowser.kt             Browser toolkit: 18 `browser_*` tools
+  Browser.kt                  Browser core: URL rules / intranet blocking / search engines / injected JS
   ProfileStore.kt             Sessions (URL profiles): activation state + TTL, atomic writes
   ToolsPacks.kt / ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
 harness/                      End-to-end tests

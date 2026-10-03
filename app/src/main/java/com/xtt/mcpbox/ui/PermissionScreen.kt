@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -409,6 +410,7 @@ private fun permIcon(key: PermKey): ImageVector = when (key) {
     PermKey.DELETE -> Icons.Filled.Delete
     PermKey.SHELL -> Icons.Filled.Build
     PermKey.UI -> Icons.Filled.PlayArrow
+    PermKey.BROWSER -> Icons.Filled.Search
     PermKey.TOOLS -> Icons.Filled.Refresh
     PermKey.SYSTEM -> Icons.Filled.Info
     PermKey.MEMORY -> Icons.Filled.Star

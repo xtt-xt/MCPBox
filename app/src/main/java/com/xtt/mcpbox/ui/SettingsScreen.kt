@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
@@ -178,6 +179,11 @@ fun SettingsScreen(
                     onBack = back
                 )
                 "shell" -> ShellSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "browser" -> BrowserSettingsPage(
                     revision = revision,
                     onChanged = onChanged,
                     onBack = back
@@ -621,7 +627,12 @@ private fun SettingsHomePage(
                     L("终端与命令"),
                     L("命令后端优先级、命令规则、默认超时"),
                     Icons.Filled.Build
-                ) { onPage("shell") }
+                ) { onPage("shell") },
+                entrySpec(
+                    L("浏览器"),
+                    L("内置 WebView：内网限制、页面数、搜索引擎、cookie 与 User-Agent"),
+                    Icons.Filled.Search
+                ) { onPage("browser") }
             )
         )
 

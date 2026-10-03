@@ -34,6 +34,18 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 | **进入 App 自动补齐权限** | 有 Root / Shizuku 时，打开 App（包括刚从系统设置页回来）自动把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉 —— 走 `appops` 与电池白名单，**不会重启进程**。首页「环境检查」多一行「一键补齐」，一次把缺的都开掉并报出结果；设置 → 后台与运行里可以关掉自动（默认开） |
 | **审批方式可选** | 设置 → 安全与审批 → 审批方式：「悬浮窗」（默认，浮在所有应用之上，没有悬浮窗权限时自动退回通知栏）或「通知栏」（只发带「允许一次 / 始终允许 / 拒绝」按钮的通知，不弹悬浮窗）。改完立刻生效，不用重启服务器；同时来多条审批时各占一条通知，互不顶掉 |
 | **整目录一次传** | 文件网关支持压缩包模式：`POST /upload?path=目录&extract=1`（body 是 zip → 解压到该目录）、`GET /download?path=目录&zip=1`（目录打成 zip 一次取走）。**一个请求 = 一次审批**，所以传一整个文件夹不再弹 N 次窗；解压前先校验（条目数 / 解压后总大小 / 拒绝 `../` 这类危险条目），有问题时一个文件都不写；浏览器上传页也支持多选与「这是压缩包」勾选框 |
+| **内置浏览器（工具包 `browser`）** | App 自带一个 WebView，AI 可以：打开 / 跳转 / 前进后退刷新网页、读正文（text / markdown / 原始 HTML / meta）、读可交互元素（带序号和坐标）、按序号 / 文字 / 选择器 / 坐标点击、填表单（input / textarea / 下拉 / 勾选，自动派发 input + change）、滚动、等元素出现、执行 JS、网页截图、多页面管理、用各平台搜索（必应 / 百度 / Google / DuckDuckGo / 知乎 / 微博 / B站 / GitHub / 维基 + 自定义）、把网页存成 md / txt / html、管 cookie 与 User-Agent、按链接下载文件。**不需要 Root / Shizuku**。AI 一打开页面，手机上就出现一个悬浮球：点开是可拖动、可缩放的悬浮窗，能在里面看当前页、切页面、手动接管，还有「暂停 AI / 继续」「关闭本页」「全部关闭」 |
+
+### 关于浏览器
+
+- **权限**：新增独立权限键「浏览器控制」，默认**询问** —— 每个浏览器动作都会弹一次审批。嫌烦可以把它设成允许，或在弹窗上点「始终允许」
+- **安全**：默认禁止访问 localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local` 这类内网地址 —— 这台手机上跑着 MCP 服务器（`/mcp` 端点不校验 token），网页里的脚本能碰本机就等于绕过审批。要放开：设置 → 浏览器 → 允许访问内网地址
+- **后台照样能用**：悬浮窗收起时窗口缩成 1×1 像素，但 WebView 仍按整屏尺寸排版（懒加载、媒体查询、元素坐标都不会错位），截图走 `View.draw`，不需要窗口真的显示在屏幕上
+- **登录态**：cookie 存在 App 自己的数据里，和系统浏览器完全隔离；用户可以点悬浮球在自己眼前登录，之后 AI 能复用这份登录态（`browser_storage` 读得到 —— 注意隐私），也可以随时清空
+- **页面数上限**默认 5（设置 → 浏览器里可调 1~12），每个页面一块 WebView，很吃内存
+- 「暂停 AI」期间，AI 的浏览器动作会被直接拒绝并提示等待，等用户点「继续」再继续
+- 设置 → 浏览器：允许访问内网、最多页面数、默认搜索引擎、自定义搜索引擎增删、User-Agent（手机 / 桌面 / 默认）、清 cookie / 清缓存
+- 悬浮球可拖动、松手贴边半收；轻点展开 / 收起；面板本身也能拖，右下角可以缩放，尺寸与位置都记在偏好里
 
 ### 说明
 
@@ -55,7 +67,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### 基线
 
-- 端到端测试 **467 项全绿**（新增 33 项：自动补齐 13、审批方式 7、整目录传 13）
+- 端到端测试 **539 项全绿**（新增 72 项：浏览器工具包 71、内置包清单 1；更早的 33 项见下）
 
 </details>
 
@@ -69,6 +81,18 @@ curl -H "Authorization: Bearer <token>" \
 | **Auto-fill permissions on launch** | With Root / Shizuku, opening the app (including coming back from a system settings page) silently grants the missing *files / overlay / ignore-battery-optimizations* permissions via `appops` and the battery whitelist — **no process restart**. The home screen's environment check gained a "fill all at once" row, and Settings → Background & runtime can turn the automatic pass off (on by default) |
 | **Selectable approval style** | Settings → Security & approval → Approval style: *overlay* (default — floats above every app, falls back to a notification without the overlay permission) or *notification* (a notification with Allow once / Always allow / Deny buttons, no overlay). Takes effect immediately, no server restart; concurrent requests each get their own notification |
 | **Whole folders in one request** | The file gateway gained an archive mode: `POST /upload?path=<dir>&extract=1` (body is a zip → extracted into that folder) and `GET /download?path=<dir>&zip=1` (folder packed into a zip and streamed back). **One request = one approval**, so moving a folder no longer asks N times; the archive is validated first (entry count, extracted size, `../` entries rejected) and nothing is written when it fails. The browser upload page supports multi-select and an "this is an archive" checkbox |
+| **Built-in browser (tool pack `browser`)** | The app ships its own WebView, so the AI can open / navigate / go back-forward-reload pages, read text (plain / Markdown / raw HTML / meta), read interactive elements (with indices and coordinates), click by index / text / selector / coordinates, fill forms (input / textarea / select / checkbox, firing input + change), scroll, wait for elements, run JS, screenshot a page, manage several tabs, search across platforms (Bing / Baidu / Google / DuckDuckGo / Zhihu / Weibo / Bilibili / GitHub / Wikipedia plus your own), save pages as md / txt / html, manage cookies and User-Agent and download a URL. **No Root or Shizuku needed.** As soon as the AI opens a page a floating ball appears; tap it for a draggable, resizable window where you can watch the page, switch tabs, take over by hand, or hit *Pause AI* / *Resume*, *Close tab*, *Close all* |
+
+### About the browser
+
+- **Permission**: a new key, *browser control*, defaults to **ask** — every browser action prompts once. Set it to allow, or hit *Always allow* in the popup, if that is too chatty
+- **Security**: intranet addresses (localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local`) are blocked by default — this phone runs the MCP server and `/mcp` does not check the token, so a page script reaching the device would bypass approvals. To allow it: Settings → Browser → Allow intranet addresses
+- **It keeps working in the background**: when the panel is collapsed the window shrinks to 1×1 px while the WebView still lays out at full screen size (lazy loading, media queries and element coordinates stay correct); screenshots go through `View.draw`, so the window never has to be visible
+- **Login state**: cookies live in the app's own data, fully separate from your system browser. The user can sign in from the floating window and the AI reuses that session (`browser_storage` can read it — mind the privacy), or wipe it at any time
+- **Tab limit** defaults to 5 (1–12 in Settings → Browser); each tab is a WebView and costs memory
+- While *Pause AI* is on, browser actions are rejected with a note to wait until the user hits *Resume*
+- Settings → Browser: intranet access, max tabs, default search engine, add/remove custom engines, User-Agent (mobile / desktop / default), clear cookies / cache
+- The ball can be dragged and snaps half off the edge; tapping expands or collapses the panel, which can also be dragged and resized from its bottom-right corner; size and position are remembered
 
 ### Notes
 
@@ -90,7 +114,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### Baseline
 
-- End-to-end tests: **467 green** (+33: 13 auto-fill, 7 approval style, 13 whole-folder transfer)
+- End-to-end tests: **539 green** (+72: 71 for the browser toolkit, 1 for the built-in pack list; the earlier 33 are listed above)
 
 </details>
 

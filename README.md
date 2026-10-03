@@ -21,18 +21,19 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 | | |
 |---|---|
-| **54 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库导入导出、工具包、UI 自动化… |
-| **工具包** | 工具分 7 个包，出厂默认只带 22 个（比全量少带约六成 token）；包由你在 App 里配置，AI 无感 |
+| **72 个 MCP 工具** | 文件读写删、搜索、图片预览、回收站、设备信息、执行命令、自定义工具、令牌、记忆库导入导出、工具包、UI 自动化、内置浏览器… |
+| **工具包** | 工具分 8 个包，出厂默认只带 27 个（比全量少带约六成 token）；包由你在 App 里配置，AI 无感 |
 | **会话隔离** | 客户端地址填 `/mcp/p/<名字>` 就是独立会话，各有各的激活状态，可持久化 / 重置 / 删除 |
 | **预设会话** | 权限页一键切换「全部允许 / 全部拒绝 / 全部询问 / 自定义」；切走时自动记住你的自定义设置，切回来原样恢复 |
 | **逐次审批** | 顶层悬浮窗 + 通知栏兜底，支持「允许一次 / 始终允许 / 拒绝 / 始终拒绝」；审批方式可在设置里切换「悬浮窗 / 通知栏」 |
 | **审批不限时** | 审批和命令超时都可以关掉（**不限时**）：弹窗不会自动消失、命令一直跑到自己结束 |
-| **权限矩阵** | 8 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
+| **权限矩阵** | 9 个权限键三态（允许 / 询问 / 拒绝）+ 路径规则、命令规则（前缀 / 完全 / 正则） |
 | **工具级权限四态** | 单个工具可单独设「跟随 / 允许 / 询问 / 拒绝」，其中「询问」无视全局矩阵、每次都弹窗 |
 | **记忆库** | 给 AI 的长期记忆：实体 + 观察 + 关系（知识图谱），能在 App 里浏览和编辑 |
 | **文件网关** | `POST /upload`、`GET /download`，外加手机浏览器直接可用的上传网页（可多选）；加 `&extract=1` / `&zip=1` 还能**整目录一次传 / 一次取**（zip，一个请求 = 一次审批） |
 | **应用私有目录** | 可读可写 `/data/data/<包名>`，三档（禁止 / 只读 / 可读写），经 root 转发 |
 | **UI 自动化** | 截屏 + 读界面结构（控件树/坐标）+ 点击 / 滑动 / 输入（含中文）/ 按键 / 启应用 / 等元素，需要 Shizuku 或 Root |
+| **内置浏览器** | App 自己带一个 WebView：AI 能打开网页、读正文与可交互元素、点击 / 填表 / 滚页 / 等元素、执行 JS、网页截图、开多个页面、用各平台搜索、把网页存成文件、管 cookie 与 User-Agent。**不需要 Root / Shizuku**；有页面时手机上会出现悬浮球，点开就能看页面、切页面、暂停 AI、自己接管 |
 | **自动补齐权限** | 有 Root / Shizuku 时，进入 App 自动把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉（走 appops 与电池白名单，不重启进程）；首页也有「一键补齐」 |
 | **内置终端** | 常驻 shell，`cd`/`export` 状态保留、命令历史、Ctrl-C 中断、清屏 |
 | **自定义工具** | 用命令模板给自己造新 MCP 工具，支持参数占位与 JSON 导入导出 |
@@ -73,6 +74,11 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 **工具包（5）**：`list_packs` `activate_pack` `deactivate_pack` `reset_packs`（免审批，只影响可见性）、`manage_pack`（建/改/删自定义包，走「自定义工具」权限）
 
+**内置浏览器（18）**：`browser_open` `browser_navigate` `browser_history` `browser_pages` `browser_switch` `browser_close` `browser_content` `browser_click` `browser_input` `browser_scroll` `browser_wait` `browser_eval` `browser_screenshot` `browser_search` `browser_save` `browser_storage` `browser_engines` `browser_download`
+（页面在 App 的 WebView 里跑，**不需要 Root / Shizuku**；URL 默认禁内网与 localhost，
+防止网页脚本去调本机的 MCP 端口。有页面时手机上会出现悬浮球：点开可以看页面、切页面、
+暂停 AI、自己接管操作。登录态与系统浏览器隔离，只属于 MCPBox）
+
 **记忆库（10）**：`create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
 
 ## 权限模型
@@ -85,6 +91,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | `shell.exec` | 询问 | 执行命令（用户自己在终端敲的不算） |
 | `tools.manage` | 询问 | 新建/修改/删除自定义工具 |
 | `ui.control` | 询问 | 控制屏幕：截屏、读界面结构、点击、滑动、输入（需要 Root / Shizuku） |
+| `browser.control` | 询问 | 浏览器：打开网页、点击、填表、执行脚本、读写 cookie（默认**每次都问**） |
 | `system.info` | 允许 | 设备信息、存储信息、获取令牌 |
 | `memory` | 允许 | 记忆库的读写（关掉总开关后记忆工具直接从 `tools/list` 消失） |
 
@@ -167,7 +174,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 ## 工具包
 
-工具定义要在**每一轮请求**里重复带给模型。全部 54 个工具的定义合计约 2.6 万字符（按 4 字符 ≈ 1 token 粗算，约 6500 token），
+工具定义要在**每一轮请求**里重复带给模型。全部 72 个工具的定义合计约 3.6 万字符（按 4 字符 ≈ 1 token 粗算，约 9000 token），
 聊 20 轮就是 13 万——而且大部分轮次根本用不到那么多工具。
 
 所以把工具分包，`tools/list` 只返回**基础包 + 已激活包**里的工具：
@@ -180,9 +187,10 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | `file.write` 文件写入 | 9 | 关 |
 | `shell` 命令与自定义工具 | 8 | 关 |
 | `ui` UI 自动化 | 8 | 关 |
+| `browser` 浏览器 | 18 | 关 |
 | `my.tools` 我的工具 | 动态 | 关 |
 
-出厂默认 22 个工具不到全量的六成 token，**比全带上省约六成**。
+出厂默认 27 个工具约是全量的四成，**比全带上省约六成**。
 
 包是**你自己的长期设置**：在「权限 → 工具包」里勾好，AI 看到什么就用什么，
 完全不知道有包这回事 —— 零摩擦，也不浪费对话轮次。也可以自己建包
@@ -312,6 +320,7 @@ git tag v1.1.0 && git push origin v1.1.0
 app/                          Android 应用（Compose UI + 服务 + 悬浮窗）
   src/main/java/com/xtt/mcpbox/
     ui/                       界面：首页/终端/权限/日志/设置/工具管理/记忆库
+    browser/BrowserController.kt  内置浏览器：WebView + 悬浮球 + 可拖动悬浮窗
     server/                   前台服务、审批广播、开机自启
     AndroidHost.kt            设备信息、通知等系统能力
     ShizukuShell.kt           Shizuku 进程启动器
@@ -326,6 +335,8 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   Memory.kt                   记忆库：实体 + 观察 + 关系，原子写入 graph.json
   ToolPack.kt                 工具包：内置包定义 + 自定义包存储
   ToolsUi.kt                  UI 自动化：截屏 / 控件树 / 点击 / 滑动 / 输入
+  ToolsBrowser.kt             浏览器工具包：18 个 browser_* 工具
+  Browser.kt                  浏览器内核：URL 规则 / 内网拦截 / 搜索引擎 / 注入页面的 JS
   ProfileStore.kt             会话（URL profile）：激活状态 + TTL，原子写盘
   ToolsPacks.kt / ToolsMemory.kt / ToolsToken.kt / ToolMeta.kt / ToolPolicy.kt / LocalNet.kt
 harness/                      端到端测试
