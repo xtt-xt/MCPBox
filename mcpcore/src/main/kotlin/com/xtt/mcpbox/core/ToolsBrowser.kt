@@ -458,7 +458,10 @@ object ToolsBrowser {
      * 等结果链接出现。
      *
      * 搜索结果页是**流式渲染**的：打开一两秒后 DOM 里常常只有顶栏（首页 / 图片 / 视频…），
-     * 真正的结果要再等一会儿。只读一次的话，AI 会拿到一堆导航链接还以为搜到了。
+     * 必应这种带 AI 摘要的页面甚至要十几秒才把结果挂上去。只读一次的话，
+     * AI 会拿到一堆导航链接还以为搜到了。
+     *
+     * 策略：一直轮询，直到「站外链接够多」**或者**「页面连续 1.5 秒没再变长」为止。
      */
     private fun waitForLinks(
         hub: BrowserHub,
@@ -470,18 +473,22 @@ object ToolsBrowser {
     ): Pair<List<Triple<String, String, String>>, List<Triple<String, String, String>>> {
         val deadline = System.currentTimeMillis() + timeoutMs
         var result = readLinks(hub, pageId, engineHost, maxLinks)
-        var stale = 0
-        while (result.second.size < want && System.currentTimeMillis() < deadline && stale < 4) {
+        var lastScore = -1.0
+        var stable = 0
+        while (System.currentTimeMillis() < deadline && stable < 3) {
+            if (result.second.size >= want) break
             Thread.sleep(500)
-            val next = readLinks(hub, pageId, engineHost, maxLinks)
-            if (next.second.size > result.second.size) {
-                // 只在「变多了」的时候替换，免得某次抽风读少了把好的覆盖掉
-                result = next
-                stale = 0
-            } else if (result.second.isNotEmpty()) {
-                // 已经有一些站外链接、而且连着两秒没再变多 → 大概就这么多了，别白等
-                stale++
+            // 页面还在变长（链接数 / 正文字数）= 还在渲染，继续等
+            val meta = hub.evalJson(pageId, BrowserJs.META) as? JsonObject
+            val score = (meta?.doubleOrNull("links") ?: 0.0) +
+                (meta?.doubleOrNull("textLength") ?: 0.0) / 1000.0
+            if (score <= lastScore + 0.001) stable++ else {
+                stable = 0
+                lastScore = score
             }
+            val next = readLinks(hub, pageId, engineHost, maxLinks)
+            // 只在「变多了」的时候替换，免得某次抽风读少了把好的覆盖掉
+            if (next.second.size > result.second.size) result = next
         }
         return result
     }
@@ -864,7 +871,7 @@ object ToolsBrowser {
                 "read_text" to Schema.bool("顺便把结果页的正文也读一段给你（默认 true）", true),
                 "new_page" to Schema.bool("新开页面（false = 用当前页面导航）", true),
                 "auto_scroll" to Schema.bool("读结果前先自动滚到底（默认 true）", true),
-                "wait_ms" to Schema.int("等结果加载多久（毫秒）", 1800, 0, 30_000)
+                "wait_ms" to Schema.int("等结果加载多久（毫秒）；页面还在渲染时会自动多等一会儿", 1800, 0, 30_000)
             ),
             listOf("query")
         )
@@ -892,7 +899,7 @@ object ToolsBrowser {
             val (parsed, offsite) = waitForLinks(
                 hub, page.id, engineHost, maxLinks,
                 want = limit.coerceAtMost(5),
-                timeoutMs = 8_000
+                timeoutMs = 25_000
             )
             // 站外链接够多就用站外的（引擎自己的顶栏 / 翻页 / 广告都在它自己域名下）；不够就全都给
             val useful = (if (offsite.size >= 3) offsite else parsed)
