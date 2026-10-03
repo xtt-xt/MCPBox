@@ -22,7 +22,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
-## v1.2.1 · 2026-10-03 —— 未发布 / Unreleased
+## v1.2.1 · 2026-10-03 —— 第三个发行版 / Third release
 
 <details open>
 <summary><b>中文</b></summary>
