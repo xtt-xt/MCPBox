@@ -534,6 +534,18 @@ object BrowserRedirects {
 }
 
 /**
+ * 看起来是「跳转壳」的链接（点开才是真结果）。
+ *
+ * 百度就把结果包在 `www.baidu.com/link?url=<看不懂的一串>` 里 —— 和搜索引擎同域名，
+ * 会被「去掉引擎自家域名」那一步滤掉，但恰恰它们才是真结果。
+ */
+fun looksLikeRedirect(href: String): Boolean {
+    val lower = href.lowercase()
+    return lower.contains("/link?") || lower.contains("/url?") || lower.contains("redirect") ||
+        lower.contains("/jump?") || lower.contains("target=")
+}
+
+/**
  * 两个域名算不算「同一个站」。
  *
  * 为什么需要它：搜索引擎的导航、翻页、广告链接都在引擎自己的域名下，

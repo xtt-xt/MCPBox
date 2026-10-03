@@ -1928,6 +1928,10 @@ fun main() {
             sameSiteHost(BrowserEngines.BUILTIN.first { it.id == "bing" }.host, "cn.bing.com"))
         check("hostOf 对畸形网址也不崩（退回 URL 解析）",
             hostOf("https://example.com/100%") == "example.com")
+        check("跳转型链接认得出来（百度把结果包在 /link?url= 里）",
+            looksLikeRedirect("http://www.baidu.com/link?url=abc") &&
+                looksLikeRedirect("https://x.com/redirect?to=1") &&
+                !looksLikeRedirect("https://example.com/article/1"))
 
         // ---- 同站判断（引擎换域名时最容易判错） ----
         check("同站：cn.bing.com 与 www.bing.com 算同一个站",

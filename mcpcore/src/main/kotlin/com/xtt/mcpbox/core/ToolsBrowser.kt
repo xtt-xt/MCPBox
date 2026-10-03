@@ -909,8 +909,15 @@ object ToolsBrowser {
                 want = limit.coerceAtMost(5),
                 timeoutMs = 25_000
             )
-            // 站外链接够多就用站外的（引擎自己的顶栏 / 翻页 / 广告都在它自己域名下）；不够就全都给
-            val useful = (if (offsite.size >= 3) offsite else parsed)
+            // 站外链接够多就用站外的（引擎自己的顶栏 / 翻页 / 广告都在它自己域名下）；
+            // 不够时优先给「跳转型」链接 —— 百度把结果包在 baidu.com/link?url= 里，
+            // 它们和引擎同域名，但点开才是真结果；再不够就全都给（免得一条都不剩）
+            val redirectish = parsed.filter { looksLikeRedirect(it.second) }
+            val useful = when {
+                offsite.size >= 3 -> offsite
+                redirectish.isNotEmpty() -> (offsite + redirectish).distinctBy { it.second }
+                else -> parsed
+            }
                 .distinctBy { it.second }
                 .take(limit)
                 .map { it.first to it.second }
