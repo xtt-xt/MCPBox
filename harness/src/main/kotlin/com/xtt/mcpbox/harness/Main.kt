@@ -1955,7 +1955,8 @@ fun main() {
             BrowserJs.elements(true, null, 10).contains("window.scrollX") &&
                 BrowserJs.elements(true, null, 10).contains("window.scrollY"))
         check("按坐标点击会把滚动量减回去",
-            BrowserJs.click("point", "10,20", 0).contains("window.scrollY"))
+            BrowserJs.click("point", "10,20", 0).contains("window.scrollY") &&
+                BrowserJs.click("point", "10,20", 0).contains("elementFromPoint(px"))
         check("等文字时会在整页正文里找（不只是可交互元素）",
             BrowserJs.find(null, "标题").contains("body *"))
         check("要开新窗口的链接会改成当前页打开（合成点击不会触发 window.open）",

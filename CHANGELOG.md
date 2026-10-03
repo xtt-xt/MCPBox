@@ -40,6 +40,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 - **权限**：新增独立权限键「浏览器控制」，默认**询问** —— 每个浏览器动作都会弹一次审批。嫌烦可以把它设成允许，或在弹窗上点「始终允许」
 - **安全**：默认禁止访问 localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local` 这类内网地址 —— 这台手机上跑着 MCP 服务器（`/mcp` 端点不校验 token），网页里的脚本能碰本机就等于绕过审批。要放开：设置 → 浏览器 → 允许访问内网地址
+- **按坐标点击更稳**：元素坐标是「页面坐标」，正常页面减掉滚动量即可命中；如果页面本身没滚、滚的是内层 div（坐标会算歪），现在会把原值也试一次，哪个命中用哪个
 - **百度这类「结果包在自己域名下」的引擎也能拿到结果了**：`browser_search` 在站外链接不够时，改为优先给「跳转型」链接（`/link?url=`、`/url?`、`redirect` 等）—— 百度把结果都包在 `www.baidu.com/link?url=…` 里，之前会被同域名过滤掉，最后只剩导航
 - **`browser_wait` 等文字时会在整页正文里找**（原来只在「可交互元素」里找，等 `<h2>` 这种标题永远等不到）；元素列表的坐标改成**页面绝对坐标**（滚到底之后不再是负数），`by=point` 点击会自动把滚动量减回去；`target=_blank` 的链接在点击时改成当前页打开（合成点击触发的 `window.open` 会被弹窗拦截）
 - **搜索等结果真的渲染出来**：搜索结果页是流式渲染的，打开一两秒后 DOM 里常常只有顶栏（首页 / 图片 / 视频 / 翻页…）。`browser_search` 现在会**一直轮询到真的拿到结果**（站外链接够多就停；一条都没有时绝不提前收工，上限 25 秒）—— 必应带 AI 摘要的页面会先静止几秒再一次性把结果挂上去，实测打开 4 秒时 DOM 里只有 10 个顶栏链接、结果要十几秒才出现；实在拿不到时会把「页面当时有多少链接 / 元素」一并报出来
@@ -95,6 +96,7 @@ curl -H "Authorization: Bearer <token>" \
 
 - **Permission**: a new key, *browser control*, defaults to **ask** — every browser action prompts once. Set it to allow, or hit *Always allow* in the popup, if that is too chatty
 - **Security**: intranet addresses (localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local`) are blocked by default — this phone runs the MCP server and `/mcp` does not check the token, so a page script reaching the device would bypass approvals. To allow it: Settings → Browser → Allow intranet addresses
+- **More reliable point clicks**: element coordinates are page coordinates, so subtracting the scroll offset normally hits; when the window itself is not scrolled and an inner div is (which skews the maths), the raw value is tried too and whichever hits is used
 - **Engines that wrap results in their own domain (Baidu) now yield results**: when there are too few off-site links, `browser_search` prefers "redirect-style" links (`/link?url=`, `/url?`, `redirect`, ...). Baidu wraps every result in `www.baidu.com/link?url=…`, which the same-site filter used to drop, leaving only the navigation
 - **`browser_wait` now searches the whole page text** (it used to scan only interactive elements, so waiting for an `<h2>` heading never succeeded); element coordinates became **absolute page coordinates** (no more negative numbers after auto-scrolling) and `by=point` clicks subtract the scroll offset; links with `target=_blank` are switched to the current tab when clicked (a synthetic click's `window.open` is popup-blocked)
 - **Search waits for results to actually render**: result pages stream in, so a second or two after opening the DOM often only holds the header (home / images / videos / paging). `browser_search` now **polls until it really has results** (stops as soon as there are enough off-site links; never gives up early when there are none; 25 s cap) - Bing's AI-summary pages sit still for a few seconds and then attach everything at once: at 4 s the DOM held only 10 header links and the results took over ten seconds. When nothing is found it reports how many links / elements the page had at the time

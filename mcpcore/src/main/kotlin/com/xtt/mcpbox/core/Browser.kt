@@ -980,11 +980,12 @@ JSON.stringify({
   var e = null;
   if (by === 'point') {
     var parts = String(val).split(',');
-    // 坐标是「页面绝对坐标」（元素列表里给的就是这个），元素命中要的是视口坐标，这里减掉滚动量
-    e = document.elementFromPoint(
-      (parseFloat(parts[0]) || 0) - (window.scrollX || 0),
-      (parseFloat(parts[1]) || 0) - (window.scrollY || 0)
-    );
+    var px = parseFloat(parts[0]) || 0, py = parseFloat(parts[1]) || 0;
+    // 元素列表里给的是「页面坐标」（视口坐标 + 滚动量）。正常页面减掉滚动量就对了；
+    // 但如果页面本身没滚、滚的是里面那个 div（坐标会算歪），就把原值也试一次，哪个命中用哪个。
+    var a1 = document.elementFromPoint(px - (window.scrollX || 0), py - (window.scrollY || 0));
+    var a2 = document.elementFromPoint(px, py);
+    e = (a1 && a1 !== document.body && a1 !== document.documentElement) ? a1 : (a2 || a1);
   } else {
     e = MCP.findEl(by, val, $index);
   }
