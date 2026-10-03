@@ -451,8 +451,74 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
         )
 }
 
-/** 内置搜索引擎。查询词统一放在 `%s`。 */
-object BrowserEngines {
+/**
+ * 跳转壳还原。
+ *
+ * 搜索引擎早就不直接给结果链接了：必应把它塞进 `bing.com/ck/a?...&u=a1<base64>`，
+ * Google 用 `/url?q=`，DuckDuckGo 用 `/l/?uddg=`，知乎用 `link.zhihu.com/?target=`。
+ * 不还原的话，AI 看到的全是「同一个域名下的怪链接」，既没法判断来源，
+ * 也会被「去掉搜索引擎自己的域名」那一步全部滤掉。
+ *
+ * 认不出来就原样返回（比如百度的 `link?url=` 要联网才能解，不强求）。
+ */
+object BrowserRedirects {
+
+    fun unwrap(href: String): String {
+        val uri = runCatching { java.net.URI(href.trim()) }.getOrNull() ?: return href
+        val host = uri.host?.lowercase().orEmpty()
+        if (host.isEmpty()) return href
+        val query = parseQuery(uri.rawQuery)
+        val target: String? = when {
+            host.endsWith("bing.com") && uri.path.orEmpty().contains("/ck/a") -> {
+                query["u"]?.let { decodeBing(it) }
+            }
+
+            (host.endsWith("google.com") || host.endsWith("google.com.hk")) &&
+                uri.path.orEmpty().startsWith("/url") ->
+                (query["q"] ?: query["url"])?.let { urlDecode(it) }
+
+            host.endsWith("duckduckgo.com") && uri.path.orEmpty().startsWith("/l/") ->
+                query["uddg"]?.let { urlDecode(it) }
+
+            host == "link.zhihu.com" || host.endsWith(".zhihu.com") && uri.path == "/link" ->
+                query["target"]?.let { urlDecode(it) }
+
+            host.endsWith("sogou.com") && uri.path.orEmpty().startsWith("/link") ->
+                query["url"]?.let { urlDecode(it) }
+
+            else -> null
+        }
+        val clean = target?.trim().orEmpty()
+        return if (clean.startsWith("http://") || clean.startsWith("https://")) clean else href
+    }
+
+    /** 必应用 `u=a1<base64url(真实地址)>`（没有 a1 前缀的也可能是纯 base64）。 */
+    private fun decodeBing(value: String): String? {
+        val raw = value.removePrefix("a1")
+        val padded = raw.replace('-', '+').replace('_', '/')
+            .let { it + "=".repeat((4 - it.length % 4) % 4) }
+        return runCatching {
+            String(java.util.Base64.getDecoder().decode(padded), Charsets.UTF_8)
+        }.getOrNull()?.takeIf { it.startsWith("http") }
+    }
+
+    private fun parseQuery(raw: String?): Map<String, String> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        val out = LinkedHashMap<String, String>()
+        raw.split('&').forEach { part ->
+            if (part.isBlank()) return@forEach
+            val i = part.indexOf('=')
+            if (i <= 0) return@forEach
+            out.putIfAbsent(part.substring(0, i), part.substring(i + 1))
+        }
+        return out
+    }
+
+    private fun urlDecode(value: String): String =
+        runCatching { java.net.URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
+}
+
+/** 内置搜索引擎。查询词统一放在 `%s`。 */object BrowserEngines {
 
     val BUILTIN: List<SearchEngine> = listOf(
         SearchEngine("bing", "必应", "https://www.bing.com/search?q=%s", true),
@@ -901,7 +967,11 @@ JSON.stringify({
   } else {
     return JSON.stringify({ ok: false, err: 'bad-mode' });
   }
-  return JSON.stringify({ ok: true, y: Math.round(window.scrollY || 0), scroller: !!sc });
+  // pos：真正在滚的那个容器的位置（有的站点页面本身不滚，滚的是里面那个 div）
+  var pos = (sc && Math.abs(window.scrollY) < 1) ? sc.scrollTop : window.scrollY;
+  return JSON.stringify({
+    ok: true, y: Math.round(window.scrollY || 0), pos: Math.round(pos || 0), scroller: !!sc
+  });
 })()
 """
 

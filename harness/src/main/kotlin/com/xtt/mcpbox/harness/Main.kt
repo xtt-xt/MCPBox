@@ -1888,6 +1888,32 @@ fun main() {
         check("删完就没了", hub.engines().none { it.id == added.id })
         check("内置引擎不给删", runCatching { hub.removeEngine("bing") }.isFailure)
 
+        // ---- 跳转壳还原（搜索链接现在都藏在壳里） ----
+        check(
+            "必应 ck/a 壳能还原",
+            BrowserRedirects.unwrap(
+                "https://www.bing.com/ck/a?!&&p=abc&u=a1aHR0cHM6Ly9kZXZlbG9wZXIuYmFpZHUuY29tL2EvMQ"
+            ) == "https://developer.baidu.com/a/1"
+        )
+        check(
+            "Google /url?q= 壳能还原",
+            BrowserRedirects.unwrap("https://www.google.com/url?q=https%3A%2F%2Fexample.com%2Fx&sa=D") ==
+                "https://example.com/x"
+        )
+        check(
+            "DuckDuckGo /l/?uddg= 壳能还原",
+            BrowserRedirects.unwrap("https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fy") ==
+                "https://example.com/y"
+        )
+        check(
+            "知乎 link 壳能还原",
+            BrowserRedirects.unwrap("https://link.zhihu.com/?target=https%3A%2F%2Fzhuanlan.zhihu.com%2Fp%2F1") ==
+                "https://zhuanlan.zhihu.com/p/1"
+        )
+        check("普通链接原样返回", BrowserRedirects.unwrap("https://example.com/plain") == "https://example.com/plain")
+        check("解不出来就原样返回（百度 link?url=）",
+            BrowserRedirects.unwrap("https://www.baidu.com/link?url=abc").startsWith("https://www.baidu.com/link"))
+
         // ---- 页面模型 ----
         fakeBrowser.closeAll()
         config.browserMaxPages = 3
@@ -2329,7 +2355,7 @@ private class FakeBrowser : BrowserBridge {
                     """{"i":1,"tag":"a","type":"","text":"更多","href":"https://example.com/more","x":10,"y":40,"w":40,"h":20}]}"""
             js.contains("links: out") ->
                 """{"url":"https://example.com","links":[{"text":"链接一","href":"https://example.com/a"}]}"""
-            js.contains("var sc = MCP.scroller()") -> """{"ok":true,"y":500,"scroller":false}"""
+            js.contains("var sc = MCP.scroller()") -> """{"ok":true,"y":500,"pos":500,"scroller":false}"""
             js.contains("var sel = ") -> """{"ok":true,"what":"正文内容","text":"正文内容"}"""
             js.contains("MCP.setValue(") ->
                 """{"ok":true,"how":"form","target":{"tag":"input","name":"q"},"value":"hello"}"""

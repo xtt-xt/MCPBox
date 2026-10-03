@@ -40,6 +40,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 - **权限**：新增独立权限键「浏览器控制」，默认**询问** —— 每个浏览器动作都会弹一次审批。嫌烦可以把它设成允许，或在弹窗上点「始终允许」
 - **安全**：默认禁止访问 localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local` 这类内网地址 —— 这台手机上跑着 MCP 服务器（`/mcp` 端点不校验 token），网页里的脚本能碰本机就等于绕过审批。要放开：设置 → 浏览器 → 允许访问内网地址
+- **搜索 / 读内容**：`browser_search` 现在会**还原跳转壳**（必应 `bing.com/ck/a?u=a1…`、Google `/url?q=`、DuckDuckGo `/l/?uddg=`、知乎 `link.zhihu.com`、搜狗 `/link`），所以在必应这类页面上能真的拿到结果链接了（之前会被「去掉搜索引擎自己的域名」整批滤掉）；`browser_content` / `browser_search` / `browser_save` 默认**先自动滚到底再回顶**，把「滚了才加载」的长列表、图片、评论区喂出来（`auto_scroll=false` 关掉，`scroll_rounds` 控制最多滚几屏）
 - **后台照样能用**：悬浮窗收起时窗口缩成 1×1 像素，但 WebView 仍按整屏尺寸排版（懒加载、媒体查询、元素坐标都不会错位），截图走 `View.draw`，不需要窗口真的显示在屏幕上
 - **登录态**：cookie 存在 App 自己的数据里，和系统浏览器完全隔离；用户可以点悬浮球在自己眼前登录，之后 AI 能复用这份登录态（`browser_storage` 读得到 —— 注意隐私），也可以随时清空
 - **页面数上限**默认 5（设置 → 浏览器里可调 1~12），每个页面一块 WebView，很吃内存
@@ -67,7 +68,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### 基线
 
-- 端到端测试 **539 项全绿**（新增 72 项：浏览器工具包 71、内置包清单 1；更早的 33 项见下）
+- 端到端测试 **545 项全绿**（新增 78 项：浏览器工具包 71、跳转壳还原 6、内置包清单 1；更早的 33 项见下）
 
 </details>
 
@@ -87,6 +88,7 @@ curl -H "Authorization: Bearer <token>" \
 
 - **Permission**: a new key, *browser control*, defaults to **ask** — every browser action prompts once. Set it to allow, or hit *Always allow* in the popup, if that is too chatty
 - **Security**: intranet addresses (localhost / 127.0.0.1 / 10.x / 192.168.x / `*.local`) are blocked by default — this phone runs the MCP server and `/mcp` does not check the token, so a page script reaching the device would bypass approvals. To allow it: Settings → Browser → Allow intranet addresses
+- **Search / reading**: `browser_search` now **unwraps redirect shells** (Bing `bing.com/ck/a?u=a1…`, Google `/url?q=`, DuckDuckGo `/l/?uddg=`, Zhihu `link.zhihu.com`, Sogou `/link`), so result links actually come back on pages like Bing (they used to be filtered out wholesale as "the engine's own domain"); `browser_content` / `browser_search` / `browser_save` now **auto-scroll to the bottom and back** by default so lazy lists, images and comments get loaded (`auto_scroll=false` to disable, `scroll_rounds` to cap the passes)
 - **It keeps working in the background**: when the panel is collapsed the window shrinks to 1×1 px while the WebView still lays out at full screen size (lazy loading, media queries and element coordinates stay correct); screenshots go through `View.draw`, so the window never has to be visible
 - **Login state**: cookies live in the app's own data, fully separate from your system browser. The user can sign in from the floating window and the AI reuses that session (`browser_storage` can read it — mind the privacy), or wipe it at any time
 - **Tab limit** defaults to 5 (1–12 in Settings → Browser); each tab is a WebView and costs memory
@@ -114,7 +116,7 @@ curl -H "Authorization: Bearer <token>" \
 
 ### Baseline
 
-- End-to-end tests: **539 green** (+72: 71 for the browser toolkit, 1 for the built-in pack list; the earlier 33 are listed above)
+- End-to-end tests: **545 green** (+78: 71 for the browser toolkit, 6 for redirect unwrapping, 1 for the built-in pack list; the earlier 33 are listed above)
 
 </details>
 

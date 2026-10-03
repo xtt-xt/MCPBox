@@ -272,6 +272,7 @@ object ToolsBrowser {
             "text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；" +
             "elements=可交互元素列表（带序号、文字、类型、坐标 —— 看这个再决定点什么，省 token）；" +
             "links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。" +
+            "默认会**先自动滚到底再回顶**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。" +
             "长内容用 offset / maxChars 分段读。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
@@ -282,7 +283,9 @@ object ToolsBrowser {
                 "onlyInteractive" to Schema.bool("elements 模式只列可点的（默认 true）", true),
                 "maxItems" to Schema.int("elements / links 最多列几条", 80, 1, 500),
                 "maxChars" to Schema.int("文本最多返回多少字符", 6000, 200, 200_000),
-                "offset" to Schema.int("从第几个字符开始（分段读长文），默认 0", 0, 0, 5_000_000)
+                "offset" to Schema.int("从第几个字符开始（分段读长文），默认 0", 0, 0, 5_000_000),
+                "auto_scroll" to Schema.bool("读之前先自动滚到底再回顶（把「滚了才加载」的内容喂出来），默认 true", true),
+                "scroll_rounds" to Schema.int("自动最多往下滚几屏", 6, 1, 20)
             )
         )
     ) { ctx ->
@@ -298,6 +301,9 @@ object ToolsBrowser {
         try {
             val b = hub.engine()
             val page = if (target == null) hub.resolvePage(null) else hub.resolvePage(target.id)
+            if (mode != "meta" && ctx.args.boolOr("auto_scroll", true)) {
+                autoScroll(hub, page.id, ctx.args.intOr("scroll_rounds", 6))
+            }
             val maxChars = ctx.args.intOr("maxChars", 6000).coerceIn(200, 200_000)
             val offset = ctx.args.intOr("offset", 0).coerceAtLeast(0)
             val maxItems = ctx.args.intOr("maxItems", 80).coerceIn(1, 500)
@@ -402,6 +408,35 @@ object ToolsBrowser {
     /** evalJson 的结果不一定是个对象（页面抽风 / 还没加载完），统一在这里给出人话错误。 */
     private fun asObject(ctx: CallContext, el: JsonElement?): JsonObject =
         (el as? JsonObject) ?: ctx.fail(L("页面返回的数据看不懂（多半是还没加载完，用 browser_wait 等一等）。"))
+
+    /**
+     * 自动滚到底再回顶：把「滚了才加载」的内容（长列表、图片、评论区）喂出来。
+     *
+     * 一屏一屏往下走，连续两轮位置没变就认为到底了；最后回到顶部，
+     * 这样元素坐标、用户看到的画面都还是页面开头，不会让人一脸问号。
+     */
+    private fun autoScroll(hub: BrowserHub, pageId: String, rounds: Int) {
+        val max = rounds.coerceIn(1, 20)
+        var last = -1.0
+        var stuck = 0
+        var i = 0
+        while (i < max) {
+            i++
+            val json = hub.evalJson(pageId, BrowserJs.scroll("page", "1"))
+            val o = json as? JsonObject ?: break
+            if (!o.boolOr("ok", false)) break
+            val pos = o.doubleOrNull("pos") ?: 0.0
+            Thread.sleep(260)
+            if (pos <= last + 1.0) {
+                stuck++
+                if (stuck >= 2) break
+            } else {
+                stuck = 0
+            }
+            last = pos
+        }
+        hub.evalJson(pageId, BrowserJs.scroll("top", null))
+    }
 
     private class Sliced(val text: String, val note: String)
 
@@ -769,6 +804,7 @@ object ToolsBrowser {
                 "limit" to Schema.int("最多给几条链接", 20, 1, 60),
                 "read_text" to Schema.bool("顺便把结果页的正文也读一段给你（默认 true）", true),
                 "new_page" to Schema.bool("新开页面（false = 用当前页面导航）", true),
+                "auto_scroll" to Schema.bool("读结果前先自动滚到底再回顶（默认 true）", true),
                 "wait_ms" to Schema.int("等结果加载多久（毫秒）", 1800, 0, 30_000)
             ),
             listOf("query")
@@ -789,19 +825,26 @@ object ToolsBrowser {
                 hub.navigateOrOpen(url).first
             }
             if (wait > 0) Thread.sleep(wait.toLong())
-            val b = hub.engine()
-            val linksJson = hub.evalJson(page.id, BrowserJs.links(null, limit + 10))
+            if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
+            val linksJson = hub.evalJson(page.id, BrowserJs.links(null, limit + 20))
             val allLinks = (linksJson as? JsonObject)?.get("links")?.jsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-            // 去掉搜索引擎自己域内的链接（顶栏 / 翻页那些）
             val engineHost = runCatching { java.net.URI(engine.url).host.orEmpty() }.getOrDefault("")
-            val useful = allLinks.mapNotNull { el ->
+            // 先把跳转壳（bing ck/a、google /url、ddg /l/、知乎 link）还原成真实地址，
+            // 不然「去掉搜索引擎自己的域名」那一步会把结果链接全滤没。
+            val parsed = allLinks.mapNotNull { el ->
                 val o = el.jsonObject
-                val href = o.str("href").orEmpty()
-                if (href.isBlank() || !href.startsWith("http")) return@mapNotNull null
-                val host = runCatching { java.net.URI(href).host.orEmpty() }.getOrDefault("")
-                if (engineHost.isNotBlank() && host.endsWith(engineHost)) return@mapNotNull null
-                o.str("text").orEmpty() to href
-            }.take(limit)
+                val raw = o.str("href").orEmpty()
+                if (raw.isBlank() || !raw.startsWith("http")) return@mapNotNull null
+                val real = BrowserRedirects.unwrap(raw)
+                val host = runCatching { java.net.URI(real).host.orEmpty() }.getOrDefault("")
+                Triple(o.str("text").orEmpty(), real, host)
+            }
+            val offsite = parsed.filterNot { it.third.endsWith(engineHost) }
+            // 站外链接够多就用站外的（顶栏 / 翻页那些都是搜索引擎自己的域名）；不够就全都给
+            val useful = (if (offsite.size >= 3) offsite else parsed)
+                .distinctBy { it.second }
+                .take(limit)
+                .map { it.first to it.second }
             val head = L("搜索「%s」（%s）→ [%s] %s\n").format(query, engine.title, page.id, page.label())
             val body = buildString {
                 append(head)
@@ -840,7 +883,8 @@ object ToolsBrowser {
             mapOf(
                 "path" to Schema.str("存到哪（完整路径或目录，目录会自动用页面标题当文件名）"),
                 "format" to Schema.str("格式", "markdown", listOf("markdown", "text", "html")),
-                "page" to Schema.str("页面 id 或序号；省略 = 当前页面")
+                "page" to Schema.str("页面 id 或序号；省略 = 当前页面"),
+                "auto_scroll" to Schema.bool("存之前先自动滚到底再回顶（默认 true）", true)
             ),
             listOf("path")
         )
@@ -850,6 +894,7 @@ object ToolsBrowser {
         hub.checkPaused()
         val format = modeOf(ctx, "markdown", "markdown", "text", "html")
         val page = hub.resolvePage(ctx.args.str("page"))
+        if (ctx.args.boolOr("auto_scroll", true)) autoScroll(hub, page.id, 6)
         val js = when (format) {
             "html" -> BrowserJs.HTML
             "text" -> BrowserJs.TEXT

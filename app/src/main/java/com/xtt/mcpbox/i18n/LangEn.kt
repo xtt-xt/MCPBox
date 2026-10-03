@@ -2218,5 +2218,11 @@ object LangEn {
 
     "页面返回的数据看不懂（多半是还没加载完，用 browser_wait 等一等）。" to "The page returned something unreadable (probably still loading - try browser_wait).",
 
+    "读当前（或指定）页面的内容。mode：text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；elements=可交互元素列表（带序号、文字、类型、坐标 —— 看这个再决定点什么，省 token）；links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。默认会**先自动滚到底再回顶**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。长内容用 offset / maxChars 分段读。" to "Read a tab's content. mode: text=plain article text (start here); markdown=article as Markdown (headings/lists/code/links); elements=interactive elements (index, text, type, position - best for deciding what to tap, saves tokens); links=all links; html=raw HTML (huge, careful); meta=title/URL/state/scroll. It **auto-scrolls to the bottom and back first** (to load lazy lists / images; turn off with auto_scroll=false). Use offset / maxChars for long content.",
+    "读之前先自动滚到底再回顶（把「滚了才加载」的内容喂出来），默认 true" to "Auto-scroll to the bottom and back before reading (loads lazy content), default true",
+    "自动最多往下滚几屏" to "Max screens to auto-scroll",
+    "读结果前先自动滚到底再回顶（默认 true）" to "Auto-scroll the results page before reading (default true)",
+    "存之前先自动滚到底再回顶（默认 true）" to "Auto-scroll before saving (default true)",
+
     )
 }
