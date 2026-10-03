@@ -2231,5 +2231,7 @@ object LangEn {
 
     "等结果加载多久（毫秒）；页面还在渲染时会自动多等一会儿" to "How long to wait for results (ms); it waits longer while the page is still rendering",
 
+    "没解析出结果链接（页面当时有 %s 个链接、%s 个可交互元素），可能还在渲染 / 需要登录 / 被反爬拦了。\n" to "No result links parsed (the page had %s links and %s interactive elements at the time) - it may still be rendering, need a login, or be blocked by anti-bot.\n",
+
     )
 }

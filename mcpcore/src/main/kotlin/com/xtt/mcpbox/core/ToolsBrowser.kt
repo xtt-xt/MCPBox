@@ -474,21 +474,28 @@ object ToolsBrowser {
         val deadline = System.currentTimeMillis() + timeoutMs
         var result = readLinks(hub, pageId, engineHost, maxLinks)
         var lastScore = -1.0
-        var stable = 0
-        while (System.currentTimeMillis() < deadline && stable < 3) {
+        var stale = 0
+        while (System.currentTimeMillis() < deadline) {
             if (result.second.size >= want) break
             Thread.sleep(500)
-            // 页面还在变长（链接数 / 正文字数）= 还在渲染，继续等
+            // 页面还在变长（链接数 / 正文字数）= 还在渲染
             val meta = hub.evalJson(pageId, BrowserJs.META) as? JsonObject
             val score = (meta?.doubleOrNull("links") ?: 0.0) +
                 (meta?.doubleOrNull("textLength") ?: 0.0) / 1000.0
-            if (score <= lastScore + 0.001) stable++ else {
-                stable = 0
+            if (score <= lastScore + 0.001) stale++ else {
+                stale = 0
                 lastScore = score
             }
             val next = readLinks(hub, pageId, engineHost, maxLinks)
             // 只在「变多了」的时候替换，免得某次抽风读少了把好的覆盖掉
-            if (next.second.size > result.second.size) result = next
+            if (next.second.size > result.second.size) {
+                result = next
+                stale = 0
+            }
+            // 已经有站外链接、而且连着 4 秒没再变多 → 差不多就这些了，收工。
+            // 注意：**一条都没有的时候绝不提前收工** —— 必应这种页面会先静止几秒，
+            // 再一次性把结果挂上去，按「稳定」判会正好在结果到来之前退出。
+            if (result.second.isNotEmpty() && stale >= 8) break
         }
         return result
     }
@@ -907,10 +914,16 @@ object ToolsBrowser {
                 .take(limit)
                 .map { it.first to it.second }
             val head = L("搜索「%s」（%s）→ [%s] %s\n").format(query, engine.title, page.id, page.label())
+            // 出错时把「当时页面里有什么」带出来，方便判断是「还没渲染」还是「被拦了」
+            val metaNow = hub.evalJson(page.id, BrowserJs.META) as? JsonObject
+            val metaCount = (metaNow?.doubleOrNull("elements") ?: 0.0).toInt()
             val body = buildString {
                 append(head)
                 if (useful.isEmpty()) {
-                    append(L("没解析出结果链接（可能是需要登录 / 被反爬拦了，或者结果还没加载出来）。\n"))
+                    append(
+                        L("没解析出结果链接（页面当时有 %s 个链接、%s 个可交互元素），可能还在渲染 / 需要登录 / 被反爬拦了。\n")
+                            .format(parsed.size, metaCount)
+                    )
                 } else {
                     append(L("结果链接 %s 条：\n").format(useful.size))
                     useful.forEachIndexed { i, (text, href) ->
