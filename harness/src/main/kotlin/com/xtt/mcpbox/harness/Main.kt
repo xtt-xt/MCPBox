@@ -1946,6 +1946,17 @@ fun main() {
         check("userDirect 出错时回一个 [js error] 字符串",
             BrowserJs.userDirect("x").contains("[js error]"))
 
+        // 注入 JS 的几处细节（真机上踩过的）
+        check("元素坐标是页面绝对坐标（滚过之后也不会是负数）",
+            BrowserJs.elements(true, null, 10).contains("window.scrollX") &&
+                BrowserJs.elements(true, null, 10).contains("window.scrollY"))
+        check("按坐标点击会把滚动量减回去",
+            BrowserJs.click("point", "10,20", 0).contains("window.scrollY"))
+        check("等文字时会在整页正文里找（不只是可交互元素）",
+            BrowserJs.find(null, "标题").contains("body *"))
+        check("要开新窗口的链接会改成当前页打开（合成点击不会触发 window.open）",
+            BrowserJs.click("index", "0", 0).contains("_self"))
+
         // ---- 页面模型 ----
         fakeBrowser.closeAll()
         config.browserMaxPages = 3

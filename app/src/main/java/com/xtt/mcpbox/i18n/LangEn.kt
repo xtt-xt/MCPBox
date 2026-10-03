@@ -2227,11 +2227,13 @@ object LangEn {
     "读结果前先自动滚到底（默认 true）" to "Auto-scroll the results page before reading (default true)",
     "存之前先自动滚到底（默认 true）" to "Auto-scroll before saving (default true)",
     "读之前先自动滚到底（把「滚了才加载」的内容喂出来），默认 true" to "Auto-scroll to the bottom before reading (loads lazy content), default true",
-    "读当前（或指定）页面的内容。mode：text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；elements=可交互元素列表（带序号、文字、类型、坐标 —— 看这个再决定点什么，省 token）；links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。默认会**先自动滚到底**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。长内容用 offset / maxChars 分段读。" to "Read a tab's content. mode: text=plain article text (start here); markdown=article as Markdown (headings/lists/code/links); elements=interactive elements (index, text, type, position - best for deciding what to tap, saves tokens); links=all links; html=raw HTML (huge, careful); meta=title/URL/state/scroll. It **auto-scrolls to the bottom first** (to load lazy lists / images; turn off with auto_scroll=false). Use offset / maxChars for long content.",
+    "读当前（或指定）页面的内容。mode：text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；elements=可交互元素列表（带序号、文字、类型、页面绝对坐标 —— 看这个再决定点什么，省 token）；links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。默认会**先自动滚到底**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。长内容用 offset / maxChars 分段读。" to "Read a tab's content. mode: text=plain article text (start here); markdown=article as Markdown (headings/lists/code/links); elements=interactive elements (index, text, type, absolute page coordinates - best for deciding what to tap, saves tokens); links=all links; html=raw HTML (huge, careful); meta=title/URL/state/scroll. It **auto-scrolls to the bottom first** (to load lazy lists / images; turn off with auto_scroll=false). Use offset / maxChars for long content.",
 
     "等结果加载多久（毫秒）；页面还在渲染时会自动多等一会儿" to "How long to wait for results (ms); it waits longer while the page is still rendering",
 
     "没解析出结果链接（页面当时有 %s 个链接、%s 个可交互元素），可能还在渲染 / 需要登录 / 被反爬拦了。\n" to "No result links parsed (the page had %s links and %s interactive elements at the time) - it may still be rendering, need a login, or be blocked by anti-bot.\n",
+
+    "点页面上的东西。by=index：点 browser_content(mode=elements) 里的第 N 项（推荐，最稳）；by=text：点文字里含这个词的第一个元素；by=selector：CSS 选择器；by=point：页面绝对坐标 \"x,y\"（就是 elements 列表里给的那对数字）。点击后页面可能要加载，接着用 browser_wait 或再读一次内容。" to "Click something on the page. by=index: the Nth item from browser_content(mode=elements) (recommended, most stable); by=text: first element whose text contains it; by=selector: CSS selector; by=point: absolute page coordinates \"x,y\" (the pair shown in the elements list). The page may load afterwards - use browser_wait or read again.",
 
     )
 }

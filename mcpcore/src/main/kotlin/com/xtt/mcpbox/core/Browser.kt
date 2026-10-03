@@ -684,7 +684,8 @@ var MCP = {
         role: e.getAttribute('role') || '', text: t, href: e.href || '',
         id: e.id || '', name: e.name || '', placeholder: e.getAttribute('placeholder') || '',
         value: v, checked: !!e.checked, disabled: !!e.disabled,
-        x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
+        x: Math.round(r.left + r.width / 2 + (window.scrollX || 0)),
+        y: Math.round(r.top + r.height / 2 + (window.scrollY || 0)),
         w: Math.round(r.width), h: Math.round(r.height)
       });
     }
@@ -720,12 +721,23 @@ var MCP = {
     return JSON.stringify({
       tag: String(e.tagName || '').toLowerCase(), text: MCP.txt(e).slice(0, 80),
       href: e.href || '', id: e.id || '', name: e.name || '',
-      x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2)
+      x: Math.round(r.left + r.width / 2 + (window.scrollX || 0)),
+      y: Math.round(r.top + r.height / 2 + (window.scrollY || 0))
     });
   },
   click: function (e) {
     if (!e) return 'null';
     try { e.scrollIntoView({ block: 'center', inline: 'center' }); } catch (x) {}
+    // 要开新窗口的链接（target=_blank）：合成点击触发的 window.open 会被弹窗拦截，
+    // 直接改成在当前页打开 —— AI 操作的是同一块屏幕，新窗口反而更难追踪。
+    try {
+      var tag = String(e.tagName || '').toLowerCase();
+      var href = e.href || '';
+      if (tag === 'a' && href && href.indexOf('javascript:') !== 0) {
+        var t = e.getAttribute('target');
+        if (t && t !== '_self') e.setAttribute('target', '_self');
+      }
+    } catch (x) {}
     var r = e.getBoundingClientRect();
     var x = r.left + r.width / 2, y = r.top + r.height / 2;
     var opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window };
@@ -926,13 +938,24 @@ JSON.stringify({
     return JSON.stringify({ ok: !!e, what: sel });
   }
   if (txt) {
-    var els = document.querySelectorAll(MCP.SEL), v = txt.toLowerCase();
-    for (var i = 0; i < els.length; i++) {
-      if (MCP.vis(els[i]) && MCP.txt(els[i]).toLowerCase().indexOf(v) >= 0) {
-        return JSON.stringify({ ok: true, what: txt, text: MCP.txt(els[i]).slice(0, 60) });
-      }
+    var v = String(txt).toLowerCase();
+    // 先看正文里有没有（标题、段落这些不是「可交互元素」，但也是要等的文字）
+    var body = (document.body ? (document.body.innerText || '') : '').toLowerCase();
+    if (body.indexOf(v) < 0) return JSON.stringify({ ok: false, what: txt });
+    // 顺带找一下最像它的那个元素，报个大致位置
+    var all = document.querySelectorAll('body *'), hit = null, cap = Math.min(all.length, 4000);
+    for (var i = 0; i < cap; i++) {
+      var el = all[i];
+      if (el.children && el.children.length) continue;
+      if (!MCP.vis(el)) continue;
+      if ((el.innerText || el.textContent || '').toLowerCase().indexOf(v) >= 0) { hit = el; break; }
     }
-    return JSON.stringify({ ok: false, what: txt });
+    var r = hit ? hit.getBoundingClientRect() : null;
+    return JSON.stringify({
+      ok: true, what: txt, text: hit ? MCP.txt(hit).slice(0, 60) : txt,
+      x: r ? Math.round(r.left + r.width / 2 + (window.scrollX || 0)) : 0,
+      y: r ? Math.round(r.top + r.height / 2 + (window.scrollY || 0)) : 0
+    });
   }
   return JSON.stringify({ ok: false, err: '没有给 selector / text' });
 })()
@@ -945,7 +968,11 @@ JSON.stringify({
   var e = null;
   if (by === 'point') {
     var parts = String(val).split(',');
-    e = document.elementFromPoint(parseFloat(parts[0]) || 0, parseFloat(parts[1]) || 0);
+    // 坐标是「页面绝对坐标」（元素列表里给的就是这个），元素命中要的是视口坐标，这里减掉滚动量
+    e = document.elementFromPoint(
+      (parseFloat(parts[0]) || 0) - (window.scrollX || 0),
+      (parseFloat(parts[1]) || 0) - (window.scrollY || 0)
+    );
   } else {
     e = MCP.findEl(by, val, $index);
   }

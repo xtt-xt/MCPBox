@@ -270,7 +270,7 @@ object ToolsBrowser {
         title = "读网页内容",
         description = "读当前（或指定）页面的内容。mode：" +
             "text=正文纯文本（推荐先用它）；markdown=正文转 Markdown（标题/列表/代码/链接）；" +
-            "elements=可交互元素列表（带序号、文字、类型、坐标 —— 看这个再决定点什么，省 token）；" +
+            "elements=可交互元素列表（带序号、文字、类型、页面绝对坐标 —— 看这个再决定点什么，省 token）；" +
             "links=页面所有链接；html=原始 HTML（很大，慎用）；meta=标题/地址/加载状态/滚动位置。" +
             "默认会**先自动滚到底**（把「滚了才加载」的长列表 / 图片喂出来，auto_scroll=false 关掉）。" +
             "长内容用 offset / maxChars 分段读。",
@@ -520,7 +520,7 @@ object ToolsBrowser {
         name = "browser_click",
         title = "点击网页元素",
         description = "点页面上的东西。by=index：点 browser_content(mode=elements) 里的第 N 项（推荐，最稳）；" +
-            "by=text：点文字里含这个词的第一个元素；by=selector：CSS 选择器；by=point：页面坐标 \"x,y\"。" +
+            "by=text：点文字里含这个词的第一个元素；by=selector：CSS 选择器；by=point：页面绝对坐标 \"x,y\"（就是 elements 列表里给的那对数字）。" +
             "点击后页面可能要加载，接着用 browser_wait 或再读一次内容。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
