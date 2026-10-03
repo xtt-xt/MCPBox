@@ -45,7 +45,7 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - **页面数上限**默认 5（设置 → 浏览器里可调 1~12），每个页面一块 WebView，很吃内存
 - 「暂停 AI」期间，AI 的浏览器动作会被直接拒绝并提示等待，等用户点「继续」再继续
 - 设置 → 浏览器：允许访问内网、最多页面数、默认搜索引擎、自定义搜索引擎增删、User-Agent（手机 / 桌面 / 默认）、清 cookie / 清缓存
-- 悬浮球可拖动、松手贴边半收；轻点展开 / 收起；面板本身也能拖，右下角可以缩放，尺寸与位置都记在偏好里
+- 悬浮球可以拖动，松手后**完整吸附在屏幕边缘**（不做半收）；球体是主色渐变 + 投影 + 深色地球图标，AI 操作时球上有一盏小灯和一条状态胶囊；面板改成带描边的卡片、按钮与标签都是胶囊，顶栏下加了一条分隔线
 
 ### 说明
 
@@ -92,7 +92,7 @@ curl -H "Authorization: Bearer <token>" \
 - **Tab limit** defaults to 5 (1–12 in Settings → Browser); each tab is a WebView and costs memory
 - While *Pause AI* is on, browser actions are rejected with a note to wait until the user hits *Resume*
 - Settings → Browser: intranet access, max tabs, default search engine, add/remove custom engines, User-Agent (mobile / desktop / default), clear cookies / cache
-- The ball can be dragged and snaps half off the edge; tapping expands or collapses the panel, which can also be dragged and resized from its bottom-right corner; size and position are remembered
+- The ball can be dragged and snaps **fully inside the screen edge** (no half-tuck); it is a primary-gradient sphere with a soft shadow and a dark globe glyph, plus a status chip and a small activity dot while the AI works. The panel is now a bordered card with pill buttons and pill tabs, separated from the header by a hairline
 
 ### Notes
 

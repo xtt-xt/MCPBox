@@ -2214,5 +2214,9 @@ object LangEn {
     "页面正文是空的。可能还在加载（用 browser_wait 等元素出现），" to "The article text is empty. It may still be loading (use browser_wait),",
     "（已经打开的页面要 browser_history(reload) 之后才生效）" to "(already-open tabs need browser_history(reload) to pick it up)",
 
+    "可以在这里手动操作页面（长按标签关掉它）" to "You can operate the page here (long-press a tab to close it)",
+
+    "页面返回的数据看不懂（多半是还没加载完，用 browser_wait 等一等）。" to "The page returned something unreadable (probably still loading - try browser_wait).",
+
     )
 }

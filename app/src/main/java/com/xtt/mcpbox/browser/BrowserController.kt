@@ -556,7 +556,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
         val wmv = wm ?: return
         val view = BallView(context)
         val params = WindowManager.LayoutParams(
-            dp(104), dp(74),
+            dp(112), dp(80),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -566,8 +566,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
             gravity = Gravity.TOP or Gravity.START
             val sx = AppCore.prefs.getInt(KEY_BALL_X, -1)
             val sy = AppCore.prefs.getInt(KEY_BALL_Y, -1)
-            x = if (sx < 0) screenW() - dp(84) else sx
-            y = if (sy < 0) (screenH() * 0.25f).toInt() else sy
+            x = if (sx < 0) screenW() - dp(112) - dp(4) else sx.coerceIn(0, max(0, screenW() - dp(112)))
+            y = if (sy < 0) (screenH() * 0.28f).toInt() else sy.coerceIn(0, max(0, screenH() - dp(80)))
         }
         view.status = statusText
         view.paused = pausedFlag
@@ -620,10 +620,12 @@ class BrowserController(private val context: Context) : BrowserBridge {
                         if (!moved) {
                             togglePanel()
                         } else {
-                            // 贴边半收：留一半在屏幕里
-                            val half = dp(52)
-                            params.x = if (params.x + half < screenW() / 2) -half / 2 else screenW() - half / 2
-                            params.y = params.y.coerceIn(0, max(0, screenH() - dp(74)))
+                            // 贴边吸一下，但**整个球都留在屏幕里**（不做半收，免得看着像被裁掉）
+                            val w = dp(112)
+                            val h = dp(80)
+                            val half = dp(26)
+                            params.x = if (params.x + half < screenW() / 2) dp(4) else screenW() - w - dp(4)
+                            params.y = params.y.coerceIn(dp(4), max(dp(4), screenH() - h - dp(4)))
                             runCatching { wm?.updateViewLayout(view, params) }
                             AppCore.prefs.putInt(KEY_BALL_X, params.x)
                             AppCore.prefs.putInt(KEY_BALL_Y, params.y)
@@ -647,46 +649,77 @@ class BrowserController(private val context: Context) : BrowserBridge {
         }
 
         override fun onDraw(canvas: Canvas) {
-            val d = dp(46)
+            val d = dp(50)
             val cx = width / 2f
             val cy = height - d / 2f
-            // 状态胶囊
+            val r = d / 2f
+            val chipTop = cy - r - dp(23)
+
+            // 状态胶囊（球上方）：不透明一点，保证在任意壁纸 / 应用上都读得清
             if (status.isNotBlank()) {
-                val label = TextUtils.ellipsize(status, text, dp(96).toFloat(), TextUtils.TruncateAt.END)
+                val label = TextUtils.ellipsize(status, text, dp(100).toFloat(), TextUtils.TruncateAt.END)
                 val tw = text.measureText(label.toString())
-                val pad = dp(7).toFloat()
+                val pad = dp(8).toFloat()
                 val rect = RectF(
                     cx - tw / 2 - pad,
-                    cy - d / 2f - dp(22),
+                    chipTop,
                     cx + tw / 2 + pad,
-                    cy - d / 2f - dp(4)
+                    cy - r - dp(5)
                 )
                 paint.style = Paint.Style.FILL
-                paint.color = blend(p.card, p.background, 0.86f)
-                canvas.drawRoundRect(rect, dp(9).toFloat(), dp(9).toFloat(), paint)
+                paint.color = Color.argb(60, 0, 0, 0)
+                canvas.drawRoundRect(
+                    RectF(rect.left, rect.top + dpF(1.5f), rect.right, rect.bottom + dpF(1.5f)),
+                    dp(10).toFloat(), dp(10).toFloat(), paint
+                )
+                paint.color = blend(p.card, p.background, 0.97f)
+                canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), paint)
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = dp(1).toFloat()
-                paint.color = if (paused) p.textDim else blend(p.primary, p.card, 0.5f)
-                canvas.drawRoundRect(rect, dp(9).toFloat(), dp(9).toFloat(), paint)
+                paint.strokeWidth = dpF(1f).coerceAtLeast(1f)
+                paint.color = if (paused) blend(p.outline, p.card, 0.7f) else blend(p.primary, p.card, 0.45f)
+                canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), paint)
                 paint.style = Paint.Style.FILL
-                canvas.drawText(label.toString(), cx - tw / 2, rect.bottom - dp(5), text)
+                canvas.drawText(label.toString(), cx - tw / 2, rect.bottom - dp(6), text)
             }
-            // 球
+
+            // 球体投影（两层，代替 elevation —— 悬浮窗里的 View 没有系统阴影）
             paint.style = Paint.Style.FILL
-            paint.color = if (paused) blend(p.cardHigh, p.background, 0.9f) else blend(p.primary, p.background, 0.92f)
-            canvas.drawCircle(cx, cy, d / 2f, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dpF(1.4f).coerceAtLeast(1f)
-            paint.color = if (paused) p.outline else p.primary
-            canvas.drawCircle(cx, cy, d / 2f, paint)
-            // 地球（两根经线 + 一根纬线）
-            val r = d * 0.26f
-            paint.color = if (paused) p.textDim else p.primary
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dpF(1.6f).coerceAtLeast(1f)
+            paint.shader = null
+            paint.color = Color.argb(30, 0, 0, 0)
+            canvas.drawCircle(cx, cy + dpF(3f), r + dpF(1f), paint)
+            paint.color = Color.argb(18, 0, 0, 0)
+            canvas.drawCircle(cx, cy + dpF(6f), r + dpF(2f), paint)
+
+            // 球体：主色渐变（上浅下深），暂停时换成中性灰
+            val top = if (paused) blend(p.cardHigh, p.text, 0.08f) else blend(p.primary, p.background, 0.94f)
+            val bottom = if (paused) blend(p.card, p.background, 0.85f) else blend(p.primary, p.card, 0.70f)
+            paint.shader = android.graphics.LinearGradient(
+                0f, cy - r, 0f, cy + r, top, bottom, android.graphics.Shader.TileMode.CLAMP
+            )
             canvas.drawCircle(cx, cy, r, paint)
-            canvas.drawOval(RectF(cx - r / 2, cy - r, cx + r / 2, cy + r), paint)
-            canvas.drawLine(cx - r, cy, cx + r, cy, paint)
+            paint.shader = null
+
+            // 描边：一道细细的主色环，边界更干净
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dpF(1.2f).coerceAtLeast(1f)
+            paint.color = if (paused) blend(p.outline, p.card, 0.6f) else blend(p.primary, p.background, 0.40f)
+            canvas.drawCircle(cx, cy, r - dpF(0.6f), paint)
+
+            // 地球（一根纬线 + 一根经线椭圆）
+            val gr = r * 0.52f
+            paint.color = if (paused) p.textDim else p.onPrimary
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dpF(1.9f)
+            canvas.drawCircle(cx, cy, gr, paint)
+            canvas.drawOval(RectF(cx - gr * 0.50f, cy - gr, cx + gr * 0.50f, cy + gr), paint)
+            canvas.drawLine(cx - gr, cy, cx + gr, cy, paint)
+
+            // AI 正在操作时，右上角点一颗小灯
+            if (!paused && status.isNotBlank()) {
+                paint.style = Paint.Style.FILL
+                paint.color = p.onPrimary
+                canvas.drawCircle(cx + gr + dpF(1f), cy - gr - dpF(1f), dpF(2.6f), paint)
+            }
         }
     }
 
@@ -697,27 +730,27 @@ class BrowserController(private val context: Context) : BrowserBridge {
         val wmv = wm ?: return
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(blend(p.background, p.card, 0.35f), 22f)
+            background = rounded(blend(p.card, p.background, 0.94f), 22f, blend(p.outline, p.card, 0.55f))
             clipToOutline = true
-            setPadding(dp(8), dp(6), dp(8), dp(8))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
         }
 
         // 顶栏：标题 + 状态
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
+            setPadding(dp(6), dp(7), dp(6), dp(7))
         }
         titleView = TextView(context).apply {
             setTextColor(p.text)
-            textSize = 13f
+            textSize = 13.5f
             typeface = Typeface.DEFAULT_BOLD
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         hintView = TextView(context).apply {
             setTextColor(p.textDim)
-            textSize = 10.5f
+            textSize = 10f
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
@@ -731,6 +764,12 @@ class BrowserController(private val context: Context) : BrowserBridge {
         header.setOnTouchListener(panelDrag(root))
         header.isClickable = true
         root.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // 顶栏下的细分隔线：把工具条和页面分开，看着更清爽
+        root.addView(
+            View(context).apply { background = rounded(blend(p.outline, p.card, 0.35f), 1f) },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1).apply { bottomMargin = dp(6) }
+        )
 
         // 页面标签（横向滚动）
         tabRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
@@ -775,22 +814,23 @@ class BrowserController(private val context: Context) : BrowserBridge {
         val holder = FrameLayout(context)
         holder.addView(pageHost, FrameLayout.LayoutParams(-1, -1))
         val handle = View(context).apply {
-            background = rounded(blend(p.primary, p.card, 0.35f), 6f)
+            background = rounded(blend(p.textDim, p.card, 0.35f), 6f)
         }
         holder.addView(
             handle,
-            FrameLayout.LayoutParams(dp(22), dp(22), Gravity.BOTTOM or Gravity.END).apply {
-                rightMargin = dp(4); bottomMargin = dp(4)
+            FrameLayout.LayoutParams(dp(20), dp(20), Gravity.BOTTOM or Gravity.END).apply {
+                rightMargin = dp(6); bottomMargin = dp(6)
             }
         )
         handle.setOnTouchListener(resizeHandle(root))
         root.addView(holder, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(
             TextView(context).apply {
-                text = L("可以在这里手动操作页面")
+                text = L("可以在这里手动操作页面（长按标签关掉它）")
                 setTextColor(p.textDim)
-                textSize = 9.5f
+                textSize = 10f
                 gravity = Gravity.CENTER
+                setPadding(0, dp(3), 0, 0)
             },
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         )
@@ -955,8 +995,10 @@ class BrowserController(private val context: Context) : BrowserBridge {
             textSize = 11.5f
             gravity = Gravity.CENTER
             setTextColor(p.text)
-            setPadding(dp(6), dp(7), dp(6), dp(7))
-            background = rounded(p.cardHigh, 50f)
+            setPadding(dp(6), dp(8), dp(6), dp(8))
+            background = rounded(
+                blend(p.cardHigh, p.background, 0.92f), 50f, blend(p.outline, p.card, 0.5f)
+            )
             isClickable = true
             setOnClickListener { onClick() }
         }
@@ -984,9 +1026,10 @@ class BrowserController(private val context: Context) : BrowserBridge {
                     dp(120).toFloat(), TextUtils.TruncateAt.END
                 )
                 textSize = 11f
-                setTextColor(if (active) p.onPrimary else p.text)
-                background = rounded(if (active) p.primary else p.cardHigh, 50f)
-                setPadding(dp(10), dp(5), dp(10), dp(5))
+                setTextColor(if (active) p.onPrimary else p.textDim)
+                background = if (active) rounded(p.primary, 50f)
+                else rounded(blend(p.cardHigh, p.background, 0.9f), 50f, blend(p.outline, p.card, 0.45f))
+                setPadding(dp(11), dp(6), dp(11), dp(6))
                 isClickable = true
                 setOnClickListener { call { switchTo(page.id) } }
                 setOnLongClickListener {
@@ -1012,7 +1055,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
         pauseBtn?.apply {
             text = if (pausedFlag) L("继续 AI") else L("暂停 AI")
             setTextColor(if (pausedFlag) p.onPrimary else p.text)
-            background = rounded(if (pausedFlag) p.primary else p.cardHigh, 50f)
+            background = if (pausedFlag) rounded(p.primary, 50f)
+            else rounded(blend(p.cardHigh, p.background, 0.92f), 50f, blend(p.outline, p.card, 0.5f))
         }
     }
 
@@ -1038,6 +1082,10 @@ class BrowserController(private val context: Context) : BrowserBridge {
         setColor(fill)
         cornerRadius = dp(radius.toInt()).toFloat()
     }
+
+    /** 带一道细描边的圆角底（悬浮窗浮在任意背景上，有描边才看得出边界）。 */
+    private fun rounded(fill: Int, radius: Float, stroke: Int): GradientDrawable =
+        rounded(fill, radius).apply { setStroke(dpF(1f).coerceAtLeast(1f).toInt(), stroke) }
 
     /**
      * WebView 的宿主布局。
