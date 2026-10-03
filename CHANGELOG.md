@@ -74,6 +74,8 @@ curl -H "Authorization: Bearer <token>" \
   "http://127.0.0.1:8720/download?path=/storage/emulated/0/目标目录&zip=1" -o x.zip
 ```
 
+- 关于页的**「检查更新」改成弹窗**：点整行就查一次 GitHub（右侧那个「检查」小胶囊去掉了，点整行一样触达）—— 查到新版直接弹「发现新版本」弹窗（与每天自动检查用的是同一个，说明正文可滚动、下面有「去下载 / 稍后」）；已是最新、检查失败都只弹一句 toast。列表里不会再因为一次检查多出「去下载 vX」「手动打开 Releases 页面」这些行
+
 ### 基线
 
 - 端到端测试 **566 项全绿**（新增 99 项：浏览器工具包 71、跳转壳还原 6、注入 JS 回归 4、同站判断与 CSP 退路 7、引擎域名与 %s 坑 5、内置包清单 1；更早的 33 项见下）
@@ -129,6 +131,8 @@ curl -X POST --data-binary @/tmp/x.zip \
 curl -H "Authorization: Bearer <token>" \
   "http://127.0.0.1:8720/download?path=/storage/emulated/0/target&zip=1" -o x.zip
 ```
+
+- **"Check for updates" in About opens a dialog now**: tapping the whole row checks GitHub once (the little *Check* pill on the right is gone). A newer release opens the very same "new version available" dialog the daily check uses (scrollable notes with *Download* / *Later* below); up-to-date and failures only show a toast, and the list no longer grows a "Download vX" / "Open the Releases page" row because of a check
 
 ### Baseline
 

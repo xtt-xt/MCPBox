@@ -99,6 +99,7 @@ fun AboutScreen(
     onChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onPreviewUpdate: (UpdateChecker.Info) -> Unit,
+    onUpdateFound: (UpdateChecker.Info) -> Unit,
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
@@ -154,6 +155,7 @@ fun AboutScreen(
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
+                    onUpdateFound = onUpdateFound,
                     onOpenDev = { page = DEV_PAGE },
                     onBack = onBack
                 )
@@ -169,6 +171,7 @@ private fun AboutHomePage(
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
+    onUpdateFound: (UpdateChecker.Info) -> Unit,
     onOpenDev: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -177,18 +180,22 @@ private fun AboutHomePage(
     var catTarget by remember { mutableStateOf(1f) }
     val catScale by animateFloatAsState(catTarget, tween(150), label = "catScale")
     var checking by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf<UpdateChecker.Result?>(null) }
     val full = ServerMeta.fullVersion
 
+    // 手动检查：有新版就弹更新弹窗（和每天自动检查用同一个弹窗），
+    // 已是最新 / 检查失败都只用 toast，不再往列表里塞多余的行
     fun runCheck() {
         if (checking) return
         checking = true
-        result = null
         scope.launch {
             val r = withContext(Dispatchers.IO) { UpdateChecker.check() }
-            result = r
             checking = false
             AppCore.prefs.lastUpdateCheck = UpdateChecker.today()
+            when (r) {
+                is UpdateChecker.Result.Newer -> onUpdateFound(r.info)
+                UpdateChecker.Result.UpToDate -> toast(ctx, L("已经是最新版啦"))
+                is UpdateChecker.Result.Failed -> toast(ctx, L("检查更新失败：%s").format(r.reason))
+            }
         }
     }
 
@@ -309,26 +316,12 @@ private fun AboutHomePage(
 
         GroupLabel(L("更新"))
         CardGroup(
-            listOfNotNull(
+            listOf(
                 RowSpec(
                     title = if (checking) L("正在检查…") else L("检查更新"),
-                    subtitle = when (val r = result) {
-                        is UpdateChecker.Result.Newer -> L("发现新版本 %s（当前 %s）").format(r.info.tag, full)
-                        UpdateChecker.Result.UpToDate -> L("已经是最新版啦")
-                        is UpdateChecker.Result.Failed -> r.reason
-                        null -> L("当前版本 %s").format(full)
-                    },
-                    subtitleMaxLines = 3,
+                    subtitle = L("当前版本 %s").format(full),
                     icon = Icons.Filled.Refresh,
-                    onClick = { runCheck() },
-                    trailing = {
-                        PillButton(
-                            if (checking) L("检查中") else L("检查"),
-                            outlined = true,
-                            compact = true,
-                            color = MaterialTheme.colorScheme.primary
-                        ) { runCheck() }
-                    }
+                    onClick = { runCheck() }
                 ),
                 switchSpec(
                     title = L("每天自动检查一次"),
@@ -339,26 +332,8 @@ private fun AboutHomePage(
                 ) { on ->
                     AppCore.prefs.updateCheckDaily = on
                     onChanged()
-                },
-                (result as? UpdateChecker.Result.Newer)?.let { newer ->
-                    RowSpec(
-                        title = L("去下载 %s").format(newer.info.tag),
-                        subtitle = newer.info.url,
-                        subtitleMaxLines = 1,
-                        icon = Icons.Filled.Share,
-                        onClick = { openUrl(ctx, newer.info.url) }
-                    )
-                },
-                (result as? UpdateChecker.Result.Failed)?.let {
-                    RowSpec(
-                        title = L("手动打开 Releases 页面"),
-                        subtitle = UpdateChecker.RELEASES_URL,
-                        subtitleMaxLines = 1,
-                        icon = Icons.Filled.Share,
-                        onClick = { openUrl(ctx, UpdateChecker.RELEASES_URL) }
-                    )
                 }
-            ).filterNotNull()
+            )
         )
 
         // ------------------------------------------------ 开源

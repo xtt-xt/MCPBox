@@ -368,6 +368,8 @@ fun AppRoot(
                         onChanged = { revision++ },
                         onLangChanged = onLangChanged,
                         onPreviewUpdate = { previewUpdate = it },
+                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
+                        onUpdateFound = { updateInfo = it },
                         onBack = { subScreen = "" }
                     )
                     "memory" -> MemoryScreen(
