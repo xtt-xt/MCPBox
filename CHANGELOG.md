@@ -22,6 +22,22 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.1-98 · 2026-10-03
+
+**修：内置浏览器打不开 http 站点（明文流量被系统挡了）**
+
+- **现象**：`browser_open("http://127.0.0.1:8730/")` 页面直接报
+  `net::ERR_CLEARTEXT_NOT_PERMITTED` —— 连「设置 → 浏览器 → 允许访问内网地址」打开也一样，
+  因为卡住它的是系统的明文流量策略，不是内网拦截
+- **原因**：targetSdk 28 起系统默认禁止明文 HTTP，而 manifest 里没开 `usesCleartextTraffic`
+- **改法**：`AndroidManifest.xml` 的 `<application>` 加 `android:usesCleartextTraffic="true"`，
+  浏览器现在和普通浏览器一样能开 http 页面（http 站点、局域网里自己的服务、本机服务都行）
+- **安全口径没变**：内网 / 本机地址（localhost、127.0.0.1、10.x、192.168.x、`*.local`）
+  仍由 `Browser.kt` 的 `AllowLan` 开关拦（默认关，要开去 设置 → 浏览器 → 允许访问内网地址）
+- **基线**：端到端测试 **566 项全绿**（只动 manifest，没有新增段）
+
+---
+
 ## v1.2.1 · 2026-10-03 —— 第三个发行版 / Third release
 
 <details open>
