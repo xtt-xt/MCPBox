@@ -206,16 +206,14 @@ fun MemoryScreen(
             )
         }
     ) {
+    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
+    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            // 方向按层级比（根页 key 是 "list"，不是空串 —— 别再用 isNotEmpty 判方向）
-            val entering = pageForward(targetState, initialState) { if (it.startsWith("detail:")) 1 else 0 }
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            pageSlide(
+                entering = pageForward(targetState, initialState) { if (it.startsWith("detail:")) 1 else 0 },
+                commitDrag = commitDrag
             )
         },
         label = "memoryPage"
