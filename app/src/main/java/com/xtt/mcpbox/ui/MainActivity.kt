@@ -333,8 +333,14 @@ fun AppRoot(
         )
     }
 
-    // 子页面（自定义工具）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧
+    // 全屏子页（工具管理 / 记忆库 / 备份与恢复 / 关于）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧。
+    // 开启预见式返回动画后，手指从边缘往右拖时这一页跟着手指走 —— 后面露出来的是底色，
+    // 因为底下那套 tab 主界面这会儿本来就没在渲染（要露出真正的主界面得把它常驻在下面，见开发文档）。
     androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
+    PredictiveBackBox(
+        onBack = { subScreen = "" },
+        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
+    ) {
     AnimatedContent(
         targetState = subScreen,
         transitionSpec = {
@@ -517,6 +523,7 @@ fun AppRoot(
             }
             }
         }
+    }
     }
     }
     }

@@ -46,7 +46,7 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_SHELL_TIMEOUT_LAST = "shell_timeout_last_sec"
         /** 有 Root / Shizuku 时，进入 App 自动补齐缺失的系统权限。 */
         const val KEY_AUTO_GRANT_PERMS = "auto_grant_perms"
-        /** 跟手返回（Android 13+ 的 predictive back，默认开）。 */
+        /** 预见式返回动画（Android 13+ 的 predictive back，默认开）。 */
         const val KEY_PREDICTIVE_BACK = "predictive_back"
         /** 审批请求怎么呈现：overlay（悬浮窗，默认）/ notify（通知栏）。 */
         const val KEY_APPROVAL_PRESENTATION = "approval_presentation"
@@ -242,9 +242,9 @@ class Prefs(context: Context) : SettingsSource {
         set(value) = putBoolean(KEY_AUTO_GRANT_PERMS, value)
 
     /**
-     * 跟手返回（Android 13+ 的 predictive back，默认开）。
+     * 预见式返回动画（Android 13+ 的 predictive back，默认开）。
      *
-     * 手指从边缘往右拖时子页面跟着手指横向走，松手才决定返回还是弹回。
+     * 手指从边缘往右拖时子页面跟着手指横向走（下面露出上一页），松手才决定返回还是弹回。
      * 只影响「子页跟手」这一层：清单里的 `enableOnBackInvokedCallback` 是编译期写死的，
      * 根页返回桌面时那个系统动画跟这个开关无关。
      */

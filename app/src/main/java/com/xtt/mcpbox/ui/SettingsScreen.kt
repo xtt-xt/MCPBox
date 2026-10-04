@@ -74,7 +74,7 @@ import com.xtt.mcpbox.core.ServerMeta
  *
  * 四件必修都在这里做齐：
  *  ① 子页进出场动画（进入滑 1/3 屏宽，返回反向）
- *  ② 子页接 [PredictiveBackBox]（内部是 BackHandler / 跟手返回），顶层不接（顶层再按返回就该退出应用）
+ *  ② 子页接 [PredictiveBackBox]（内部是 BackHandler / 预见式返回动画），顶层不接（顶层再按返回就该退出应用）
  *  ③ 标题属于各自的页面：顶层用「设置」，子页用各自的 `PageHeader`
  *  ④ 每页滚动位置用 [rememberSaveableStateHolder] 按 key 保留
  *
@@ -134,11 +134,24 @@ fun SettingsScreen(
     val pageStates = rememberSaveableStateHolder()
 
     // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）。
-    // 开了「跟手返回」时手指拖着走，松手才决定回不回。
+    // 开了「预见式返回动画」时手指拖着走，松手才决定回不回；拖动时下面露出来的就是设置首页。
     PredictiveBackBox(
         onBack = back,
         handleBack = page.isNotEmpty(),
-        follow = AppCore.prefs.predictiveBack
+        follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
+        behind = {
+            SettingsHomePage(
+                scrollTopTick = scrollTopTick,
+                toolCount = status.toolCount,
+                entityCount = AppCore.memory.graph.entities.size,
+                relationCount = AppCore.memory.graph.relations.size,
+                onPage = onPage,
+                onOpenTools = onOpenTools,
+                onOpenMemory = onOpenMemory,
+                onOpenBackup = onOpenBackup,
+                onOpenAbout = onOpenAbout
+            )
+        }
     ) {
     AnimatedContent(
         targetState = page,

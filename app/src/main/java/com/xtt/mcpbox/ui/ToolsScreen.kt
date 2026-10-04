@@ -71,10 +71,21 @@ fun ToolsScreen(
     // list / editor / detail:<工具名>
     var page by rememberSaveable { mutableStateOf(LIST_PAGE) }
 
-    // 返回：详情 / 编辑器 → 回到列表；已经在列表 → 交给上一层（离开工具页）
+    // 返回：详情 / 编辑器 → 回到列表；已经在列表 → 交给上一层（离开工具页）。
+    // 开了「预见式返回动画」时手指拖着走，松手才决定；拖动时下面露出来的就是工具列表。
     PredictiveBackBox(
         onBack = { if (page != LIST_PAGE) page = LIST_PAGE else onBack() },
-        follow = page != LIST_PAGE && AppCore.prefs.predictiveBack
+        follow = page != LIST_PAGE && AppCore.prefs.predictiveBack,
+        behind = {
+            ToolListPage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onBack = onBack,
+                onCreate = { page = "editor" },
+                onOpen = { page = "detail:$it" }
+            )
+        }
     ) {
     AnimatedContent(
         targetState = page,

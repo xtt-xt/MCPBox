@@ -201,7 +201,7 @@ internal fun AppearanceSettingsPage(
         CardGroup(
             listOf(
                 switchSpec(
-                    title = L("跟手返回"),
+                    title = L("预见式返回动画"),
                     subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.ArrowBack,

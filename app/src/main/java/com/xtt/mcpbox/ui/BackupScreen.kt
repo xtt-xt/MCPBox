@@ -307,10 +307,21 @@ fun BackupScreen(
     val pages = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
-            // 跟手返回：手指从边缘往右拖时页面跟着走（回首页那一步）
+            // 预见式返回动画：手指从边缘往右拖时页面跟着走，下面露出来的是备份首页
             PredictiveBackBox(
                 onBack = { backHome() },
-                follow = page != HOME && AppCore.prefs.predictiveBack
+                follow = page != HOME && AppCore.prefs.predictiveBack,
+                behind = {
+                    BackupHomePage(
+                        ctx = ctx,
+                        revision = revision,
+                        result = result,
+                        onOpenCreate = { page = CREATE },
+                        onPickZip = {},
+                        onPickFiles = {},
+                        onBack = onBack
+                    )
+                }
             ) {
             AnimatedContent(
                 targetState = page,

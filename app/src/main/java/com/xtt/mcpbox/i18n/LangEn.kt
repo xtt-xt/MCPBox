@@ -1560,7 +1560,7 @@ object LangEn {
     // ---------------- i18n 第九批：设置页（顶层入口与子页标题）
     "通用" to "General",
     "交互" to "Interaction",
-    "跟手返回" to "Follow-the-finger back",
+    "预见式返回动画" to "Predictive back animation",
     "手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）" to "Drag from the screen edge and the page follows your finger; release to either go back or spring back (Android 13 and up)",
     "外观与语言" to "Appearance & language",
     "颜色模式、动态取色、调色板、界面语言与语言包" to "Color mode, dynamic color, palette, app language and language packs",

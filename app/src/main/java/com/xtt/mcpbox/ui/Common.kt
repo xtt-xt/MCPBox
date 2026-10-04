@@ -75,6 +75,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -93,6 +94,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.launch
 
 /* ------------------------------------------------------------------ 小工具 */
 
@@ -1202,7 +1204,7 @@ fun SelectionBar(
     }
 }
 
-/* ---------------------------------------------------------------- 跟手返回 */
+/* ------------------------------------------------------- 预见式返回动画 */
 
 /**
  * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
@@ -1215,18 +1217,25 @@ fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolea
     depth(target) >= depth(initial)
 
 /**
- * 跟手返回（Android 13+ 的 predictive back）。
+ * 预见式返回动画（Android 13+ 的 predictive back）。
  *
- * 手指从屏幕边缘往右拖时，[content] 整体跟着往右平移：**位移 = 拖动进度 × 宽度**（1:1 跟手，只有左右方向）。
- * 松手后系统判定「返回」就调用 [onBack] 并把位移收回去；拖回原处松手（取消）则弹回原位，什么都不发生。
+ * 手指从屏幕边缘往右拖时，[content] 跟着手指往右平移（位移 = 进度 × 宽度，1:1，只有左右方向）；
+ * 松手按系统判定：提交就调 [onBack]，取消就弹回原位。
  *
- * 三个参数各管一件事，别混：
- *  · [handleBack] —— 这一层要不要**接管返回**（最外层传 false，让系统去退出应用 / 关页面）
- *  · [follow] —— 拖动时**跟手**（设置里的开关 + 这一层确实有上一页可回）；关掉时退回普通 [BackHandler]
+ * 参数：
+ *  · [handleBack] —— 这一层要不要**接管返回**（最外层传 false，让系统去退出应用）
+ *  · [follow] —— 拖动时**跟手**（设置开关 + 这一层确实有上一页可回）；关掉退回普通 [BackHandler]
+ *  · [behind] —— 拖动时**露出来的那一页**（一般是这个栈的根页）。传 null 就只露底色；
+ *    不传的话拖起来后面是空的，看着就像黑屏 —— 所以能传就传
  *  · [onBack] —— 真返回时干什么
  *
- * 注意：跟手需要清单里的 `android:enableOnBackInvokedCallback="true"` —— 那是编译期写死的，
- * 所以根页「滑返回桌面」时系统的缩小动画不受这个开关影响（系统和 App 都关不掉它）。
+ * **两个坑（都踩过）**：
+ *  ① 归位动画必须跑在**这个 composable 自己的**协程里（[rememberCoroutineScope]）。
+ *     手势回调那个协程在页面被替换 / [follow] 一变就会被取消，动画到不了终点，
+ *     页面就永久偏在屏幕外 —— 表现就是「按返回整页变黑」。
+ *  ② 兜底：只要 [follow] 变成 false 就把位移归零，绝不让页面停在半路。
+ *
+ * 跟手的前提是清单里的 `android:enableOnBackInvokedCallback="true"`（编译期写死、App 里改不了）。
  */
 @Composable
 fun PredictiveBackBox(
@@ -1234,20 +1243,37 @@ fun PredictiveBackBox(
     modifier: Modifier = Modifier,
     handleBack: Boolean = true,
     follow: Boolean = true,
+    behind: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     val drag = remember { Animatable(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    /** 回到原位：清掉「正在拖动」，动画收位移。 */
+    fun settle() {
+        dragging = false
+        if (drag.value != 0f) {
+            scope.launch { drag.animateTo(0f, tween(220, easing = FastOutSlowInEasing)) }
+        }
+    }
+
+    // 兜底：不再跟手（回到根页 / 开关关掉）时位移一定归零
+    LaunchedEffect(follow) { if (!follow) settle() }
+
     if (handleBack) {
         if (follow) {
             PredictiveBackHandler(enabled = true) { events ->
                 try {
-                    events.collect { e -> drag.snapTo(e.progress.coerceIn(0f, 1f)) }
-                    // 提交：先真的返回（页面自己播关闭动画），同时把跟手位移收回去
+                    events.collect { e ->
+                        if (!dragging) dragging = true
+                        drag.snapTo(e.progress.coerceIn(0f, 1f))
+                    }
+                    // 提交：先真的返回（页面自己播关闭动画），再把跟手位移收回去
                     onBack()
-                    drag.animateTo(0f, tween(180, easing = FastOutSlowInEasing))
+                    settle()
                 } catch (cancel: CancellationException) {
-                    // 取消：弹回原位
-                    drag.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                    settle()
                     throw cancel
                 }
             }
@@ -1255,9 +1281,20 @@ fun PredictiveBackBox(
             BackHandler(enabled = true) { onBack() }
         }
     }
+
     Box(
         modifier
             .fillMaxSize()
-            .graphicsLayer { translationX = drag.value * size.width }
-    ) { content() }
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // 拖动时把上一页铺在下面 —— 手指挪多少就露多少，松手才决定去留
+        if (behind != null && dragging) {
+            Box(Modifier.fillMaxSize()) { behind() }
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationX = drag.value * size.width }
+        ) { content() }
+    }
 }

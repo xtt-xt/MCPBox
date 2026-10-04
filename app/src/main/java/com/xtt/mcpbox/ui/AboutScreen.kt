@@ -104,10 +104,20 @@ fun AboutScreen(
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
 
     // 系统返回：在开发者模式里先回关于页，在关于页才回设置。
-    // 开了「跟手返回」时，在开发者模式里手指拖着走。
+    // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
     PredictiveBackBox(
         onBack = { if (page == DEV_PAGE) page = ABOUT_PAGE else onBack() },
-        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack
+        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
+        behind = {
+            AboutHomePage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onUpdateFound = onUpdateFound,
+                onOpenDev = { page = DEV_PAGE },
+                onBack = onBack
+            )
+        }
     ) {
     val pages = rememberSaveableStateHolder()
     AnimatedContent(

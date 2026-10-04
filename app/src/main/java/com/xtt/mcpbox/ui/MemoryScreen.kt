@@ -191,10 +191,20 @@ fun MemoryScreen(
     }
 
     // 详情里按返回 → 回列表；已经在列表 → 交给上一层（离开记忆库）。
-    // 开了「跟手返回」时手指拖着走，松手才决定。
+    // 开了「预见式返回动画」时手指拖着走，松手才决定；拖动时下面露出来的就是记忆列表。
     PredictiveBackBox(
         onBack = { if (page.startsWith("detail:")) page = "list" else onBack() },
-        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack
+        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack,
+        behind = {
+            MemoryListPage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onBack = onBack,
+                onOpen = { page = "detail:$it" },
+                onMore = { showMenu = true }
+            )
+        }
     ) {
     AnimatedContent(
         targetState = page,
