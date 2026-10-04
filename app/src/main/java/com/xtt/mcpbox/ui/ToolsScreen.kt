@@ -69,12 +69,18 @@ fun ToolsScreen(
     onBack: () -> Unit
 ) {
     // list / editor / detail:<工具名>
-    var page by rememberSaveable { mutableStateOf("list") }
+    var page by rememberSaveable { mutableStateOf(LIST_PAGE) }
 
+    // 返回：详情 / 编辑器 → 回到列表；已经在列表 → 交给上一层（离开工具页）
+    PredictiveBackBox(
+        onBack = { if (page != LIST_PAGE) page = LIST_PAGE else onBack() },
+        follow = page != LIST_PAGE && AppCore.prefs.predictiveBack
+    ) {
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState.isNotEmpty()
+            // 方向按层级比（根页 key 是 "list"，不是空串 —— 别再用 isNotEmpty 判方向）
+            val entering = pageForward(targetState, initialState) { if (it == LIST_PAGE) 0 else 1 }
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -89,21 +95,24 @@ fun ToolsScreen(
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
-                onBack = { page = "list" }
+                onBack = { page = LIST_PAGE }
             )
             current.startsWith("detail:") -> ToolDetailPage(
                 ctx = ctx,
                 name = current.removePrefix("detail:"),
                 revision = revision,
                 onChanged = onChanged,
-                onBack = { page = "list" }
+                onBack = { page = LIST_PAGE }
             )
             else -> ToolListPage(ctx, revision, onChanged, onBack, onCreate = { page = "editor" }) {
                 page = "detail:$it"
             }
         }
     }
+    }
 }
+
+private const val LIST_PAGE = "list"
 
 @Composable
 private fun ToolListPage(
@@ -114,8 +123,6 @@ private fun ToolListPage(
     onCreate: () -> Unit,
     onOpen: (String) -> Unit
 ) {
-    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
-
     val all = remember(revision) { AppCore.server.tools }
     val builtinNames = remember(revision) { AppCore.server.builtinTools.map { it.name }.toSet() }
     var query by remember { mutableStateOf("") }
@@ -232,8 +239,6 @@ private fun ToolDetailPage(
     onChanged: () -> Unit,
     onBack: () -> Unit
 ) {
-    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
-
     val spec = remember(revision, name) { AppCore.server.tools.firstOrNull { it.name == name } }
     if (spec == null) {
         // 工具可能在别处被删了

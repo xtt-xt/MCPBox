@@ -99,6 +99,7 @@ internal fun SettingsPageShell(
 internal fun AppearanceSettingsPage(
     ctx: Context,
     revision: Int,
+    onChanged: () -> Unit,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onOpenSeed: () -> Unit,
@@ -109,6 +110,8 @@ internal fun AppearanceSettingsPage(
     // 读一下 revision：它是对外声明的「设置变了」，让本页在开关改动后真的重组
     // （不加这个参数的话，调用点的 lambda 全被 memoize 成相等，整页会被 Compose 跳过）
     val langChoices = remember(revision) { com.xtt.mcpbox.i18n.Lang.languageChoices() }
+    // 这一页自己的小版本号：改了开关之后让本页重组一次（外观页没有通用的 onChanged）
+    var localRev by remember { mutableStateOf(0) }
 
     SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack) {
         GroupLabel(L("主题"))
@@ -192,6 +195,22 @@ internal fun AppearanceSettingsPage(
                     icon = Icons.Filled.Info,
                     onClick = onOpenLangPack
                 )
+            )
+        )
+        GroupLabel(L("交互"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("跟手返回"),
+                    subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）"),
+                    subtitleMaxLines = 3,
+                    icon = Icons.Filled.ArrowBack,
+                    checked = remember(revision, localRev) { AppCore.prefs.predictiveBack }
+                ) { on ->
+                    AppCore.prefs.predictiveBack = on
+                    localRev++
+                    onChanged()
+                }
             )
         )
     }

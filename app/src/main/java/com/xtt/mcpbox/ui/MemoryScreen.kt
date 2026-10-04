@@ -5,7 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -191,10 +190,17 @@ fun MemoryScreen(
         )
     }
 
+    // 详情里按返回 → 回列表；已经在列表 → 交给上一层（离开记忆库）。
+    // 开了「跟手返回」时手指拖着走，松手才决定。
+    PredictiveBackBox(
+        onBack = { if (page.startsWith("detail:")) page = "list" else onBack() },
+        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack
+    ) {
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState.isNotEmpty()
+            // 方向按层级比（根页 key 是 "list"，不是空串 —— 别再用 isNotEmpty 判方向）
+            val entering = pageForward(targetState, initialState) { if (it.startsWith("detail:")) 1 else 0 }
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -224,6 +230,7 @@ fun MemoryScreen(
             )
         }
     }
+    }
 }
 
 /* ------------------------------------------------------------------ 列表页 */
@@ -237,8 +244,6 @@ private fun MemoryListPage(
     onOpen: (String) -> Unit,
     onMore: () -> Unit
 ) {
-    BackHandler(enabled = true) { onBack() }
-
     val graph = remember(revision) { AppCore.memory.graph }
     val folders = remember(revision) { AppCore.memory.folders() }
     var query by remember { mutableStateOf("") }
@@ -472,8 +477,6 @@ private fun MemoryDetailPage(
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(enabled = true) { onBack() }
-
     val entity = remember(revision, name) { AppCore.memory.entity(name) }
     if (entity == null) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {

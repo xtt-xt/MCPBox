@@ -5,7 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -75,7 +74,7 @@ import com.xtt.mcpbox.core.ServerMeta
  *
  * 四件必修都在这里做齐：
  *  ① 子页进出场动画（进入滑 1/3 屏宽，返回反向）
- *  ② 子页接 [BackHandler]，顶层不接（顶层再按返回就该退出应用）
+ *  ② 子页接 [PredictiveBackBox]（内部是 BackHandler / 跟手返回），顶层不接（顶层再按返回就该退出应用）
  *  ③ 标题属于各自的页面：顶层用「设置」，子页用各自的 `PageHeader`
  *  ④ 每页滚动位置用 [rememberSaveableStateHolder] 按 key 保留
  *
@@ -131,16 +130,21 @@ fun SettingsScreen(
 
     val back = { onPage("") }
 
-    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）
-    BackHandler(enabled = page.isNotEmpty()) { back() }
-
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
 
+    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）。
+    // 开了「跟手返回」时手指拖着走，松手才决定回不回。
+    PredictiveBackBox(
+        onBack = back,
+        handleBack = page.isNotEmpty(),
+        follow = AppCore.prefs.predictiveBack
+    ) {
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState.isNotEmpty()
+            // 方向按「层级」比：根页是空串，任何子页都比它深
+            val entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 }
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -156,6 +160,7 @@ fun SettingsScreen(
                 "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
                     revision = revision,
+                    onChanged = onChanged,
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
                     onOpenSeed = { showSeed = true },
@@ -209,6 +214,7 @@ fun SettingsScreen(
                 )
             }
         }
+    }
     }
 
     if (showPort) {

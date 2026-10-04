@@ -7,7 +7,6 @@ import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -104,11 +103,12 @@ fun AboutScreen(
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
 
-    // 系统返回：在开发者模式里先回关于页，在关于页才回设置
-    BackHandler(enabled = true) {
-        if (page == DEV_PAGE) page = ABOUT_PAGE else onBack()
-    }
-
+    // 系统返回：在开发者模式里先回关于页，在关于页才回设置。
+    // 开了「跟手返回」时，在开发者模式里手指拖着走。
+    PredictiveBackBox(
+        onBack = { if (page == DEV_PAGE) page = ABOUT_PAGE else onBack() },
+        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack
+    ) {
     val pages = rememberSaveableStateHolder()
     AnimatedContent(
         targetState = page,
@@ -161,6 +161,7 @@ fun AboutScreen(
                 )
             }
         }
+    }
     }
 }
 

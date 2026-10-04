@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -305,11 +304,14 @@ fun BackupScreen(
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
     }
 
-    BackHandler(enabled = true) { backHome() }
-
     val pages = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
+            // 跟手返回：手指从边缘往右拖时页面跟着走（回首页那一步）
+            PredictiveBackBox(
+                onBack = { backHome() },
+                follow = page != HOME && AppCore.prefs.predictiveBack
+            ) {
             AnimatedContent(
                 targetState = page,
                 transitionSpec = {
@@ -367,6 +369,7 @@ fun BackupScreen(
                         )
                     }
                 }
+            }
             }
         }
 

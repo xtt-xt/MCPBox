@@ -13,6 +13,12 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.layout.fillMaxSize
+import kotlin.coroutines.cancellation.CancellationException
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -1194,4 +1200,64 @@ fun SelectionBar(
             ) { onAction() }
         }
     }
+}
+
+/* ---------------------------------------------------------------- 跟手返回 */
+
+/**
+ * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
+ *
+ * **别再拿「页面 key 是不是空串」当方向判断**：设置页 / 关于页的根页 key 恰好是空串，
+ * 那么写能跑对；工具页和记忆库页的根页 key 是 `"list"`（不是空串），
+ * 于是永远被判成「往里进」—— 关闭详情时页面又从右边滑进来，看着和别的页面相反。
+ */
+fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolean =
+    depth(target) >= depth(initial)
+
+/**
+ * 跟手返回（Android 13+ 的 predictive back）。
+ *
+ * 手指从屏幕边缘往右拖时，[content] 整体跟着往右平移：**位移 = 拖动进度 × 宽度**（1:1 跟手，只有左右方向）。
+ * 松手后系统判定「返回」就调用 [onBack] 并把位移收回去；拖回原处松手（取消）则弹回原位，什么都不发生。
+ *
+ * 三个参数各管一件事，别混：
+ *  · [handleBack] —— 这一层要不要**接管返回**（最外层传 false，让系统去退出应用 / 关页面）
+ *  · [follow] —— 拖动时**跟手**（设置里的开关 + 这一层确实有上一页可回）；关掉时退回普通 [BackHandler]
+ *  · [onBack] —— 真返回时干什么
+ *
+ * 注意：跟手需要清单里的 `android:enableOnBackInvokedCallback="true"` —— 那是编译期写死的，
+ * 所以根页「滑返回桌面」时系统的缩小动画不受这个开关影响（系统和 App 都关不掉它）。
+ */
+@Composable
+fun PredictiveBackBox(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    handleBack: Boolean = true,
+    follow: Boolean = true,
+    content: @Composable () -> Unit
+) {
+    val drag = remember { Animatable(0f) }
+    if (handleBack) {
+        if (follow) {
+            PredictiveBackHandler(enabled = true) { events ->
+                try {
+                    events.collect { e -> drag.snapTo(e.progress.coerceIn(0f, 1f)) }
+                    // 提交：先真的返回（页面自己播关闭动画），同时把跟手位移收回去
+                    onBack()
+                    drag.animateTo(0f, tween(180, easing = FastOutSlowInEasing))
+                } catch (cancel: CancellationException) {
+                    // 取消：弹回原位
+                    drag.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+                    throw cancel
+                }
+            }
+        } else {
+            BackHandler(enabled = true) { onBack() }
+        }
+    }
+    Box(
+        modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = drag.value * size.width }
+    ) { content() }
 }
