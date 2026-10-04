@@ -29,13 +29,6 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - 登录态现在由 AI 按页面直接管（写 cookie / 换身份），不需要再教用户「点悬浮球手点登录」
 - 只删了这张纯说明卡，下面的清 cookie / 清缓存不受影响
 
-## v1.2.1-103 · 2026-10-05
-
-**Removed the "sign in manually in the floating window" info card from Settings -> Browser**
-
-- Logins are now handled per tab by the AI (write cookies / switch identity), so the how-to card is gone
-- Only that static info card was removed; clear cookies / clear cache stay where they were
-
 ## v1.2.1-102 · 2026-10-05
 
 **改：内置浏览器的 cookie 与身份（User-Agent）都能「按页面」管了**
@@ -57,30 +50,6 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
   第一个请求就带上登录态（身份也是），不必再「先打开、再写、再刷新」
 - **基线**：端到端测试 **633 项全绿**（[53] 段 98 → 128 项：按页面身份 / 按站点清 cookie /
   cookie 文本解析 / 别名与文案 / 打开时带 cookie）
-
-## v1.2.1-102 · 2026-10-05
-
-**Cookies and the User-Agent of the built-in browser are now managed per tab**
-
-- **Background**: `browser_storage` could inject a single cookie, and the UA switch was global - asking the
-  AI to "open this page as desktop" meant flipping the global default, reloading and flipping back
-- **Identity per tab**: `browser_open` / `browser_navigate` take a new `ua` argument (`mobile` / `android`
-  or `desktop` / `windows`) that affects **that tab only**; `browser_storage(action=set_ua, page=...)`
-  changes one tab, and without `page` it changes the global default; `get_ua` reports both the global
-  default and the UA that tab actually uses; `browser_pages` marks each tab's identity
-- **Cookies per tab**: `browser_storage` takes a new `page` argument - when `url` is omitted the target is
-  that tab's own URL, so logging a tab in is one call (`set_cookie` + `browser_history(reload)`);
-  `set_cookie` now accepts multiple lines and several cookies on one line (`a=1; b=2` counts as two),
-  while a line carrying attributes (`Path` / `Expires` ...) stays one; a pasted `Cookie:` prefix is stripped
-- **New `clear_site_cookies`**: wipes one site only (other sites stay logged in). WebView's CookieManager
-  cannot delete by domain, so it reads the visible cookies, expires them one by one and re-reads to verify;
-  **HttpOnly cookies are invisible to the Java layer and therefore cannot be removed** - the tool says so
-  (a hard WebView limit)
-- `browser_open` / `browser_navigate` take a new `cookies` argument: cookies are written before the load,
-  so the very first request already carries the login (and the chosen identity) instead of
-  "open, write, reload"
-- **Baseline**: **633 e2e checks green** ([53] 98 -> 128: per-tab identity, per-site cookie clearing,
-  cookie text parsing, aliases and wording, cookies on open)
 
 ## v1.2.1-101 · 2026-10-03
 
