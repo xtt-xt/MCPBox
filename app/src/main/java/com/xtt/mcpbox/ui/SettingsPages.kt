@@ -698,12 +698,6 @@ internal fun BrowserSettingsPage(
                     subtitle = L("页面缓存、表单记录、本地存储"),
                     icon = Icons.Filled.Refresh,
                     onClick = { clearWhat = "cache" }
-                ),
-                RowSpec(
-                    title = L("在悬浮窗里手动登录"),
-                    subtitle = L("打开任意页面 → 点悬浮球 → 直接在页面上登录；之后 AI 也能用这份登录态（注意隐私）"),
-                    subtitleMaxLines = 3,
-                    icon = Icons.Filled.Lock
                 )
             )
         )

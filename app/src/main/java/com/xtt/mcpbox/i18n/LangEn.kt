@@ -2211,8 +2211,6 @@ object LangEn {
     "改完对已打开的页面要先刷新才生效" to "Already-open tabs need a reload to pick this up",
     "所有站点的登录态都会没掉" to "Every site will be signed out",
     "页面缓存、表单记录、本地存储" to "Page cache, form data and local storage",
-    "在悬浮窗里手动登录" to "Sign in manually in the floating window",
-    "打开任意页面 → 点悬浮球 → 直接在页面上登录；之后 AI 也能用这份登录态（注意隐私）" to "Open any page, tap the ball, sign in right there; the AI then reuses that session (mind the privacy)",
     "搜索链接模板（查询词写 %s）" to "Search URL template (%s for the query)",
     "名字要有，模板要是网址并且带 %s（查询词插在哪）" to "Needs a name, and a URL template containing %s (where the query goes)",
     "已添加搜索引擎「%s」" to "Search engine \"%s\" added",
