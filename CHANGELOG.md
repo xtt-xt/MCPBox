@@ -22,6 +22,20 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.1-103 · 2026-10-05
+
+**改：设置 → 浏览器 里去掉了那张「在悬浮窗里手动登录」的说明卡**
+
+- 登录态现在由 AI 按页面直接管（写 cookie / 换身份），不需要再教用户「点悬浮球手点登录」
+- 只删了这张纯说明卡，下面的清 cookie / 清缓存不受影响
+
+## v1.2.1-103 · 2026-10-05
+
+**Removed the "sign in manually in the floating window" info card from Settings -> Browser**
+
+- Logins are now handled per tab by the AI (write cookies / switch identity), so the how-to card is gone
+- Only that static info card was removed; clear cookies / clear cache stay where they were
+
 ## v1.2.1-102 · 2026-10-05
 
 **改：内置浏览器的 cookie 与身份（User-Agent）都能「按页面」管了**
@@ -43,7 +57,6 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
   第一个请求就带上登录态（身份也是），不必再「先打开、再写、再刷新」
 - **基线**：端到端测试 **633 项全绿**（[53] 段 98 → 128 项：按页面身份 / 按站点清 cookie /
   cookie 文本解析 / 别名与文案 / 打开时带 cookie）
-- 设置 → 浏览器：删掉「在悬浮窗里手动登录」那张说明卡（登录态现在由 AI 直接按页面管，不用再教用户手点）
 
 ## v1.2.1-102 · 2026-10-05
 
@@ -68,8 +81,6 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
   "open, write, reload"
 - **Baseline**: **633 e2e checks green** ([53] 98 -> 128: per-tab identity, per-site cookie clearing,
   cookie text parsing, aliases and wording, cookies on open)
-- Settings -> Browser: removed the "sign in manually in the floating window" info card (logins are now handled
-  per tab by the AI, no need to teach the user to tap through it)
 
 ## v1.2.1-101 · 2026-10-03
 
