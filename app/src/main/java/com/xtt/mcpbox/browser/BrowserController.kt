@@ -861,6 +861,9 @@ class BrowserController(private val context: Context) : BrowserBridge {
         pauseBtn = panelButton(L("暂停 AI")) {
             setPaused(!pausedFlag)
         }
+        val reloadBtn = panelButton(L("刷新页面")) {
+            reloadPage(currentId ?: pages.keys.lastOrNull())
+        }
         val closeOne = panelButton(L("关闭本页")) {
             val id = currentId ?: return@panelButton
             call { close(id) }
@@ -870,7 +873,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
             call { closeAll() }
         }
         val collapse = panelButton(L("收起")) { collapse(keepBall = true) }
-        listOf(pauseBtn!!, closeOne, closeAll, collapse).forEachIndexed { i, v ->
+        listOf(pauseBtn!!, reloadBtn, closeOne, closeAll, collapse).forEachIndexed { i, v ->
             buttons.addView(
                 v,
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -1114,6 +1117,23 @@ class BrowserController(private val context: Context) : BrowserBridge {
             row.addView(chip, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { rightMargin = dp(6) })
+        }
+    }
+
+    /**
+     * 悬浮窗里点「刷新」：让这一页重新加载。
+     *
+     * 和 `history(action=reload)` 的区别是**不看暂停状态** —— 暂停管的是 AI 的动作，
+     * 用户在悬浮窗里自己点刷新属于手动接管，不该被自己设的暂停拦住。
+     */
+    private fun reloadPage(id: String?) {
+        val page = (if (id != null) pages[id] else null) ?: pages.values.lastOrNull() ?: return
+        call {
+            page.loading = true
+            page.error = null
+            page.web.reload()
+            refreshPanel()
+            log(L("浏览器：手动刷新 %s").format(page.url.ifBlank { page.id }))
         }
     }
 
