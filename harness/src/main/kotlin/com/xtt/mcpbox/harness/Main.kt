@@ -2062,6 +2062,87 @@ fun main() {
         val (cookieOk, cookieText) = call("browser_storage", """{"action":"get_cookies"}""")
         check("browser_storage 能读 cookie", cookieOk && cookieText.contains("session=fake"), cookieText.take(200))
 
+        // ---- 身份（UA）：全局默认 + 单页覆盖 ----
+        val openSchema = server.tools.first { it.name == "browser_open" }.schema
+        check(
+            "browser_open 支持 ua / cookies 参数",
+            openSchema["properties"]!!.jsonObject.keys.containsAll(listOf("ua", "cookies")),
+            openSchema["properties"].toString().take(200)
+        )
+        val storageSchema = server.tools.first { it.name == "browser_storage" }.schema
+        check("browser_storage 支持 page 参数（按页面控制）",
+            "page" in storageSchema["properties"]!!.jsonObject.keys)
+        check(
+            "browser_storage 的 action 里有 clear_site_cookies",
+            storageSchema["properties"]!!.jsonObject["action"]!!.jsonObject["enum"]!!.jsonArray
+                .any { it.jsonPrimitive.content == "clear_site_cookies" }
+        )
+        check("ua 规格：android→mobile / windows→desktop",
+            hub.uaSpec("android") == "mobile" && hub.uaSpec("windows") == "desktop" &&
+                hub.uaSpec("PC") == "desktop")
+        check("ua 规格：default / 省略 = 跟随全局",
+            hub.uaSpec("default") == null && hub.uaSpec("") == null && hub.uaSpec(null) == null)
+        check("ua 规格：自定义串原样保留", hub.uaSpec("MyBot/1.0") == "MyBot/1.0")
+        check("ua 文案：手机版 / 桌面版 / 跟随全局 / WebView 默认",
+            hub.uaLabel("mobile") == "手机版" && hub.uaLabel("desktop") == "桌面版" &&
+                hub.uaLabel(null) == "跟随全局" && hub.uaLabel(null, global = true) == "WebView 默认")
+        check("cookie 文本：换行 = 多条", hub.cookieLines("a=1\nb=2").size == 2)
+        check("cookie 文本：一行 a=1; b=2 = 两条", hub.cookieLines("a=1; b=2").size == 2)
+        check("cookie 文本：带属性的算一条",
+            hub.cookieLines("a=1; Path=/; Max-Age=0; Secure").size == 1)
+        check("cookie 文本：Cookie: 前缀会去掉", hub.cookieLines("Cookie: a=1; b=2").size == 2)
+        check("cookie 文本：空行与 # 注释跳过", hub.cookieLines("\n# 说明\na=1\n").size == 1)
+
+        fakeBrowser.closeAll()
+        val (deskOk, deskText) = call("browser_open", """{"url":"https://example.com/desk","ua":"desktop"}""")
+        check("browser_open 能给这一页指定桌面版",
+            deskOk && fakeBrowser.pages().first().ua == "desktop", deskText.take(200))
+        check("打开的回执里说明这一页的身份", deskText.contains("桌面版"), deskText.take(300))
+        val (mobOk, _) = call("browser_open", """{"url":"https://example.com/mob"}""")
+        check("不给 ua 的页面跟随全局", mobOk && fakeBrowser.pages()[1].ua == null)
+        val (guOk, guText) = call("browser_storage", """{"action":"get_ua","page":"1"}""")
+        check("get_ua 按页面读（第 1 页是桌面版）",
+            guOk && guText.contains("桌面版") && guText.contains("FakeUA"), guText.take(300))
+        val (puOk, puText) = call("browser_storage", """{"action":"set_ua","page":"2","value":"windows"}""")
+        check("set_ua 带 page 只改这一页",
+            puOk && fakeBrowser.pages()[1].ua == "desktop" && fakeBrowser.pages()[0].ua == "desktop",
+            puText.take(200))
+        check("set_ua 带 page 会说明只影响这一页", puText.contains("只有这一页"), puText.take(200))
+        val (gmOk, gmText) = call("browser_storage", """{"action":"set_ua","value":"desktop"}""")
+        check("不给 page = 改全局默认", gmOk && config.browserUserAgent == "desktop", gmText.take(200))
+        val (rsOk, rsText) = call("browser_storage", """{"action":"set_ua","page":"2","value":"default"}""")
+        check("value=default 让这一页跟回全局", rsOk && fakeBrowser.pages()[1].ua == null, rsText.take(200))
+        config.browserUserAgent = "mobile"
+        check("pages 列表里标出页面身份", hub.formatPages(fakeBrowser.pages(), "p1").contains("桌面版"))
+
+        // ---- cookie：AI 自己给「某个页面」管 ----
+        val (setOk, setText) = call(
+            "browser_storage",
+            """{"action":"set_cookie","url":"https://clear.test/","cookie":"a=1; b=2\nc=3"}"""
+        )
+        check("set_cookie 一行多条 / 多行都认",
+            setOk && fakeBrowser.cookieJar["clear.test"]?.size == 3, setText.take(300))
+        val (getOk, getText) = call("browser_storage", """{"action":"get_cookies","url":"https://clear.test/"}""")
+        check("get_cookies 能读回刚写的 cookie",
+            getOk && getText.contains("a=1") && getText.contains("c=3"), getText.take(300))
+        val (clrOk, clrText) = call("browser_storage", """{"action":"clear_site_cookies","url":"https://clear.test/"}""")
+        check("clear_site_cookies 只清这个站点",
+            clrOk && !fakeBrowser.cookieJar.containsKey("clear.test"), clrText.take(300))
+        check("clear_site_cookies 的文案带条数", clrText.contains("3"), clrText.take(300))
+        check("别的站点的 cookie 没被动", fakeBrowser.cookieJar.containsKey("example.com"))
+        val (pgOk, pgText) = call("browser_storage", """{"action":"set_cookie","page":"1","cookie":"token=xyz"}""")
+        check("set_cookie 能用 page 指定站点（页面的网址）",
+            pgOk && fakeBrowser.cookieJar["example.com"]!!.contains("token=xyz"), pgText.take(300))
+        val (badOk, badText) = call("browser_storage", """{"action":"set_cookie","page":"1","cookie":"  "}""")
+        check("cookie 内容为空会被拒", !badOk, badText.take(200))
+        val (ocOk, ocText) = call(
+            "browser_open",
+            """{"url":"https://orders.test/","ua":"desktop","cookies":"sid=1"}"""
+        )
+        check("browser_open 能顺手带上 cookie",
+            ocOk && fakeBrowser.cookieJar["orders.test"]?.contains("sid=1") == true, ocText.take(300))
+        check("打开的回执里说了写了 cookie", ocText.contains("cookie"), ocText.take(300))
+
         val (engOk, engText) = call("browser_engines", """{"action":"list"}""")
         check("browser_engines 列出内置引擎", engOk && engText.contains("bing") && engText.contains("必应"), engText.take(300))
 
@@ -2512,11 +2593,19 @@ private class FakeBrowser : BrowserBridge {
     var pausedFlag = false
     val opened = mutableListOf<String>()
 
+    /** 假 cookie 罐：域名 → 写过的 cookie 原文（顺序 = 写入顺序）。 */
+    val cookieJar = LinkedHashMap<String, MutableList<String>>()
+
+    init {
+        // 老测试的语义：没特意写过 cookie 的站点，也像是有个会话 cookie
+        cookieJar["example.com"] = mutableListOf("session=fake")
+    }
+
     override fun available(): Boolean = true
 
-    override fun open(url: String): String {
+    override fun open(url: String, ua: String?): String {
         val id = "p${map.size + 1}"
-        map[id] = BrowserPageInfo(id = id, url = url, title = "示例页面", loading = false)
+        map[id] = BrowserPageInfo(id = id, url = url, title = "示例页面", loading = false, ua = ua)
         current = id
         opened.add(url)
         return id
@@ -2532,8 +2621,9 @@ private class FakeBrowser : BrowserBridge {
         current = null
     }
 
-    override fun navigate(id: String, url: String) {
-        map[id] = (map[id] ?: BrowserPageInfo(id)).copy(url = url)
+    override fun navigate(id: String, url: String, ua: String?) {
+        val old = map[id] ?: BrowserPageInfo(id)
+        map[id] = old.copy(url = url, ua = ua ?: old.ua)
     }
 
     override fun history(id: String, action: String) {}
@@ -2556,7 +2646,31 @@ private class FakeBrowser : BrowserBridge {
         pausedFlag = value
     }
 
-    override fun cookies(url: String?): String = "session=fake"
+    override fun cookies(url: String?): String {
+        val jar = if (url.isNullOrBlank()) cookieJar.values.flatten()
+        else cookieJar[hostOf(url)].orEmpty()
+        return if (jar.isEmpty()) "session=fake" else jar.joinToString("; ")
+    }
+
+    override fun setCookie(url: String, cookie: String): Boolean {
+        val host = hostOf(url)
+        if (host.isEmpty()) return false
+        cookieJar.getOrPut(host) { mutableListOf() }.add(cookie)
+        return true
+    }
+
+    override fun clearSiteCookies(url: String): Int {
+        val host = hostOf(url)
+        val n = cookieJar[host]?.size ?: 0
+        cookieJar.remove(host)
+        return n
+    }
+
+    override fun userAgent(id: String?): String = "FakeUA"
+
+    override fun setPageUserAgent(id: String, ua: String?) {
+        map[id] = (map[id] ?: BrowserPageInfo(id)).copy(ua = ua)
+    }
 
     override fun eval(id: String, js: String): String {
         val payload = when {

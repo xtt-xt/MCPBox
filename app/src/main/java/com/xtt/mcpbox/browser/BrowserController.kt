@@ -102,9 +102,13 @@ class BrowserController(private val context: Context) : BrowserBridge {
         var canGoBack: Boolean = false
         var canGoForward: Boolean = false
 
+        /** 这一页自己的身份（mobile / desktop / 自定义串）；null = 跟随全局设置。 */
+        var uaOverride: String? = null
+
         fun info(): BrowserPageInfo = BrowserPageInfo(
             id = id, url = url, title = title, loading = loading,
-            canGoBack = canGoBack, canGoForward = canGoForward, error = error
+            canGoBack = canGoBack, canGoForward = canGoForward, error = error,
+            ua = uaOverride
         )
     }
 
@@ -178,10 +182,13 @@ class BrowserController(private val context: Context) : BrowserBridge {
 
     // ==================================================================== 页面
 
-    override fun open(url: String): String = call {
+    override fun open(url: String, ua: String?): String = call {
         val web = newWebView()
         val id = "p${++seq}"
         val page = Page(id, web)
+        // 身份要在 loadUrl 之前定下来 —— 否则第一个请求已经用旧 UA 出去了
+        page.uaOverride = ua
+        applyUa(page)
         pages[id] = page
         web.loadUrl(url)
         pageHost?.addView(web, frameParamsOf())
@@ -233,10 +240,14 @@ class BrowserController(private val context: Context) : BrowserBridge {
         }
     }
 
-    override fun navigate(id: String, url: String) {
+    override fun navigate(id: String, url: String, ua: String?) {
         call {
             val page = pages[id]
             if (page != null) {
+                if (ua != null) {
+                    page.uaOverride = ua
+                    applyUa(page)
+                }
                 page.loading = true
                 page.error = null
                 page.web.loadUrl(url)
@@ -354,6 +365,48 @@ class BrowserController(private val context: Context) : BrowserBridge {
         }.getOrDefault(false)
     }
 
+    /**
+     * 只清掉**一个站点**的 cookie（别的站点不动）。
+     *
+     * WebView 的 CookieManager 没有「按域名删」的接口，所以做法是：先读出这个网址能看到的 cookie，
+     * 再逐条用「同名 + 立刻过期」覆盖掉（host-only / domain、各层 path 都试一遍），最后重读一遍算清掉几条。
+     * **HttpOnly 的 cookie 读不到**（Chromium 不把它交给 Java 层）→ 删不掉，这是硬限制。
+     */
+    override fun clearSiteCookies(url: String): Int = call {
+        val cm = CookieManager.getInstance()
+        val before = runCatching { cm.getCookie(url) }.getOrNull().orEmpty()
+        val names = before.split(';').map { it.substringBefore('=').trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        if (names.isEmpty()) return@call 0
+        val uri = runCatching { java.net.URI(url) }.getOrNull()
+        val host = uri?.host.orEmpty()
+        val path = uri?.path.orEmpty()
+        val paths = listOf("/", path, path.substringBeforeLast('/', "/"))
+            .filter { it.isNotEmpty() }.distinct()
+        val domains = listOf("", host, if (host.isEmpty()) "" else ".$host")
+            .filter { it.isNotEmpty() }.distinct() + ""
+        val expired = "Thu, 01 Jan 1970 00:00:00 GMT"
+        names.forEach { name ->
+            paths.forEach { p ->
+                domains.forEach { d ->
+                    val tail = buildString {
+                        if (d.isNotEmpty()) append("; Domain=").append(d)
+                        append("; Path=").append(p)
+                        append("; Expires=").append(expired)
+                        append("; Max-Age=0")
+                    }
+                    runCatching { cm.setCookie(url, "$name=;$tail") }
+                }
+            }
+        }
+        runCatching { cm.flush() }
+        val after = runCatching { cm.getCookie(url) }.getOrNull().orEmpty()
+        val left = after.split(';').map { it.substringBefore('=').trim() }
+            .filter { it.isNotEmpty() }.toSet()
+        names.count { it !in left }
+    }
+
     override fun clearCookies() = call {
         runCatching {
             CookieManager.getInstance().removeAllCookies(null)
@@ -372,12 +425,24 @@ class BrowserController(private val context: Context) : BrowserBridge {
         Unit
     }
 
-    override fun userAgent(): String = call { pages.values.firstOrNull()?.web?.settings?.userAgentString.orEmpty() }
+    override fun userAgent(id: String?): String = call {
+        val page = (if (id != null) pages[id] else null) ?: pages.values.firstOrNull()
+        page?.web?.settings?.userAgentString.orEmpty()
+    }
+
+    override fun setPageUserAgent(id: String, ua: String?) = call {
+        pages[id]?.let {
+            it.uaOverride = ua
+            applyUa(it)
+        }
+        Unit
+    }
 
     override fun setUserAgent(ua: String?) = call {
         AppCore.config.browserUserAgent = ua ?: "default"
         AppCore.saveConfig()
-        pages.values.forEach { applyUa(it.web) }
+        // 自己设过身份的页面不动（「两个都要」：全局默认 + 单页覆盖）
+        pages.values.filter { it.uaOverride == null }.forEach { applyUa(it) }
         Unit
     }
 
@@ -424,7 +489,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
             displayZoomControls = false
             cacheMode = WebSettings.LOAD_DEFAULT
         }
-        applyUa(web)
+        // UA 不在这里设：页面自己的身份要等 Page 建出来才知道（open() / onCreateWindow 里 applyUa(page)）
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(web, true)
@@ -511,7 +576,9 @@ class BrowserController(private val context: Context) : BrowserBridge {
                     val transport = resultMsg.obj as WebView.WebViewTransport
                     val child = newWebView()
                     val id = "p${++seq}"
-                    pages[id] = Page(id, child)
+                    val childPage = Page(id, child)
+                    applyUa(childPage)
+                    pages[id] = childPage
                     child.webViewClient = web.webViewClient
                     child.webChromeClient = web.webChromeClient
                     pageHost?.addView(child, frameParamsOf())
@@ -536,15 +603,22 @@ class BrowserController(private val context: Context) : BrowserBridge {
         return web
     }
 
-    private fun applyUa(web: WebView) {
-        val want = AppCore.config.browserUserAgent.trim()
-        val ua = when (want.lowercase()) {
-            "", "default", "webview", "auto", "reset" -> defaultUa
-            "mobile" -> MOBILE_UA
-            "desktop" -> DESKTOP_UA
-            else -> want
-        }
-        runCatching { web.settings.userAgentString = ua ?: defaultUa }
+    /**
+     * 「规格」→ 真正要用的 UA 串：
+     * mobile/android/phone → 内置安卓 Chrome；desktop/windows/win/pc → 内置 Windows Chrome；
+     * default/webview/空 → WebView 出厂值；其它 → 原样当自定义 UA 串。
+     */
+    private fun resolveUa(spec: String?): String? = when (spec?.trim()?.lowercase()) {
+        null, "", "default", "webview", "auto", "reset", "global" -> defaultUa
+        "mobile", "android", "phone" -> MOBILE_UA
+        "desktop", "windows", "win", "pc" -> DESKTOP_UA
+        else -> spec.trim()
+    }
+
+    /** 页面自己的身份优先，没有就用全局默认。 */
+    private fun applyUa(page: Page) {
+        val spec = page.uaOverride ?: AppCore.config.browserUserAgent
+        runCatching { page.web.settings.userAgentString = resolveUa(spec) ?: defaultUa }
     }
 
     private fun pageOf(web: WebView): Page? = pages.values.firstOrNull { it.web === web }

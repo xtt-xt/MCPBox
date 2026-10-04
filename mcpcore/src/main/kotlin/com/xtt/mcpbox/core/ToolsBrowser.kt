@@ -79,11 +79,14 @@ object ToolsBrowser {
         title = "打开网页",
         description = "在 App 的内置浏览器里新开一个页面并加载网址。打开后手机上会出现悬浮球，" +
             "用户可以点开悬浮窗看页面、自己接管操作。网址要写完整（example.com 会自动补 https://）。" +
-            "想搜东西用 browser_search，别把搜索词当网址填。",
+            "想搜东西用 browser_search，别把搜索词当网址填。" +
+            "ua 能让这一页用手机版 / 桌面版身份（只影响这一页）；cookies 能在打开前先给它带上 cookie（登录态）。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
             mapOf(
                 "url" to Schema.str("网址，例如 https://example.com"),
+                "ua" to Schema.str("这一页的身份：mobile/android=手机版，desktop/windows=桌面版；省略 = 跟随全局设置"),
+                "cookies" to Schema.str("打开前先给这个网址写上的 cookie；一行一条（一行里 a=1; b=2 也算两条）"),
                 "wait_ms" to Schema.int("加载完成后最多再等多久（毫秒），默认 800", 800, 0, 30_000)
             ),
             listOf("url")
@@ -91,13 +94,20 @@ object ToolsBrowser {
     ) { ctx ->
         val hub = start(ctx, L("打开网页 %s").format(ctx.args.str("url").orEmpty().take(120)), ctx.args.str("url"))
         try {
-            val page = hub.open(ctx.args.str("url").orEmpty())
+            val clean = hub.normalizeUrl(ctx.args.str("url").orEmpty())
+            val ua = hub.uaSpec(ctx.args.str("ua"))
+            val cookieText = ctx.args.str("cookies").orEmpty()
+            val written = if (cookieText.isBlank()) null else hub.setCookies(clean, cookieText)
+            val page = hub.open(clean, ua)
             val wait = ctx.args.intOr("wait_ms", 800).coerceIn(0, 30_000)
             if (wait > 0) Thread.sleep(wait.toLong())
             val meta = readMeta(hub, page.id)
+            val seeded = if (written == null) "" else "\n" + L("已先写入 %s 条 cookie。").format(written.first) +
+                (if (written.second.isEmpty()) "" else "\n" + L("这几条没写进去（格式不对？）：%s").format(written.second.joinToString(" | ")))
+            val who = if (ua == null) "" else "\n" + L("这一页的身份：%s（用 browser_storage 可以改回去）。").format(hub.uaLabel(ua))
             ToolResult(
                 L("已打开：[%s] %s\n").format(page.id, page.label()) +
-                    (meta ?: "") +
+                    (meta ?: "") + seeded + who +
                     "\n" + L("提示：用 browser_content 读内容、browser_click 点元素。用户可以在悬浮窗里手动接管。")
             )
         } finally {
@@ -111,12 +121,15 @@ object ToolsBrowser {
         name = "browser_navigate",
         title = "跳转网址",
         description = "让**已有的**页面跳到一个新网址（不新开页面）。一个页面里连续走几个链接时用它，" +
-            "比反复 browser_open 省内存。当前没有页面时会自动新开一个。",
+            "比反复 browser_open 省内存。当前没有页面时会自动新开一个。" +
+            "ua 能把这一页换成手机版 / 桌面版身份（只影响这一页）；cookies 会先写到新网址上再跳（换登录态用）。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
             mapOf(
                 "url" to Schema.str("网址"),
                 "page" to Schema.str("页面 id 或序号；省略 = 当前页面"),
+                "ua" to Schema.str("这一页的身份：mobile/android=手机版，desktop/windows=桌面版；省略 = 不动"),
+                "cookies" to Schema.str("跳转前先给新网址写上的 cookie；一行一条（一行里 a=1; b=2 也算两条）"),
                 "wait_ms" to Schema.int("加载后最多再等多久（毫秒）", 800, 0, 30_000)
             ),
             listOf("url")
@@ -126,18 +139,23 @@ object ToolsBrowser {
         try {
             val pageArg = ctx.args.str("page")
             val url = ctx.args.str("url").orEmpty()
+            val clean = hub.normalizeUrl(url)
+            val ua = hub.uaSpec(ctx.args.str("ua"))
+            val cookieText = ctx.args.str("cookies").orEmpty()
+            val written = if (cookieText.isBlank()) null else hub.setCookies(clean, cookieText)
             val page: BrowserPageInfo = if (pageArg.isNullOrBlank()) {
-                hub.navigateOrOpen(url).first
+                hub.navigateOrOpen(clean, ua).first
             } else {
                 val target = hub.resolvePage(pageArg)
-                hub.engine().navigate(target.id, hub.normalizeUrl(url))
+                hub.engine().navigate(target.id, clean, ua)
                 target
             }
             val wait = ctx.args.intOr("wait_ms", 800).coerceIn(0, 30_000)
             if (wait > 0) Thread.sleep(wait.toLong())
+            val seeded = if (written == null) "" else "\n" + L("已先写入 %s 条 cookie。").format(written.first)
             ToolResult(
                 L("已跳转：%s\n").format(hub.pageLine(hub.resolvePage(page.id))) +
-                    (readMeta(hub, page.id) ?: "")
+                    seeded + (readMeta(hub, page.id) ?: "")
             )
         } finally {
             done(hub)
@@ -1022,23 +1040,28 @@ object ToolsBrowser {
     private fun storage() = ToolSpec(
         name = "browser_storage",
         title = "Cookie / 缓存 / UA",
-        description = "管浏览器的登录态与身份：get_cookies 拿 cookie（用户在悬浮窗里登录过的站点，这里能拿到，" +
-            "说明 AI 也能看到登录后的内容 —— 注意隐私）；set_cookie 手工塞一条 cookie；" +
-            "clear_cookies / clear_cache 清掉；get_ua / set_ua 换身份（mobile=手机版 / desktop=桌面版 / default=WebView 默认 / 其它值=原样）。" +
-            "需要登录才能看的页面，可以让用户先在悬浮窗里手动登录，然后 AI 就能接着用。",
+        description = "管浏览器的登录态与身份，**按页面来管**：省略 url 时目标就是 page（省略 = 当前页面）" +
+            "那个页面的网址 —— 写完 cookie 再 browser_history(action=reload)，AI 就能以这个身份进这个页面。" +
+            "action：get_cookies 读 cookie（用户在悬浮窗里登录过的站点也能读到 —— 注意隐私）；" +
+            "set_cookie 写入 cookie（可多行，一行里 a=1; b=2 也算两条）；" +
+            "clear_site_cookies 只清这个站点的 cookie（别的站点不动）；clear_cookies 清全部站点；clear_cache 清缓存；" +
+            "get_ua 看身份（全局 + 这一页实际用的）；" +
+            "set_ua 改身份（mobile/android=手机版，desktop/windows=桌面版，default=WebView 默认，" +
+            "其它值=自定义 UA 串）—— 给了 page 就只改这一页，不给就是改全局默认。",
         perm = PermKey.BROWSER,
         schema = Schema.obj(
             mapOf(
                 "action" to Schema.str(
                     "做什么", "get_cookies",
                     listOf(
-                        "get_cookies", "set_cookie", "clear_cookies", "clear_cache",
-                        "get_ua", "set_ua"
+                        "get_cookies", "set_cookie", "clear_site_cookies", "clear_cookies",
+                        "clear_cache", "get_ua", "set_ua"
                     )
                 ),
-                "url" to Schema.str("针对哪个站点（get_cookies / set_cookie 用）。省略 = 当前页面"),
-                "cookie" to Schema.str("action=set_cookie 时要写的 cookie，如 a=1; b=2"),
-                "value" to Schema.str("action=set_ua 时的值：mobile / desktop / default / 自定义 UA")
+                "url" to Schema.str("针对哪个网址（省略 = 用 page 那个页面的网址）"),
+                "page" to Schema.str("页面 id 或序号；省略 = 当前页面（set_ua 时给了它 = 只改这一页）"),
+                "cookie" to Schema.str("action=set_cookie 时要写的 cookie：一行一条，例如 a=1; b=2"),
+                "value" to Schema.str("action=set_ua 的值：mobile / android / desktop / windows / default / 自定义 UA")
             ),
             listOf("action")
         )
@@ -1046,11 +1069,15 @@ object ToolsBrowser {
         val action = ctx.str("action")?.lowercase().orEmpty().ifEmpty { "get_cookies" }
         val hub = hub(ctx)
         val b = hub.engine()
-        val urlArg = ctx.args.str("url")?.takeIf { it.isNotBlank() }
-            ?: runCatching { hub.current()?.url }.getOrNull()
+        val pageArg = ctx.args.str("page")
+        val urlArg = ctx.args.str("url")?.trim()?.takeIf { it.isNotBlank() }
+        // 没给 url 就拿「那个页面」的网址：这就是「AI 自己控制某个页面的 cookie」
+        val targetPage: BrowserPageInfo? = runCatching { hub.resolvePage(pageArg) }.getOrNull()
+        val target: String? = urlArg ?: targetPage?.url?.trim()?.takeIf { it.isNotBlank() }
         val label = when (action) {
             "get_cookies" -> L("读取 cookie")
             "set_cookie" -> L("写入 cookie")
+            "clear_site_cookies" -> L("清掉站点的 cookie")
             "clear_cookies" -> L("清空 cookie")
             "clear_cache" -> L("清空缓存")
             "get_ua" -> L("读取 User-Agent")
@@ -1059,31 +1086,53 @@ object ToolsBrowser {
         }
         hub.checkPaused()
         val detail = when (action) {
-            "set_cookie" -> L("%s → %s").format(urlArg ?: L("（未指定站点）"), ctx.args.str("cookie").orEmpty().take(120))
-            "set_ua" -> ctx.args.str("value").orEmpty()
-            else -> urlArg
+            "set_cookie" -> L("%s → %s").format(
+                target ?: L("（未指定站点）"), ctx.args.str("cookie").orEmpty().take(120)
+            )
+            "set_ua" -> if (pageArg.isNullOrBlank()) ctx.args.str("value").orEmpty()
+            else L("[%s] → %s").format(targetPage?.id ?: pageArg.orEmpty(), ctx.args.str("value").orEmpty())
+            else -> target ?: targetPage?.let { hub.pageLine(it) }
         }
-        ctx.guardTarget(PermKey.BROWSER, urlArg, label, detail)
+        ctx.guardTarget(PermKey.BROWSER, target, label, detail)
         hub.status(L("AI：%s").format(label))
         try {
             when (action) {
                 "get_cookies" -> {
-                    val c = b.cookies(urlArg)
+                    val url = target ?: ctx.fail(L("没有可读的网址：给 url，或者先打开一个页面。"))
+                    val c = b.cookies(url)
                     ToolResult(
-                        if (c.isBlank()) L("「%s」现在没有 cookie（没登录过，或者已经过期）。").format(urlArg ?: L("全部"))
-                        else L("「%s」的 cookie：\n").format(urlArg ?: L("全部")) + c.take(4000)
+                        if (c.isBlank()) L("「%s」现在没有 cookie（没登录过，或者已经过期）。").format(url)
+                        else L("「%s」的 cookie：\n").format(url) + c.take(4000)
                     )
                 }
 
                 "set_cookie" -> {
-                    val target = urlArg ?: ctx.fail(L("set_cookie 需要 url（例如 https://example.com）"))
+                    val url = target ?: ctx.fail(L("set_cookie 需要网址：给 url，或者先打开一个页面。"))
                     val cookie = ctx.args.str("cookie").orEmpty()
                     if (cookie.isBlank()) ctx.fail(L("set_cookie 需要 cookie 内容，如 a=1; b=2"))
-                    val ok = b.setCookie(hub.normalizeUrl(target), cookie)
+                    val (ok, failed) = hub.setCookies(hub.normalizeUrl(url), cookie)
                     ToolResult(
-                        if (ok) L("已写入 cookie：「%s」\n%s").format(target, cookie.take(200))
-                        else L("cookie 写入失败（地址不对？）")
+                        L("已给「%s」写入 %s 条 cookie。\n").format(hostOf(url).ifBlank { url }, ok) +
+                            (if (failed.isEmpty()) "" else L("这几条没写进去（格式不对？）：%s\n").format(failed.joinToString(" | "))) +
+                            L("已经打开的页面要 browser_history(action=reload) 之后才带上它。")
                     )
+                }
+
+                "clear_site_cookies" -> {
+                    val url = target ?: ctx.fail(L("clear_site_cookies 需要网址：给 url，或者先打开一个页面。"))
+                    val clean = hub.normalizeUrl(url)
+                    val n = b.clearSiteCookies(clean)
+                    if (n < 0) {
+                        ToolResult(L("这个版本的内置浏览器不支持只清一个站点。要清干净用 clear_cookies（会把所有站点一起清掉）。"))
+                    } else {
+                        val left = runCatching { b.cookies(clean) }.getOrNull().orEmpty()
+                        ToolResult(
+                            L("已清掉「%s」的 %s 条 cookie。\n").format(hostOf(clean).ifBlank { clean }, n) +
+                                (if (left.isBlank()) L("现在这个站点读不到 cookie 了（重新加载页面就是未登录状态）。")
+                                else L("还剩这些（多半是 HttpOnly，Java 层删不掉）：\n%s\n").format(left.take(1000)) +
+                                    L("HttpOnly 的登录 cookie 是清不掉的 —— 这是 WebView 的硬限制，要彻底清用 clear_cookies。"))
+                        )
+                    }
                 }
 
                 "clear_cookies" -> {
@@ -1097,22 +1146,45 @@ object ToolsBrowser {
                 }
 
                 "get_ua" -> {
-                    val ua = b.userAgent()
-                    ToolResult(if (ua.isBlank()) L("当前用 WebView 默认 User-Agent。") else L("当前 User-Agent：\n%s").format(ua))
+                    val globalSpec = ctx.config.browserUserAgent.trim()
+                    val sb = StringBuilder(L("全局默认：%s\n").format(hub.uaLabel(globalSpec, global = true)))
+                    val p = targetPage
+                    if (p == null) {
+                        sb.append(L("现在没有打开的页面（只能看到全局默认）。"))
+                    } else {
+                        sb.append(
+                            L("页面 [%s]（%s）：%s\n").format(
+                                p.id, p.host.ifBlank { p.url },
+                                if (p.ua.isNullOrBlank()) L("跟随全局") else hub.uaLabel(p.ua)
+                            )
+                        )
+                        sb.append(L("这一页实际用的 UA：%s").format(b.userAgent(p.id).ifBlank { L("（WebView 默认）") }))
+                    }
+                    ToolResult(sb.toString())
                 }
 
                 else -> {
                     val v = ctx.args.str("value").orEmpty()
                     if (v.isBlank()) ctx.fail(L("set_ua 需要 value（mobile / desktop / default / 自定义 UA）"))
-                    val ua = when (v.lowercase()) {
-                        "default", "auto", "reset", "webview" -> null
-                        else -> v
+                    val spec = hub.uaSpec(v)
+                    if (!pageArg.isNullOrBlank()) {
+                        val p = targetPage
+                            ?: ctx.fail(L("找不到页面「%s」，用 browser_pages 看一眼列表。").format(pageArg))
+                        hub.setPageUa(p.id, spec)
+                        ToolResult(
+                            L("页面 [%s] 的身份已设为：%s（只有这一页变，别的页面不动）。\n")
+                                .format(p.id, hub.uaLabel(spec)) +
+                                L("刷新一下才生效：browser_history(action=reload)。")
+                        )
+                    } else {
+                        // 全局默认既写进配置（新页面按它来），也通知引擎把「没自己设过身份」的页面一起换掉
+                        ctx.config.browserUserAgent = spec ?: "default"
+                        b.setUserAgent(spec)
+                        ToolResult(
+                            L("全局默认身份已设为：%s\n").format(hub.uaLabel(spec, global = true)) +
+                                L("没自己设过身份的页面一起变；已经打开的页面要 browser_history(action=reload) 之后才生效。")
+                        )
                     }
-                    b.setUserAgent(ua)
-                    ToolResult(
-                        L("User-Agent 已设为：%s\n").format(ua ?: L("WebView 默认")) +
-                            L("（已经打开的页面要 browser_history(reload) 之后才生效）")
-                    )
                 }
             }
         } finally {

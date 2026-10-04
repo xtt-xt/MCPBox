@@ -28,7 +28,14 @@ data class BrowserPageInfo(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     /** 加载失败时的原因（HTTP 错误 / 网络错误）。 */
-    val error: String? = null
+    val error: String? = null,
+    /**
+     * 这一页自己的身份（User-Agent）**规格**：`mobile` / `desktop` / 一段自定义串；
+     * null = 跟随全局设置。只影响这一页，别的页面不受影响。
+     *
+     * 存的是规格而不是展开后的 UA 串，好让 AI 看到「桌面版」这种说法。
+     */
+    val ua: String? = null
 ) {
     /** 域名（给 AI 看的一行用）。 */
     val host: String get() = hostOf(url)
@@ -81,14 +88,15 @@ interface BrowserBridge {
     /** 不可用时的原因（直接展示给 AI / 用户）。 */
     fun unavailableReason(): String = L("浏览器引擎不可用")
 
-    /** 新开一个页面，返回页面 id。 */
-    fun open(url: String): String
+    /** 新开一个页面，返回页面 id。ua = 这一页的身份（null = 跟随全局设置）。 */
+    fun open(url: String, ua: String? = null): String
 
     fun close(id: String)
 
     fun closeAll()
 
-    fun navigate(id: String, url: String)
+    /** 跳到新网址。ua 给了就顺手把这一页的身份换成它（null = 不动）。 */
+    fun navigate(id: String, url: String, ua: String? = null)
 
     /** action = back / forward / reload。 */
     fun history(id: String, action: String)
@@ -122,13 +130,26 @@ interface BrowserBridge {
     /** 写一条自定义 cookie（url 例：https://example.com）。 */
     fun setCookie(url: String, cookie: String): Boolean = false
 
+    /**
+     * 清掉**某个站点**的 cookie（其它站点不动），返回清掉的条数；引擎不支持返回 -1。
+     *
+     * WebView 的 CookieManager 没有「按域名删」的接口，实现是「读出这个网址的 cookie，
+     * 再逐条用过期时间覆盖掉」。HttpOnly 的 cookie 读不到（Chromium 不把它交给 Java 层），
+     * 因此清不干净 —— 这是硬限制，别指望它能删登录态里那条 `HttpOnly` 会话。
+     */
+    fun clearSiteCookies(url: String): Int = -1
+
     fun clearCookies() {}
 
     fun clearCache() {}
 
-    /** 当前 User-Agent（""=WebView 默认）。 */
-    fun userAgent(): String = ""
+    /** 当前生效的 User-Agent（id 为空 = 第一个页面；没有页面时给全局的）。""=WebView 默认。 */
+    fun userAgent(id: String? = null): String = ""
 
+    /** 只改这一页的身份（null = 让它跟回全局设置）。 */
+    fun setPageUserAgent(id: String, ua: String?) {}
+
+    /** 改全局默认身份（所有「没自己设过」的页面一起变）。 */
     fun setUserAgent(ua: String?) {}
 
     /** 关掉引擎（服务停止时用）。 */
@@ -233,8 +254,8 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
         }
     }
 
-    /** 新开页面（受「最多几个页面」限制）。 */
-    fun open(url: String): BrowserPageInfo {
+    /** 新开页面（受「最多几个页面」限制）。ua = 这一页自己的身份（null = 跟随全局）。 */
+    fun open(url: String, ua: String? = null): BrowserPageInfo {
         val b = engine()
         checkPaused()
         val clean = normalizeUrl(url)
@@ -247,7 +268,7 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
                     "\n" + formatPages(list, b.currentId())
             )
         }
-        val id = b.open(clean)
+        val id = b.open(clean, ua)
         val page = b.pages().firstOrNull { it.id == id }
         // 等一小会儿让标题出来（新页面刚开始多半是空的）
         var tries = 0
@@ -261,13 +282,13 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
     }
 
     /** 复用当前页（没有页面就新开一个）。 */
-    fun navigateOrOpen(url: String): Pair<BrowserPageInfo, Boolean> {
+    fun navigateOrOpen(url: String, ua: String? = null): Pair<BrowserPageInfo, Boolean> {
         val b = engine()
         checkPaused()
         val clean = normalizeUrl(url)
         val cur = runCatching { current() }.getOrNull()
-        if (cur == null) return open(clean) to true
-        b.navigate(cur.id, clean)
+        if (cur == null) return open(clean, ua) to true
+        b.navigate(cur.id, clean, ua)
         return (b.pages().firstOrNull { it.id == cur.id } ?: cur) to false
     }
 
@@ -284,6 +305,91 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
         return L("已关闭页面 [%s] %s\n").format(page.id, page.label()) +
             if (left.isEmpty()) L("现在没有打开的页面了（悬浮球会消失）。")
             else L("还剩 %s 个页面：\n").format(left.size) + formatPages(left, b.currentId())
+    }
+
+    // -------------------------------------------------------- 身份（UA）与 cookie
+
+    /**
+     * 规整 AI 给的 `ua` / `value`：把口语别名收成两种规格。
+     *
+     *  · `mobile` / `android` / `phone` → `mobile`（内置安卓 Chrome UA）
+     *  · `desktop` / `windows` / `win` / `pc` → `desktop`（内置 Windows Chrome UA）
+     *  · `default` / `auto` / `reset` / `webview` / `global` → null（= 跟回全局 / WebView 默认）
+     *  · 其它 → 原样当自定义 UA 串用
+     */
+    fun uaSpec(raw: String?): String? {
+        val v = raw?.trim().orEmpty()
+        if (v.isEmpty()) return null
+        return when (v.lowercase()) {
+            "default", "auto", "reset", "webview", "global", "follow" -> null
+            "android", "phone" -> "mobile"
+            "windows", "win", "pc" -> "desktop"
+            else -> v
+        }
+    }
+
+    /** ua 规格 → 给 AI 看的说法。global=true 时 null 表示「WebView 默认」（用在全局那一行）。 */
+    fun uaLabel(spec: String?, global: Boolean = false): String = when (spec?.trim()?.lowercase()) {
+        null, "" -> if (global) L("WebView 默认") else L("跟随全局")
+        "mobile" -> L("手机版")
+        "desktop" -> L("桌面版")
+        else -> spec!!.trim()
+    }
+
+    /** 只改这一页的身份（null = 跟回全局）。 */
+    fun setPageUa(pageId: String, spec: String?) {
+        engine().setPageUserAgent(pageId, spec)
+    }
+
+    /** cookie 文本里那些「属性段」的名字（`a=1; Path=/; Secure` 只算一条 cookie）。 */
+    private val cookieAttrs = setOf(
+        "path", "domain", "expires", "max-age", "secure", "httponly",
+        "samesite", "priority", "partitioned", "comment"
+    )
+
+    /**
+     * 把 AI 给的 cookie 文本拆成「一条一个」。
+     *
+     * AI 抄来的东西长什么样都有可能，所以这里认三种写法：
+     *  · 换行 = 多条；`#` 开头当注释
+     *  · 一行里 `a=1; b=2` = 两条（浏览器 Cookie 头就是这形状）
+     *  · 一行里 `a=1; Path=/; Max-Age=0` = 一条（后面那些是属性，不是新 cookie）
+     * 另外顺手去掉粘贴时带上的 `Cookie:` / `Set-Cookie:` 前缀。
+     */
+    fun cookieLines(raw: String): List<String> {
+        val out = mutableListOf<String>()
+        raw.split('\n').forEach { rawLine ->
+            var line = rawLine.trim()
+            if (line.isEmpty() || line.startsWith("#")) return@forEach
+            line = line.removePrefix("Cookie:").removePrefix("cookie:")
+                .removePrefix("Set-Cookie:").removePrefix("set-cookie:").trim()
+            if (line.isEmpty()) return@forEach
+            val parts = line.split(';').map { it.trim() }.filter { it.isNotEmpty() }
+            if (parts.size <= 1) {
+                out += line
+                return@forEach
+            }
+            val rest = parts.drop(1)
+            val looksLikeAttrs = rest.all { seg ->
+                val name = seg.substringBefore('=').trim().lowercase()
+                name in cookieAttrs || !seg.contains('=')
+            }
+            if (looksLikeAttrs) out += line else out += parts
+        }
+        return out
+    }
+
+    /** 给一个网址写 cookie（文本格式见 [cookieLines]），返回写成功几条 + 失败的原文。 */
+    fun setCookies(url: String, raw: String): Pair<Int, List<String>> {
+        val b = engine()
+        val lines = cookieLines(raw)
+        if (lines.isEmpty()) throw ToolFailure(L("没有可用的 cookie 内容。"))
+        var ok = 0
+        val failed = mutableListOf<String>()
+        lines.forEach { line ->
+            if (b.setCookie(url, line)) ok++ else failed += line
+        }
+        return ok to failed
     }
 
     // ---------------------------------------------------------------- URL
@@ -448,6 +554,7 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
                 if (p.loading) append(L(" 加载中"))
                 if (p.error != null) append(L(" 出错"))
                 if (p.canGoBack) append(L(" 可后退"))
+                if (!p.ua.isNullOrBlank()) append(" · ").append(uaLabel(p.ua))
             }
             "%s %d. [%s] %s%s%s".format(
                 mark, i + 1, p.id, p.label(),
@@ -459,9 +566,10 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
     /** 一个页面的一行摘要（动作类工具的返回里用）。 */
     fun pageLine(p: BrowserPageInfo?): String =
         if (p == null) L("（没有页面）")
-        else L("当前页面：[%s] %s%s%s").format(
+        else L("当前页面：[%s] %s%s%s%s").format(
             p.id, p.label(),
             if (p.host.isNotBlank()) "  · ${p.host}" else "",
+            if (!p.ua.isNullOrBlank()) "  · " + uaLabel(p.ua) else "",
             if (p.loading) L("（还在加载）") else ""
         )
 }

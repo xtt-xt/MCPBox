@@ -34,7 +34,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Static site hosting** | Open `http://127.0.0.1:8720/web/?token=<token>` in a browser to preview any web build on the phone: the path is relative to the primary root (e.g. `/web/xtt/web/flat-ui/index.html`), with a directory index, Range and ETag support. **Token-protected, but only once** (a `/web` session cookie then lets the page's CSS/JS through); read-only |
 | **Private app dirs** | Read/write `/data/data/<package>` in three modes (off / read-only / read-write), forwarded through root |
 | **UI automation** | Screenshot + read the UI tree (nodes & coordinates) + tap / swipe / type (incl. CJK) / key press / launch apps / wait for elements. Needs Shizuku or root |
-| **Built-in browser** | The app ships its own WebView: the AI can open pages, read text and interactive elements, click / fill forms / scroll / wait, run JS, screenshot pages, keep several tabs, search across platforms, save pages to files and manage cookies / User-Agent. **No Root or Shizuku needed.** While tabs are open a floating ball appears; tap it to watch the page, switch tabs, pause the AI or take over yourself |
+| **Built-in browser** | The app ships its own WebView: the AI can open pages, read text and interactive elements, click / fill forms / scroll / wait, run JS, screenshot pages, keep several tabs, search across platforms, save pages to files and manage cookies / User-Agent **per tab** (mobile or desktop identity, that tab only). **No Root or Shizuku needed.** While tabs are open a floating ball appears; tap it to watch the page, switch tabs, pause the AI or take over yourself |
 | **Auto-filled permissions** | With Root / Shizuku, opening the app silently grants the missing files / overlay / ignore-battery-optimizations permissions (via `appops` and the battery whitelist, no process restart); Home also has "fill all at once" |
 | **Built-in terminal** | Persistent shell with `cd`/`export` state kept, command history, Ctrl-C and clear |
 | **Custom tools** | Build your own MCP tools from command templates, with placeholders and JSON import/export |
@@ -79,7 +79,9 @@ Token:  the one from "Connection addresses" on the Home tab (a full URL with the
 (Pages run inside the app's WebView, so **no Root or Shizuku needed**. Intranet and localhost URLs are
 blocked by default so that page scripts cannot reach the MCP port on the device. While tabs are open a
 floating ball appears: tap it to watch the page, switch tabs, pause the AI or take over by hand. Its
-cookies live in MCPBox only and are separate from your system browser.)
+cookies live in MCPBox only and are separate from your system browser. Cookies and the User-Agent can be
+managed **per tab**: `browser_open` / `browser_navigate` accept `ua` (mobile / desktop) and `cookies`,
+while `browser_storage` can wipe only one site's cookies or change a single tab's identity.)
 
 **Memory (10)**: `create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
 

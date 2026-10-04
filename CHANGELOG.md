@@ -22,6 +22,52 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.1-102 · 2026-10-05
+
+**改：内置浏览器的 cookie 与身份（User-Agent）都能「按页面」管了**
+
+- **背景**：以前 `browser_storage` 只能塞一条 cookie，UA 一改就是全局 —— AI 想「用桌面版身份打开这一页」
+  得先改全局、刷新、再改回来，别的页面跟着一起变
+- **身份可以按页面**：`browser_open` / `browser_navigate` 新增 `ua` 参数（`mobile` / `android` = 手机版，
+  `desktop` / `windows` = 桌面版），**只影响这一页**；`browser_storage(action=set_ua, page=…)` 改单页，
+  不给 `page` 才是改全局默认；`get_ua` 分别报「全局默认」与「这一页实际用的 UA」，
+  `browser_pages` 的列表里也标出每一页的身份
+- **cookie 可以按页面**：`browser_storage` 新增 `page` 参数 —— 省略 `url` 时目标就是那个页面的网址，
+  于是「给这一页带上登录态」成了一次调用：`set_cookie` + `browser_history(reload)`；
+  `set_cookie` 现在认多行、也认一行多条（`a=1; b=2` 算两条），带属性的一行（`Path` / `Expires` 等）仍算一条，
+  粘贴时带的 `Cookie:` 前缀会自动去掉
+- **新增 `clear_site_cookies`**：只清一个站点的 cookie（别的站点登录态不动）。
+  WebView 的 CookieManager 没有「按域名删」，实现是「读出可见 cookie → 逐条用过期时间覆盖 → 重读核对」；
+  **HttpOnly 的 cookie 读不到也就删不掉**，工具会明确说明这点（这是 WebView 的硬限制）
+- `browser_open` / `browser_navigate` 新增 `cookies` 参数：加载前先把 cookie 写好，
+  第一个请求就带上登录态（身份也是），不必再「先打开、再写、再刷新」
+- **基线**：端到端测试 **633 项全绿**（[53] 段 98 → 128 项：按页面身份 / 按站点清 cookie /
+  cookie 文本解析 / 别名与文案 / 打开时带 cookie）
+
+## v1.2.1-102 · 2026-10-05
+
+**Cookies and the User-Agent of the built-in browser are now managed per tab**
+
+- **Background**: `browser_storage` could inject a single cookie, and the UA switch was global - asking the
+  AI to "open this page as desktop" meant flipping the global default, reloading and flipping back
+- **Identity per tab**: `browser_open` / `browser_navigate` take a new `ua` argument (`mobile` / `android`
+  or `desktop` / `windows`) that affects **that tab only**; `browser_storage(action=set_ua, page=...)`
+  changes one tab, and without `page` it changes the global default; `get_ua` reports both the global
+  default and the UA that tab actually uses; `browser_pages` marks each tab's identity
+- **Cookies per tab**: `browser_storage` takes a new `page` argument - when `url` is omitted the target is
+  that tab's own URL, so logging a tab in is one call (`set_cookie` + `browser_history(reload)`);
+  `set_cookie` now accepts multiple lines and several cookies on one line (`a=1; b=2` counts as two),
+  while a line carrying attributes (`Path` / `Expires` ...) stays one; a pasted `Cookie:` prefix is stripped
+- **New `clear_site_cookies`**: wipes one site only (other sites stay logged in). WebView's CookieManager
+  cannot delete by domain, so it reads the visible cookies, expires them one by one and re-reads to verify;
+  **HttpOnly cookies are invisible to the Java layer and therefore cannot be removed** - the tool says so
+  (a hard WebView limit)
+- `browser_open` / `browser_navigate` take a new `cookies` argument: cookies are written before the load,
+  so the very first request already carries the login (and the chosen identity) instead of
+  "open, write, reload"
+- **Baseline**: **633 e2e checks green** ([53] 98 -> 128: per-tab identity, per-site cookie clearing,
+  cookie text parsing, aliases and wording, cookies on open)
+
 ## v1.2.1-101 · 2026-10-03
 
 **改：静态站点托管要访问令牌了（令牌带一次，之后靠会话 cookie）**

@@ -34,7 +34,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 | **静态站点托管** | 浏览器打开 `http://127.0.0.1:8720/web/?token=<令牌>` 就能预览手机里的网页产物：路径相对主根目录（如 `/web/xtt/web/flat-ui/index.html`），有目录索引页、Range 与 ETag。**要访问令牌，带一次就够**（之后靠 `/web` 的会话 cookie，页面里的 CSS/JS 才能自动放行）；只读 |
 | **应用私有目录** | 可读可写 `/data/data/<包名>`，三档（禁止 / 只读 / 可读写），经 root 转发 |
 | **UI 自动化** | 截屏 + 读界面结构（控件树/坐标）+ 点击 / 滑动 / 输入（含中文）/ 按键 / 启应用 / 等元素，需要 Shizuku 或 Root |
-| **内置浏览器** | App 自己带一个 WebView：AI 能打开网页、读正文与可交互元素、点击 / 填表 / 滚页 / 等元素、执行 JS、网页截图、开多个页面、用各平台搜索、把网页存成文件、管 cookie 与 User-Agent。**不需要 Root / Shizuku**；有页面时手机上会出现悬浮球，点开就能看页面、切页面、暂停 AI、自己接管 |
+| **内置浏览器** | App 自己带一个 WebView：AI 能打开网页、读正文与可交互元素、点击 / 填表 / 滚页 / 等元素、执行 JS、网页截图、开多个页面、用各平台搜索、把网页存成文件、**按页面**管 cookie 与 User-Agent（这一页用手机版还是桌面版，只影响这一页）。**不需要 Root / Shizuku**；有页面时手机上会出现悬浮球，点开就能看页面、切页面、暂停 AI、自己接管 |
 | **自动补齐权限** | 有 Root / Shizuku 时，进入 App 自动把缺的「文件访问 / 悬浮窗 / 忽略电池优化」静默开掉（走 appops 与电池白名单，不重启进程）；首页也有「一键补齐」 |
 | **内置终端** | 常驻 shell，`cd`/`export` 状态保留、命令历史、Ctrl-C 中断、清屏 |
 | **自定义工具** | 用命令模板给自己造新 MCP 工具，支持参数占位与 JSON 导入导出 |
@@ -78,7 +78,9 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 **内置浏览器（18）**：`browser_open` `browser_navigate` `browser_history` `browser_pages` `browser_switch` `browser_close` `browser_content` `browser_click` `browser_input` `browser_scroll` `browser_wait` `browser_eval` `browser_screenshot` `browser_search` `browser_save` `browser_storage` `browser_engines` `browser_download`
 （页面在 App 的 WebView 里跑，**不需要 Root / Shizuku**；URL 默认禁内网与 localhost，
 防止网页脚本去调本机的 MCP 端口。有页面时手机上会出现悬浮球：点开可以看页面、切页面、
-暂停 AI、自己接管操作。登录态与系统浏览器隔离，只属于 MCPBox）
+暂停 AI、自己接管操作。登录态与系统浏览器隔离，只属于 MCPBox。
+cookie 与 User-Agent 可以**按页面**管：`browser_open` / `browser_navigate` 能直接带 `ua`（手机版 /
+桌面版）与 `cookies`，`browser_storage` 能只清某个站点的 cookie、只改某一页的身份）
 
 **记忆库（10）**：`create_entities` `create_relations` `add_observations` `delete_entities` `delete_relations` `delete_observations` `read_graph` `search_nodes` `open_nodes` `memory_stats`
 
