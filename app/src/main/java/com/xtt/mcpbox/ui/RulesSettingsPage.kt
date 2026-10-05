@@ -28,14 +28,21 @@ import com.xtt.mcpbox.i18n.L
 import com.xtt.mcpbox.core.PermKey
 import com.xtt.mcpbox.core.Rule
 
+/** 规则页管哪一类：[PATH] 目录规则 / [COMMAND] 命令规则 —— 两者各是一页，别混在一起。 */
+internal enum class RuleKind(val title: String, val subtitle: String) {
+    PATH("路径规则", "给某个目录单独定允许 / 询问 / 拒绝"),
+    COMMAND("命令规则", "给某条命令定允许 / 询问 / 拒绝")
+}
+
 /**
- * 「规则管理」子页（设置 → 终端与命令 → 路径 / 命令规则）。
+ * 「规则」子页（设置 → 终端与命令 → 路径规则 / 命令规则）。
  *
- * 这两段原来挂在「权限」页里，跟权限开关混在一起；现在挪到设置里单独一页，
- * 权限页只留开关本身。增删都走 [AppCore.permissions]，AI 侧调用时看到的是同一份规则。
+ * 这两段原来挂在「权限」页里，跟权限开关混在一起；现在挪到设置里，而且**分开两页**：
+ * 从「终端与命令」点哪一行就进哪一页，不会点了两个入口看到同一个页面。
  */
 @Composable
 internal fun RulesSettingsPage(
+    kind: RuleKind,
     revision: Int,
     onChanged: () -> Unit,
     onBack: () -> Unit
@@ -45,7 +52,8 @@ internal fun RulesSettingsPage(
     var showAdd by remember { mutableStateOf(false) }
     var showAddCommand by remember { mutableStateOf(false) }
 
-    SettingsPageShell(L("规则"), L("路径规则与命令规则"), onBack) {
+    SettingsPageShell(L(kind.title), L(kind.subtitle), onBack) {
+        if (kind == RuleKind.PATH) {
         // ------------------------------------------------------------- 路径规则
         GroupLabel(L("路径规则（%s）").format(rules.size))
         CardGroup(
@@ -94,7 +102,9 @@ internal fun RulesSettingsPage(
                 )
             }
         )
+        }
 
+        if (kind == RuleKind.COMMAND) {
         // ------------------------------------------------------------- 命令规则
         GroupLabel(L("命令规则（%s）").format(cmdRules.size))
         CardGroup(
@@ -147,6 +157,7 @@ internal fun RulesSettingsPage(
                 )
             }
         )
+        }
 
         Spacer(Modifier.height(24.dp))
     }

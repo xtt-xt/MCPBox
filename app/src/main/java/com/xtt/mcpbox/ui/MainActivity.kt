@@ -466,10 +466,12 @@ fun AppRoot(
     }
 
     androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
-    // 没有子页时**整层不渲染** —— 绝不留一个空的 fillMaxSize 盖在主界面上
-    if (subScreen.isNotEmpty()) {
+    // 注意：这一层**必须一直组合着**。一旦写成「有子页才渲染」，返回时整层会被立刻移除，
+    // AnimatedContent 的退场动画根本来不及演 —— 表现就是「子页没有返回动画 + 退出时闪一下」。
     PredictiveBackBox(
         onBack = { subScreen = "" },
+        // 没有子页时这一层不接管返回（否则根页按返回会被它吃掉，退不出应用）
+        handleBack = subScreen.isNotEmpty(),
         follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
     ) {
     // 跟手提交时旧页已经偏出去了（普通返回是 0）—— 交给共用转场去用
@@ -557,7 +559,6 @@ fun AppRoot(
 
         Box(Modifier.fillMaxSize())  // 透明占位：不遮底层的常驻主界面
     }
-    }   // ← 关掉「有子页才渲染」：subScreen 为空时整层不渲染
     }
     }
     }

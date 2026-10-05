@@ -129,7 +129,10 @@ fun SettingsScreen(
         }
     }
 
-    val back = { onPage("") }
+    // 页面 key 是**路径**（例：shell/rules/path）。返回只退一级 ——
+    // 所以「规则」返回「终端与命令」，「终端与命令」再返回设置首页。
+    val parent = page.substringBeforeLast('/', "")
+    val back = { onPage(parent) }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
@@ -138,6 +141,82 @@ fun SettingsScreen(
     // 否则拖出来的预览永远是最顶部、松手后真页面跳回当前滚动位置
     val homeScroll = rememberScrollState()
 
+    // 渲染「设置里的某一页」（含首页）。抽出来是为了给预览层复用：
+    // 拖动时下面露出来的必须是**上一级**那页（规则 → 终端与命令 → 设置首页）。
+    val renderPage: @Composable (String) -> Unit = { key ->
+        when (key) {
+        "appearance" -> AppearanceSettingsPage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            onThemeChanged = onThemeChanged,
+            onLangChanged = onLangChanged,
+            onOpenSeed = { showSeed = true },
+            onOpenLangPack = { langInfo = ""; showLang = true },
+            onBack = back
+        )
+        "network" -> NetworkSettingsPage(
+            status = status,
+            onChanged = onChanged,
+            onOpenPort = { showPort = true },
+            onOpenPassword = {
+                passwordText = AppCore.config.consolePassword
+                showPassword = true
+            },
+            onBack = back
+        )
+        "security" -> SecuritySettingsPage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = back
+        )
+        "shell/rules/path" -> RulesSettingsPage(
+            kind = RuleKind.PATH,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = back
+        )
+        "shell/rules/command" -> RulesSettingsPage(
+            kind = RuleKind.COMMAND,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = back
+        )
+        "shell" -> ShellSettingsPage(
+            revision = revision,
+            onChanged = onChanged,
+            onOpenRules = { onPage("shell/rules/$it") },
+            onBack = back
+        )
+        "browser" -> BrowserSettingsPage(
+            revision = revision,
+            onChanged = onChanged,
+            onBack = back
+        )
+        "background" -> BackgroundSettingsPage(
+            revision = revision,
+            onChanged = onChanged,
+            onRestartService = onRestartService,
+            onOpenReset = { showReset = true },
+            onBack = back
+        )
+        "stats" -> StatsSettingsPage(onBack = back)
+        else -> SettingsHomePage(
+                scroll = homeScroll,
+                scrollTopTick = scrollTopTick,
+            toolCount = status.toolCount,
+            entityCount = AppCore.memory.graph.entities.size,
+            relationCount = AppCore.memory.graph.relations.size,
+            onPage = onPage,
+            onOpenTools = onOpenTools,
+            onOpenMemory = onOpenMemory,
+            onOpenBackup = onOpenBackup,
+            onOpenAbout = onOpenAbout
+        )
+        }
+    }
+
     // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）。
     // 开了「预见式返回动画」时手指拖着走，松手才决定回不回；拖动时下面露出来的就是设置首页。
     PredictiveBackBox(
@@ -145,18 +224,8 @@ fun SettingsScreen(
         handleBack = page.isNotEmpty(),
         follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
         behind = {
-            SettingsHomePage(
-                scroll = homeScroll,
-                scrollTopTick = scrollTopTick,
-                toolCount = status.toolCount,
-                entityCount = AppCore.memory.graph.entities.size,
-                relationCount = AppCore.memory.graph.relations.size,
-                onPage = onPage,
-                onOpenTools = onOpenTools,
-                onOpenMemory = onOpenMemory,
-                onOpenBackup = onOpenBackup,
-                onOpenAbout = onOpenAbout
-            )
+            // 拖动时露出来的是**上一级**那页（规则 → 终端与命令 → 设置首页）
+            pageStates.SaveableStateProvider("preview:" + parent) { renderPage(parent) }
         }
     ) {
     // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
@@ -165,79 +234,15 @@ fun SettingsScreen(
         targetState = page,
         transitionSpec = {
             pageSlide(
-                entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 },
+                // 深度按 "/" 分层：设置首页 0 → 终端与命令 1 → 路径 / 命令规则 2
+                entering = pageForward(targetState, initialState) { it.split('/').size - 1 },
                 commitDrag = commitDrag
             )
         },
         label = "settingsPage"
     ) { current ->
         // 顶层是空串，给它一个固定名字当 key
-        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
-            when (current) {
-                "appearance" -> AppearanceSettingsPage(
-                    ctx = ctx,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onThemeChanged = onThemeChanged,
-                    onLangChanged = onLangChanged,
-                    onOpenSeed = { showSeed = true },
-                    onOpenLangPack = { langInfo = ""; showLang = true },
-                    onBack = back
-                )
-                "network" -> NetworkSettingsPage(
-                    status = status,
-                    onChanged = onChanged,
-                    onOpenPort = { showPort = true },
-                    onOpenPassword = {
-                        passwordText = AppCore.config.consolePassword
-                        showPassword = true
-                    },
-                    onBack = back
-                )
-                "security" -> SecuritySettingsPage(
-                    ctx = ctx,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                "rules" -> RulesSettingsPage(
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                "shell" -> ShellSettingsPage(
-                    revision = revision,
-                    onChanged = onChanged,
-                    onOpenRules = { onPage("rules") },
-                    onBack = back
-                )
-                "browser" -> BrowserSettingsPage(
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                "background" -> BackgroundSettingsPage(
-                    revision = revision,
-                    onChanged = onChanged,
-                    onRestartService = onRestartService,
-                    onOpenReset = { showReset = true },
-                    onBack = back
-                )
-                "stats" -> StatsSettingsPage(onBack = back)
-                else -> SettingsHomePage(
-                        scroll = homeScroll,
-                        scrollTopTick = scrollTopTick,
-                    toolCount = status.toolCount,
-                    entityCount = AppCore.memory.graph.entities.size,
-                    relationCount = AppCore.memory.graph.relations.size,
-                    onPage = onPage,
-                    onOpenTools = onOpenTools,
-                    onOpenMemory = onOpenMemory,
-                    onOpenBackup = onOpenBackup,
-                    onOpenAbout = onOpenAbout
-                )
-            }
-        }
+        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) { renderPage(current) }
     }
     }
 

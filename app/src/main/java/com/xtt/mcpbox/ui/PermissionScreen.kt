@@ -162,20 +162,6 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
         // 「会话状态自动重置」也在这块里（工具包设置的最下面）。
         PacksSection(ctx = ctx, revision = revision, onChanged = onChanged)
 
-        // ---------------------------------------------------------- 规则指路
-        // 路径 / 命令规则的增删已经搬到「设置 → 终端与命令 → 规则」，
-        // 这里只留一张指路卡，免得用户在权限页里找不到。
-        GroupLabel(L("规则"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("路径规则与命令规则"),
-                    subtitle = L("在 设置 → 终端与命令 里管理"),
-                    icon = Icons.Filled.Info
-                )
-            )
-        )
-
         // ---------------------------------------------------------- 安全选项
         GroupLabel(L("安全选项"))
         CardGroup(

@@ -469,7 +469,7 @@ internal fun SecuritySettingsPage(
 internal fun ShellSettingsPage(
     revision: Int,
     onChanged: () -> Unit,
-    onOpenRules: () -> Unit,
+    onOpenRules: (String) -> Unit,   // "path" / "command"
     onBack: () -> Unit
 ) {
     val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
@@ -502,14 +502,14 @@ internal fun ShellSettingsPage(
                     subtitle = L("%s 条 · 给目录单独定允许 / 询问 / 拒绝")
                         .format(remember(revision) { AppCore.permissions.pathRules().size }),
                     icon = Icons.Filled.Place,
-                    onClick = onOpenRules
+                    onClick = { onOpenRules("path") }
                 ),
                 RowSpec(
                     title = L("命令规则"),
                     subtitle = L("%s 条 · 给命令定允许 / 询问 / 拒绝")
                         .format(remember(revision) { AppCore.permissions.commandRules().size }),
                     icon = Icons.Filled.Lock,
-                    onClick = onOpenRules
+                    onClick = { onOpenRules("command") }
                 )
             )
         )
