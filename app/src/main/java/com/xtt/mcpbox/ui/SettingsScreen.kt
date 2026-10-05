@@ -131,7 +131,10 @@ fun SettingsScreen(
 
     // 页面 key 是**路径**（例：shell/rules/path）。返回只退一级 ——
     // 所以「规则」返回「终端与命令」，「终端与命令」再返回设置首页。
-    val parent = page.substringBeforeLast('/', "")
+    //
+    // 注意取的是**第一段**而不是最后一段：`shell/rules/path` 的父页是 `shell`，
+    // 写成 substringBeforeLast('/') 会得到 `shell/rules`（不是有效页面 → 会掉进兜底分支 = 设置首页）。
+    val parent = if (page.contains('/')) page.substringBefore('/') else ""
     val back = { onPage(parent) }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
@@ -234,8 +237,11 @@ fun SettingsScreen(
         targetState = page,
         transitionSpec = {
             pageSlide(
-                // 深度按 "/" 分层：设置首页 0 → 终端与命令 1 → 路径 / 命令规则 2
-                entering = pageForward(targetState, initialState) { it.split('/').size - 1 },
+                // 深度 = 非空段数：设置首页 "" → 0，外观 / 终端与命令 → 1，规则 → 3。
+                // 别写成 split('/').size - 1：一级子页会得到 0，跟设置首页同深度，方向就判反了。
+                entering = pageForward(targetState, initialState) {
+                    it.split('/').count { s -> s.isNotEmpty() }
+                },
                 commitDrag = commitDrag
             )
         },
