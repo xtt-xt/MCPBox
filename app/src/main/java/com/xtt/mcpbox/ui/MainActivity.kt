@@ -15,7 +15,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -37,6 +36,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -336,27 +338,54 @@ fun AppRoot(
         )
     }
 
-    // 全屏子页（工具管理 / 记忆库 / 备份与恢复 / 关于）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧。
-    // 开启预见式返回动画后，手指从边缘往右拖时这一页跟着手指走 —— 后面露出来的是底色，
-    // 因为底下那套 tab 主界面这会儿本来就没在渲染（要露出真正的主界面得把它常驻在下面，见开发文档）。
-    // 底层：tab 主界面。**常驻**在这里 —— 全屏子页只是盖在它上面，
-    // 所以退出子页时下面一直是**真实的主界面**（既不是底色、也不是第二个实例），
-    // 按返回 / 跟手拖动都不会闪，拖动时露出来的也是真正的主界面。
-    // 底层放主界面：子页是**叠**在它上面的，所以两者必须有共同的容器 ——
-    // 光在函数体里写两个并列的兄弟（没有 Box）会变成各渲染各的。
-    // 进全屏子页时，底层跟着左移 1/6 屏宽（子页从右边滑入盖住它）——
-    // 不然只有子页在动、主界面纹丝不动，看着就像「没动画」。
-    // 底层是常驻的**真页面**，位移不改内容，所以不会闪。
-    val backShift by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (subScreen.isNotEmpty()) -1f else 0f,
-        animationSpec = tween(300),
-        label = "backShift"
-    )
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer { translationX = backShift * size.width / 6f }
-    ) {
+    // 整个 App 的容器：底层常驻主界面 + 上层全屏子页。
+    // 两者必须是同一个 Box 的孩子 —— 在函数体里平铺两个并列的「兄弟」，
+    // 布局、命中测试、转场都不好保证（曾经因此整页白屏）。
+    Box(Modifier.fillMaxSize()) {
+
+    // 子页内容。抽成 lambda：转场自己驱动时，需要按「退出动画期间该显示哪一页」来渲染。
+    val renderSubPage: @Composable (String) -> Unit = { screen ->
+        when (screen) {
+            "about" -> AboutScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = { revision++ },
+                onLangChanged = onLangChanged,
+                onPreviewUpdate = { previewUpdate = it },
+                // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
+                onUpdateFound = { updateInfo = it },
+                onBack = { subScreen = "" }
+            )
+            "memory" -> MemoryScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = { revision++ },
+                onBack = { subScreen = "" }
+            )
+            "backup" -> BackupScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = { revision++ },
+                onThemeChanged = onThemeChanged,
+                onLangChanged = onLangChanged,
+                onBack = { subScreen = "" }
+            )
+            "tools" -> ToolsScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = { revision++ },
+                onBack = { subScreen = "" }
+            )
+            // 未知值也兜到工具管理，避免整页空白
+            else -> ToolsScreen(
+                ctx = ctx,
+                revision = revision,
+                onChanged = { revision++ },
+                onBack = { subScreen = "" }
+            )
+        }
+    }
+
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
         NavItem(L("终端"), Icons.Filled.Build),
@@ -478,107 +507,58 @@ fun AppRoot(
         }
     }
 
-    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
-    // 注意：这一层**必须一直组合着**。一旦写成「有子页才渲染」，返回时整层会被立刻移除，
-    // AnimatedContent 的退场动画根本来不及演 —— 表现就是「子页没有返回动画 + 退出时闪一下」。
+
+    // 上层：全屏子页（工具管理 / 记忆库 / 备份与恢复 / 关于）。
+    //
+    // 转场**自己驱动**，不交给 AnimatedContent —— 这几页一直存在「进出都是瞬间切换、没有动画」的问题
+    // （拖动预览却正常，说明是这一层转场本身没演）。自己控位移/透明度最直接：
+    //   · 进入：从右边滑入 1/3 屏宽 + 淡入
+    //   · 返回：滑回右边 + 淡出，动画期间继续显示旧页（用它自己的内容）
+    //   · 跟手提交：这一页已经被拖出屏幕了，直接收掉（再演一遍会看到「跳回屏幕中间再滑走」）
+    androidx.compose.runtime.key(langRev) {
     PredictiveBackBox(
         onBack = { subScreen = "" },
-        // 没有子页时这一层不接管返回（否则根页按返回会被它吃掉，退不出应用）
         handleBack = subScreen.isNotEmpty(),
         follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack,
         // 这一层盖在常驻的主界面之上：**不能自带底色**，否则没有子页时会把主界面盖黑
         opaque = false
     ) {
-    // 跟手提交时旧页已经偏出去了（普通返回是 0）—— 交给共用转场去用
     val commitDrag = LocalPredictiveCommitDrag.current
-    AnimatedContent(
-        targetState = subScreen,
-        transitionSpec = {
-            pageSlide(
-                entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 },
-                commitDrag = commitDrag
-            )
-        },
-        label = "subScreen"
-    ) { screen ->
-    screenStateHolder.SaveableStateProvider(screen) {
-    if (screen.isNotEmpty()) {
-        // 子页盖在常驻的主界面之上：空白处的点击/滑动必须在这里被吃掉，
-        // 否则会穿透到底下的底栏（点一下就切 tab）。用 Main pass 消费 =
-        // 子页内部处理过的（按钮、滚动）不受影响，只有没人要的才被拦住。
+    val slide = remember {
+        Animatable(if (subScreen.isNotEmpty()) 0f else 1f)   // 1 = 整层在右边屏外
+    }
+    var shown by remember { mutableStateOf(subScreen) }      // 退出动画期间还要显示的那一页
+    LaunchedEffect(subScreen) {
+        if (subScreen.isNotEmpty()) {
+            shown = subScreen
+            if (slide.value != 0f) {                          // 恢复现场时不重播进入动画
+                slide.snapTo(1f)
+                slide.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
+            }
+        } else if (shown.isNotEmpty()) {
+            if (commitDrag > 0) {
+                shown = ""                                     // 已经拖出去了，直接收掉
+            } else {
+                slide.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+                shown = ""
+            }
+        }
+    }
+    if (shown.isNotEmpty()) {
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Main).changes.forEach { it.consume() }
-                        }
-                    }
+                .graphicsLayer {
+                    translationX = slide.value * size.width / 3f
+                    alpha = 1f - slide.value * 0.85f
                 }
         ) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
-            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { padding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                when (screen) {
-                    "about" -> AboutScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onLangChanged = onLangChanged,
-                        onPreviewUpdate = { previewUpdate = it },
-                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
-                        onUpdateFound = { updateInfo = it },
-                        onBack = { subScreen = "" }
-                    )
-                    "memory" -> MemoryScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                    "backup" -> BackupScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onThemeChanged = onThemeChanged,
-                        onLangChanged = onLangChanged,
-                        onBack = { subScreen = "" }
-                    )
-                    "tools" -> ToolsScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                    // 未知值也兜到工具管理，避免整页空白
-                    else -> ToolsScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                }
-            }
+            screenStateHolder.SaveableStateProvider(shown) { renderSubPage(shown) }
         }
-        }
-    } else {
-
-        Box(Modifier.fillMaxSize())  // 透明占位：不遮底层的常驻主界面
     }
     }
     }
-    }
-    }
-    }   // ← 关掉底层 Box（主界面常驻在里面，子页层叠在它上面）
+    }   // ← 关掉整个 App 的容器 Box
 }
 
 /* ------------------------------------------------- 权限：能静默开就直接开 */
