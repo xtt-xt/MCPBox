@@ -200,9 +200,15 @@ fun SettingsScreen(
                     onChanged = onChanged,
                     onBack = back
                 )
+                "rules" -> RulesSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
                 "shell" -> ShellSettingsPage(
                     revision = revision,
                     onChanged = onChanged,
+                    onOpenRules = { onPage("rules") },
                     onBack = back
                 )
                 "browser" -> BrowserSettingsPage(

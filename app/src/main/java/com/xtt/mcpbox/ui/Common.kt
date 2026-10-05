@@ -1335,7 +1335,9 @@ fun PredictiveBackBox(
     }
 
     CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {
-        Box(modifier.fillMaxSize().background(bg)) {
+        // **外层不铺底色**：下面要么是 behind 预览层、要么是常驻的主界面，
+        // 铺了就会把它盖住 —— 那正是「拖动时后面是空的 / 退出时闪一下」的原因。
+        Box(modifier.fillMaxSize()) {
             // 下面露出上一页（它自己铺底色，免得和上层叠在一起）。
             // **提交后也要继续留着**：这段时间真页面正在重新组合，留一层「长得一样」的预览垫在下面，
             // 否则会看到它闪一下 / 跳一下。

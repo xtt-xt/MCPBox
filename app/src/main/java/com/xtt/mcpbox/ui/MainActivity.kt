@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.ShizukuHelper
@@ -336,73 +338,9 @@ fun AppRoot(
     // 全屏子页（工具管理 / 记忆库 / 备份与恢复 / 关于）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧。
     // 开启预见式返回动画后，手指从边缘往右拖时这一页跟着手指走 —— 后面露出来的是底色，
     // 因为底下那套 tab 主界面这会儿本来就没在渲染（要露出真正的主界面得把它常驻在下面，见开发文档）。
-    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
-    PredictiveBackBox(
-        onBack = { subScreen = "" },
-        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
-    ) {
-    // 跟手提交时旧页已经偏出去了（普通返回是 0）—— 交给共用转场去用
-    val commitDrag = LocalPredictiveCommitDrag.current
-    AnimatedContent(
-        targetState = subScreen,
-        transitionSpec = {
-            pageSlide(
-                entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 },
-                commitDrag = commitDrag
-            )
-        },
-        label = "subScreen"
-    ) { screen ->
-    screenStateHolder.SaveableStateProvider(screen) {
-    if (screen.isNotEmpty()) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
-            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { padding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                when (screen) {
-                    "about" -> AboutScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onLangChanged = onLangChanged,
-                        onPreviewUpdate = { previewUpdate = it },
-                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
-                        onUpdateFound = { updateInfo = it },
-                        onBack = { subScreen = "" }
-                    )
-                    "memory" -> MemoryScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                    "backup" -> BackupScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onThemeChanged = onThemeChanged,
-                        onLangChanged = onLangChanged,
-                        onBack = { subScreen = "" }
-                    )
-                    // tools 以及任何意外值都兜到工具管理，避免白屏
-                    else -> ToolsScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                }
-            }
-        }
-    } else {
-
+    // 底层：tab 主界面。**常驻**在这里 —— 全屏子页只是盖在它上面，
+    // 所以退出子页时下面一直是**真实的主界面**（既不是底色、也不是第二个实例），
+    // 按返回 / 跟手拖动都不会闪，拖动时露出来的也是真正的主界面。
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
         NavItem(L("终端"), Icons.Filled.Build),
@@ -523,6 +461,90 @@ fun AppRoot(
             }
         }
     }
+
+    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
+    PredictiveBackBox(
+        onBack = { subScreen = "" },
+        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
+    ) {
+    // 跟手提交时旧页已经偏出去了（普通返回是 0）—— 交给共用转场去用
+    val commitDrag = LocalPredictiveCommitDrag.current
+    AnimatedContent(
+        targetState = subScreen,
+        transitionSpec = {
+            pageSlide(
+                entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 },
+                commitDrag = commitDrag
+            )
+        },
+        label = "subScreen"
+    ) { screen ->
+    screenStateHolder.SaveableStateProvider(screen) {
+    if (screen.isNotEmpty()) {
+        // 子页盖在常驻的主界面之上：空白处的点击/滑动必须在这里被吃掉，
+        // 否则会穿透到底下的底栏（点一下就切 tab）。用 Main pass 消费 =
+        // 子页内部处理过的（按钮、滚动）不受影响，只有没人要的才被拦住。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Main).changes.forEach { it.consume() }
+                        }
+                    }
+                }
+        ) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
+            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        ) { padding ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                when (screen) {
+                    "about" -> AboutScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onLangChanged = onLangChanged,
+                        onPreviewUpdate = { previewUpdate = it },
+                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
+                        onUpdateFound = { updateInfo = it },
+                        onBack = { subScreen = "" }
+                    )
+                    "memory" -> MemoryScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                    "backup" -> BackupScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onThemeChanged = onThemeChanged,
+                        onLangChanged = onLangChanged,
+                        onBack = { subScreen = "" }
+                    )
+                    "tools" -> ToolsScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                    else -> Box(Modifier.fillMaxSize())
+                }
+            }
+        }
+        }
+    } else {
+
+        Box(Modifier.fillMaxSize())  // 透明占位：不遮底层的常驻主界面
     }
     }
     }
