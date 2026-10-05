@@ -1328,14 +1328,21 @@ fun PredictiveBackBox(
 
     LaunchedEffect(commitTick) {
         if (commitTick == 0) return@LaunchedEffect
-        // 先让这一页顺着方向滑出去（这一段只有内容在动，behind 是静止的，所以看着就是「上一页露出来」）
-        drag.animateTo(1f, tween(170, easing = FastOutLinearInEasing))
         commitDrag++
-        // 状态切到上一页：位移交给退出的那一页自己带走，所以这里立刻归零（新页原地出现）
-        onBack()
-        drag.snapTo(0f)
-        delay(400)                        // 等转场演完，再把自己这一号减掉
-        commitDrag--
+        try {
+            // 先让这一页顺着方向滑出去（这一段只有内容在动，behind 是静止的，所以看着就是「上一页露出来」）
+            drag.animateTo(1f, tween(170, easing = FastOutLinearInEasing))
+            // 状态切到上一页：位移交给退出的那一页自己带走，所以这里立刻归零（新页原地出现）
+            onBack()
+            drag.snapTo(0f)
+            // 让「旧页已经滑出去了」这个信号覆盖住这次转场（spec 是转场开始时求值一次，260ms 足够），
+            // 之后立刻复位 —— 窗口开太久的话，这段时间里再返回一次就会被误判成「不用演动画」
+            delay(260)
+        } finally {
+            // **必须用 finally**：这个协程在 400ms 内再次提交时会被取消，
+            // 那时如果减不掉，这个层的 commitDrag 就永远是 1 —— 之后所有返回都没动画了
+            commitDrag--
+        }
     }
 
     CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {

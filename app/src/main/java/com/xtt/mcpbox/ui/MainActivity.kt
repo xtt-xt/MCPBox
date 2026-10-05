@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -343,7 +344,19 @@ fun AppRoot(
     // 按返回 / 跟手拖动都不会闪，拖动时露出来的也是真正的主界面。
     // 底层放主界面：子页是**叠**在它上面的，所以两者必须有共同的容器 ——
     // 光在函数体里写两个并列的兄弟（没有 Box）会变成各渲染各的。
-    Box(Modifier.fillMaxSize()) {
+    // 进全屏子页时，底层跟着左移 1/6 屏宽（子页从右边滑入盖住它）——
+    // 不然只有子页在动、主界面纹丝不动，看着就像「没动画」。
+    // 底层是常驻的**真页面**，位移不改内容，所以不会闪。
+    val backShift by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (subScreen.isNotEmpty()) -1f else 0f,
+        animationSpec = tween(300),
+        label = "backShift"
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = backShift * size.width / 6f }
+    ) {
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
         NavItem(L("终端"), Icons.Filled.Build),
