@@ -1270,7 +1270,10 @@ fun pageSlide(entering: Boolean, commitDrag: Int = 0): ContentTransform {
  * 参数：
  *  · [handleBack] —— 这一层要不要**接管返回**（最外层传 false，让系统去退出应用）
  *  · [follow] —— 拖动时**跟手**（设置开关 + 这一层确实有上一页可回）；关掉退回普通 [BackHandler]
- *  · [behind] —— 拖动/滑出时**露出来的那一页**（一般是这个栈的根页）。传 null 就只露底色
+ *  · [behind] —— 拖动/滑出时**露出来的那一页**（一般是这个栈的根页）。传 null 就露这一层下面的东西
+ *  · [opaque] —— 这一层要不要**自带不透明底色**。默认 true；
+ *    当这一层是「盖在常驻主界面上的全屏子页层」时必须传 false ——
+ *    否则它会在没有子页时也把下面的主界面整片盖黑（v1.2.1-111 的真机 bug：一进 App 全黑）
  *
  * **三个坑（都踩过）**：
  *  ① 收尾（滑出 + onBack）必须跑在**这个 composable 自己的**协程里（下面的 [LaunchedEffect]）。
@@ -1290,6 +1293,7 @@ fun PredictiveBackBox(
     handleBack: Boolean = true,
     follow: Boolean = true,
     behind: (@Composable () -> Unit)? = null,
+    opaque: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val drag = remember { Animatable(0f) }            // 0..1：内容整体右移多少屏宽
@@ -1344,12 +1348,13 @@ fun PredictiveBackBox(
             if (behind != null && (drag.value > 0f || commitDrag > 0)) {
                 Box(Modifier.fillMaxSize().background(bg)) { behind() }
             }
-            // 被拖动 / 退出的这一层：自己铺底色，别透出下面
+            // 被拖动 / 退出的这一层：默认自己铺底色（别透出下面），
+            // 但它只是「盖在常驻主界面上的子页层」时不能铺 —— 会把主界面盖黑
             Box(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { translationX = drag.value * size.width }
-                    .background(bg)
+                    .then(if (opaque) Modifier.background(bg) else Modifier)
             ) { content() }
         }
     }

@@ -472,7 +472,9 @@ fun AppRoot(
         onBack = { subScreen = "" },
         // 没有子页时这一层不接管返回（否则根页按返回会被它吃掉，退不出应用）
         handleBack = subScreen.isNotEmpty(),
-        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
+        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack,
+        // 这一层盖在常驻的主界面之上：**不能自带底色**，否则没有子页时会把主界面盖黑
+        opaque = false
     ) {
     // 跟手提交时旧页已经偏出去了（普通返回是 0）—— 交给共用转场去用
     val commitDrag = LocalPredictiveCommitDrag.current
