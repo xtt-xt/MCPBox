@@ -341,6 +341,9 @@ fun AppRoot(
     // 底层：tab 主界面。**常驻**在这里 —— 全屏子页只是盖在它上面，
     // 所以退出子页时下面一直是**真实的主界面**（既不是底色、也不是第二个实例），
     // 按返回 / 跟手拖动都不会闪，拖动时露出来的也是真正的主界面。
+    // 底层放主界面：子页是**叠**在它上面的，所以两者必须有共同的容器 ——
+    // 光在函数体里写两个并列的兄弟（没有 Box）会变成各渲染各的。
+    Box(Modifier.fillMaxSize()) {
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
         NavItem(L("终端"), Icons.Filled.Build),
@@ -463,6 +466,8 @@ fun AppRoot(
     }
 
     androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
+    // 没有子页时**整层不渲染** —— 绝不留一个空的 fillMaxSize 盖在主界面上
+    if (subScreen.isNotEmpty()) {
     PredictiveBackBox(
         onBack = { subScreen = "" },
         follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack
@@ -537,7 +542,13 @@ fun AppRoot(
                         onChanged = { revision++ },
                         onBack = { subScreen = "" }
                     )
-                    else -> Box(Modifier.fillMaxSize())
+                    // 未知值也兜到工具管理，避免整页空白
+                    else -> ToolsScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
                 }
             }
         }
@@ -546,10 +557,12 @@ fun AppRoot(
 
         Box(Modifier.fillMaxSize())  // 透明占位：不遮底层的常驻主界面
     }
+    }   // ← 关掉「有子页才渲染」：subScreen 为空时整层不渲染
     }
     }
     }
     }
+    }   // ← 关掉底层 Box（主界面常驻在里面，子页层叠在它上面）
 }
 
 /* ------------------------------------------------- 权限：能静默开就直接开 */
