@@ -21,6 +21,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -101,6 +102,8 @@ fun BackupScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(HOME) }
+    // 备份首页的滚动：预览层与真页面共用（否则拖出来的是最顶部）
+    val homeScroll = rememberScrollState()
 
     // 备份页挑了哪些、导出方式 —— 底栏在页面外面，得靠这些算文案和动作，所以状态放这里
     var pickMemory by rememberSaveable { mutableStateOf(true) }
@@ -313,6 +316,7 @@ fun BackupScreen(
                 follow = page != HOME && AppCore.prefs.predictiveBack,
                 behind = {
                     BackupHomePage(
+                        scroll = homeScroll,
                         ctx = ctx,
                         revision = revision,
                         result = result,
@@ -361,6 +365,7 @@ fun BackupScreen(
                         )
 
                         else -> BackupHomePage(
+                            scroll = homeScroll,
                             ctx = ctx,
                             revision = revision,
                             result = result,
@@ -489,6 +494,7 @@ private data class RestoreMeta(
 
 @Composable
 private fun BackupHomePage(
+    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     result: String?,
@@ -508,7 +514,7 @@ private fun BackupHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {

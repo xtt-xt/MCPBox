@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -133,6 +134,10 @@ fun SettingsScreen(
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
 
+    // 设置首页的滚动状态放在这里（而不是页面内部）：预见式返回的预览层要和真页面共用同一个，
+    // 否则拖出来的预览永远是最顶部、松手后真页面跳回当前滚动位置
+    val homeScroll = rememberScrollState()
+
     // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）。
     // 开了「预见式返回动画」时手指拖着走，松手才决定回不回；拖动时下面露出来的就是设置首页。
     PredictiveBackBox(
@@ -141,6 +146,7 @@ fun SettingsScreen(
         follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
         behind = {
             SettingsHomePage(
+                scroll = homeScroll,
                 scrollTopTick = scrollTopTick,
                 toolCount = status.toolCount,
                 entityCount = AppCore.memory.graph.entities.size,
@@ -213,6 +219,7 @@ fun SettingsScreen(
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
                 else -> SettingsHomePage(
+                        scroll = homeScroll,
                         scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
                     entityCount = AppCore.memory.graph.entities.size,
@@ -598,6 +605,7 @@ fun SettingsScreen(
  */
 @Composable
 private fun SettingsHomePage(
+    scroll: ScrollState,
     scrollTopTick: Int = 0,
     toolCount: Int,
     entityCount: Int,
@@ -608,7 +616,6 @@ private fun SettingsHomePage(
     onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit
 ) {
-    val scroll = rememberScrollState()
     // 双击底栏「设置」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(

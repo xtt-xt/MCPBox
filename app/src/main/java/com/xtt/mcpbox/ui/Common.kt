@@ -1232,12 +1232,15 @@ fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolea
 const val PREDICTIVE_DRAG_SCALE = 0.34f
 
 /**
- * 跟手提交时，正在退出的那一页已经偏移了多少（0..1 屏宽）；普通返回是 0。
+ * 正在「跟手提交」的层数（0 = 普通返回）。
  *
- * 作用：提交后位移由**退出的那一页自己**接着带走（从当前位置一路滑出屏幕），
- * 这样新页面就是**原地出现**的，而不是被整块内容平移着推出来 —— 否则会看到「返回完成后左右动一下」。
+ * 作用：提交时那一页已经在滑出去的半路上（甚至已经滑出屏幕），转场里就不该再演一遍退场，
+ * 否则旧页会「跳回屏幕中间再淡出」、新页还会被平移着推进来（用户看到的就是「返回完成后左右动一下」）。
+ *
+ * 用**计数**而不是布尔：页面栈是嵌套的（工具页里还嵌着自定义工具页），
+ * 内层提交完把自己减掉，外层虽然还带着跟手位移、但已经不再「提交中」了。
  */
-val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
+val LocalPredictiveCommitDrag = compositionLocalOf { 0 }
 
 /**
  * 页面栈的通用转场（各页的 `transitionSpec` 都调它，别各写一份）。
@@ -1248,8 +1251,8 @@ val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
  *    所以这里两边都不演动画（新页原地出现、旧页直接收掉）——
  *    否则旧页会「跳回屏幕中间再淡出」，新页还会被平移着推出来（用户看到的就是「返回完成后左右动一下」）。
  */
-fun pageSlide(entering: Boolean, commitDrag: Float = 0f): ContentTransform {
-    if (!entering && commitDrag > 0f) return EnterTransition.None togetherWith ExitTransition.None
+fun pageSlide(entering: Boolean, commitDrag: Int = 0): ContentTransform {
+    if (!entering && commitDrag > 0) return EnterTransition.None togetherWith ExitTransition.None
     val slide = if (entering) 1 else -1
     val enter: EnterTransition =
         slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -1290,7 +1293,7 @@ fun PredictiveBackBox(
     content: @Composable () -> Unit
 ) {
     val drag = remember { Animatable(0f) }            // 0..1：内容整体右移多少屏宽
-    var commitDrag by remember { mutableFloatStateOf(0f) }
+    var commitDrag by remember { mutableIntStateOf(0) }   // 正在跟手提交的层数
     var commitTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val bg = MaterialTheme.colorScheme.background
@@ -1323,18 +1326,20 @@ fun PredictiveBackBox(
         if (commitTick == 0) return@LaunchedEffect
         // 先让这一页顺着方向滑出去（这一段只有内容在动，behind 是静止的，所以看着就是「上一页露出来」）
         drag.animateTo(1f, tween(170, easing = FastOutLinearInEasing))
-        commitDrag = 1f
+        commitDrag++
         // 状态切到上一页：位移交给退出的那一页自己带走，所以这里立刻归零（新页原地出现）
         onBack()
         drag.snapTo(0f)
-        delay(400)                        // 等转场演完，再把 commitDrag 复位
-        commitDrag = 0f
+        delay(400)                        // 等转场演完，再把自己这一号减掉
+        commitDrag--
     }
 
     CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {
         Box(modifier.fillMaxSize().background(bg)) {
-            // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）
-            if (behind != null && drag.value > 0f) {
+            // 下面露出上一页（它自己铺底色，免得和上层叠在一起）。
+            // **提交后也要继续留着**：这段时间真页面正在重新组合，留一层「长得一样」的预览垫在下面，
+            // 否则会看到它闪一下 / 跳一下。
+            if (behind != null && (drag.value > 0f || commitDrag > 0)) {
                 Box(Modifier.fillMaxSize().background(bg)) { behind() }
             }
             // 被拖动 / 退出的这一层：自己铺底色，别透出下面

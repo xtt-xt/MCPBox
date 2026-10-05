@@ -7,6 +7,7 @@ import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -102,6 +103,8 @@ fun AboutScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
+    // 关于首页的滚动：预览层与真页面共用（否则拖出来的是最顶部）
+    val homeScroll = rememberScrollState()
 
     // 系统返回：在开发者模式里先回关于页，在关于页才回设置。
     // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
@@ -110,6 +113,7 @@ fun AboutScreen(
         follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
         behind = {
             AboutHomePage(
+                scroll = homeScroll,
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
@@ -161,6 +165,7 @@ fun AboutScreen(
                 )
             } else {
                 AboutHomePage(
+                    scroll = homeScroll,
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
@@ -178,6 +183,7 @@ fun AboutScreen(
 
 @Composable
 private fun AboutHomePage(
+    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -212,7 +218,7 @@ private fun AboutHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
