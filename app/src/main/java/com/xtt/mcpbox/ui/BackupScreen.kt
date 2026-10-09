@@ -342,6 +342,8 @@ fun BackupScreen(
                 },
                 label = "backupPage"
             ) { current ->
+        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
+        PageSurface {
                 pages.SaveableStateProvider(current) {
                     when (current) {
                         CREATE -> BackupCreatePage(
@@ -387,7 +389,8 @@ fun BackupScreen(
                         )
                     }
                 }
-            }
+                    }
+}
             }
         }
 

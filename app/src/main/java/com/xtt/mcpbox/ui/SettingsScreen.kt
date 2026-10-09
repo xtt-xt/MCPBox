@@ -170,6 +170,8 @@ fun SettingsScreen(
         },
         label = "settingsPage"
     ) { current ->
+        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
+        PageSurface {
         // 顶层是空串，给它一个固定名字当 key
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
             when (current) {
@@ -270,7 +272,8 @@ fun SettingsScreen(
                 )
             }
         }
-    }
+            }
+}
     }
 
     if (showPort) {

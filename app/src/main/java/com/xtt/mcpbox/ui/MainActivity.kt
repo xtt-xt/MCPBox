@@ -411,6 +411,8 @@ fun AppRoot(
                 },
                 label = "tabContent"
             ) { current ->
+            // 每个 tab 首页自己也铺一层不透明底：转场时两页重叠，各自有底才不会互相透出文字
+            PageSurface {
             tabStateHolder.SaveableStateProvider(current) {
             when (current) {
                 0 -> HomeScreen(
@@ -460,7 +462,8 @@ fun AppRoot(
                 )
             }
             }
-            }
+                        }
+}
         }
     }
     }

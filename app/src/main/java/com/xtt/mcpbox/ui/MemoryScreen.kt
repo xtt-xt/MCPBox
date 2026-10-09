@@ -233,6 +233,8 @@ fun MemoryScreen(
         },
         label = "memoryPage"
     ) { current ->
+        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
+        PageSurface {
         if (current.startsWith("detail:")) {
             MemoryDetailPage(
                 ctx = ctx,
@@ -257,7 +259,8 @@ fun MemoryScreen(
                 onMore = { showMenu = true }
             )
         }
-    }
+            }
+}
     }
 }
 

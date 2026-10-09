@@ -1218,6 +1218,25 @@ fun SelectionBar(
 /* ------------------------------------------------------- 预见式返回动画 */
 
 /**
+ * 给**页面自己**铺一层不透明底。
+ *
+ * 为什么不能只靠外面那层（Scaffold / PredictiveBackBox）兜 backgroundColor：
+ *  · [androidx.compose.animation.AnimatedContent] 转场时**新旧两页同时存在**，两页都贴在
+ *    同一个底上、各自又没有底色 —— 中间重叠的那块就会**互相透出文字**（看着像两层字叠在一起）
+ *  · 退回时旧页还要淡出（fadeOut），半透明的时候更是直接把下面那页的字透出来
+ *
+ * 所以：**每个页面分支自己带底**（这个 + [pageSlide] 里去掉淡出，两件一起才是干净的）。
+ */
+@Composable
+fun PageSurface(content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) { content() }
+}
+
+/**
  * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
  *
  * **别拿「页面 key 是不是空串」当方向判断**：设置页 / 关于页的根页 key 恰好是空串，
@@ -1252,6 +1271,8 @@ val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
 fun pageSlide(entering: Boolean, commitDrag: Float = 0f): ContentTransform {
     if (!entering && commitDrag > 0f) return EnterTransition.None togetherWith ExitTransition.None
     val slide = if (entering) 1 else -1
+    // 转场期间新旧两页是**重叠**的，所以两页各自都必须有不透明底（见 [PageSurface]）——
+    // 靠外面那层兜底色是不够的（挡不住重叠区互相透字）。
     val enter: EnterTransition =
         slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
     val exit: ExitTransition =
