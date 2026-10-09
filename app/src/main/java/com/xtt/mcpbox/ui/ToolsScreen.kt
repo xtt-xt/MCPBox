@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -70,38 +69,17 @@ fun ToolsScreen(
     onBack: () -> Unit
 ) {
     // list / editor / detail:<工具名>
-    var page by rememberSaveable { mutableStateOf(LIST_PAGE) }
-    // 列表页的滚动与搜索词提到这里：预见式返回的预览层要和真页面共用同一份
-    val listScroll = rememberScrollState()
-    var query by remember { mutableStateOf("") }
+    var page by rememberSaveable { mutableStateOf("list") }
 
-    // 返回：详情 / 编辑器 → 回到列表；已经在列表 → 交给上一层（离开工具页）。
-    // 开了「预见式返回动画」时手指拖着走，松手才决定；拖动时下面露出来的就是工具列表。
-    PredictiveBackBox(
-        onBack = { if (page != LIST_PAGE) page = LIST_PAGE else onBack() },
-        follow = page != LIST_PAGE && AppCore.prefs.predictiveBack,
-        behind = {
-            ToolListPage(
-                scroll = listScroll,
-                query = query,
-                onQuery = { query = it },
-                ctx = ctx,
-                revision = revision,
-                onChanged = onChanged,
-                onBack = onBack,
-                onCreate = { page = "editor" },
-                onOpen = { page = "detail:$it" }
-            )
-        }
-    ) {
-    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
-    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            pageSlide(
-                entering = pageForward(targetState, initialState) { if (it == LIST_PAGE) 0 else 1 },
-                commitDrag = commitDrag
+            val entering = targetState.isNotEmpty()
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "toolPage"
@@ -111,36 +89,24 @@ fun ToolsScreen(
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
-                onBack = { page = LIST_PAGE }
+                onBack = { page = "list" }
             )
             current.startsWith("detail:") -> ToolDetailPage(
                 ctx = ctx,
                 name = current.removePrefix("detail:"),
                 revision = revision,
                 onChanged = onChanged,
-                onBack = { page = LIST_PAGE }
+                onBack = { page = "list" }
             )
-            else -> ToolListPage(
-                scroll = listScroll,
-                query = query,
-                onQuery = { query = it },
-                ctx = ctx, revision = revision, onChanged = onChanged, onBack = onBack,
-                onCreate = { page = "editor" }
-            ) {
+            else -> ToolListPage(ctx, revision, onChanged, onBack, onCreate = { page = "editor" }) {
                 page = "detail:$it"
             }
         }
     }
-    }
 }
-
-private const val LIST_PAGE = "list"
 
 @Composable
 private fun ToolListPage(
-    scroll: ScrollState,
-    query: String,
-    onQuery: (String) -> Unit,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -148,8 +114,12 @@ private fun ToolListPage(
     onCreate: () -> Unit,
     onOpen: (String) -> Unit
 ) {
+    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
+
     val all = remember(revision) { AppCore.server.tools }
     val builtinNames = remember(revision) { AppCore.server.builtinTools.map { it.name }.toSet() }
+    var query by remember { mutableStateOf("") }
+
     val filtered = remember(revision, query) {
         val q = query.trim()
         if (q.isEmpty()) all
@@ -166,7 +136,7 @@ private fun ToolListPage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(scroll)
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
@@ -183,7 +153,7 @@ private fun ToolListPage(
         Column(Modifier.padding(horizontal = 14.dp)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = onQuery,
+                onValueChange = { query = it },
                 placeholder = { Text(L("搜索工具名 / 说明"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
@@ -262,6 +232,8 @@ private fun ToolDetailPage(
     onChanged: () -> Unit,
     onBack: () -> Unit
 ) {
+    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
+
     val spec = remember(revision, name) { AppCore.server.tools.firstOrNull { it.name == name } }
     if (spec == null) {
         // 工具可能在别处被删了

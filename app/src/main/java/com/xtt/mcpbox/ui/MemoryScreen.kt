@@ -5,6 +5,7 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -25,7 +26,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -77,11 +77,6 @@ fun MemoryScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf("list") }
-    // 列表页的滚动 / 搜索词 / 分区提到这里：预见式返回的预览层要和真页面共用同一份，
-    // 否则预览永远是最顶部（搜索过滤也没跟上），松手后真页面再跳回当前位置
-    val listScroll = rememberScrollState()
-    var query by remember { mutableStateOf("") }
-    var folder by remember { mutableStateOf("") }
     var showMenu by remember { mutableStateOf(false) }
     // 待导入的 JSON 文本（先选文件，再选导入方式）
     var pendingImport by remember { mutableStateOf<String?>(null) }
@@ -196,35 +191,15 @@ fun MemoryScreen(
         )
     }
 
-    // 详情里按返回 → 回列表；已经在列表 → 交给上一层（离开记忆库）。
-    // 开了「预见式返回动画」时手指拖着走，松手才决定；拖动时下面露出来的就是记忆列表。
-    PredictiveBackBox(
-        onBack = { if (page.startsWith("detail:")) page = "list" else onBack() },
-        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack,
-        behind = {
-            MemoryListPage(
-                scroll = listScroll,
-                query = query,
-                onQuery = { query = it },
-                folder = folder,
-                onFolder = { folder = it },
-                ctx = ctx,
-                revision = revision,
-                onChanged = onChanged,
-                onBack = onBack,
-                onOpen = { page = "detail:$it" },
-                onMore = { showMenu = true }
-            )
-        }
-    ) {
-    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
-    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            pageSlide(
-                entering = pageForward(targetState, initialState) { if (it.startsWith("detail:")) 1 else 0 },
-                commitDrag = commitDrag
+            val entering = targetState.isNotEmpty()
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "memoryPage"
@@ -240,11 +215,6 @@ fun MemoryScreen(
             )
         } else {
             MemoryListPage(
-                scroll = listScroll,
-                query = query,
-                onQuery = { query = it },
-                folder = folder,
-                onFolder = { folder = it },
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
@@ -254,18 +224,12 @@ fun MemoryScreen(
             )
         }
     }
-    }
 }
 
 /* ------------------------------------------------------------------ 列表页 */
 
 @Composable
 private fun MemoryListPage(
-    scroll: ScrollState,
-    query: String,
-    onQuery: (String) -> Unit,
-    folder: String,
-    onFolder: (String) -> Unit,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -273,8 +237,12 @@ private fun MemoryListPage(
     onOpen: (String) -> Unit,
     onMore: () -> Unit
 ) {
+    BackHandler(enabled = true) { onBack() }
+
     val graph = remember(revision) { AppCore.memory.graph }
     val folders = remember(revision) { AppCore.memory.folders() }
+    var query by remember { mutableStateOf("") }
+    var folder by remember { mutableStateOf("") }
     var showNew by remember { mutableStateOf(false) }
 
     val list = remember(revision, query, folder) {
@@ -288,6 +256,7 @@ private fun MemoryListPage(
                     )
         }.sortedBy { it.name.lowercase() }
     }
+    val scroll = rememberScrollState()
     // 实体卡比日志行重（一张卡要渲染观察 + 关系），一次渲染太多会卡首帧：
     // 首批 20 张，离底半屏再补 20 张。
     val shownCount = rememberPagedCount(
@@ -352,7 +321,7 @@ private fun MemoryListPage(
         Column(Modifier.padding(horizontal = 14.dp)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = onQuery,
+                onValueChange = { query = it },
                 placeholder = { Text(L("搜索名称 / 类型 / 观察内容"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
@@ -380,13 +349,13 @@ private fun MemoryListPage(
                     L("全部"), outlined = folder.isNotBlank(), compact = true,
                     color = if (folder.isBlank()) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
-                ) { onFolder("") }
+                ) { folder = "" }
                 folders.forEach { (name, count) ->
                     PillButton(
                         "$name $count", outlined = folder != name, compact = true,
                         color = if (folder == name) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
-                    ) { onFolder(if (folder == name) "" else name) }
+                    ) { folder = if (folder == name) "" else name }
                 }
             }
         }
@@ -503,6 +472,8 @@ private fun MemoryDetailPage(
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
+    BackHandler(enabled = true) { onBack() }
+
     val entity = remember(revision, name) { AppCore.memory.entity(name) }
     if (entity == null) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {

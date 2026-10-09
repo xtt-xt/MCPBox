@@ -7,7 +7,7 @@ import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.ScrollState
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -103,35 +103,22 @@ fun AboutScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
-    // 关于首页的滚动：预览层与真页面共用（否则拖出来的是最顶部）
-    val homeScroll = rememberScrollState()
 
-    // 系统返回：在开发者模式里先回关于页，在关于页才回设置。
-    // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
-    PredictiveBackBox(
-        onBack = { if (page == DEV_PAGE) page = ABOUT_PAGE else onBack() },
-        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
-        behind = {
-            AboutHomePage(
-                scroll = homeScroll,
-                ctx = ctx,
-                revision = revision,
-                onChanged = onChanged,
-                onUpdateFound = onUpdateFound,
-                onOpenDev = { page = DEV_PAGE },
-                onBack = onBack
-            )
-        }
-    ) {
+    // 系统返回：在开发者模式里先回关于页，在关于页才回设置
+    BackHandler(enabled = true) {
+        if (page == DEV_PAGE) page = ABOUT_PAGE else onBack()
+    }
+
     val pages = rememberSaveableStateHolder()
-    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
-    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            pageSlide(
-                entering = pageForward(targetState, initialState) { if (it == DEV_PAGE) 1 else 0 },
-                commitDrag = commitDrag
+            val entering = targetState == DEV_PAGE
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "aboutPage"
@@ -165,7 +152,6 @@ fun AboutScreen(
                 )
             } else {
                 AboutHomePage(
-                    scroll = homeScroll,
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
@@ -176,14 +162,12 @@ fun AboutScreen(
             }
         }
     }
-    }
 }
 
 /* ------------------------------------------------------------------ 关于首页 */
 
 @Composable
 private fun AboutHomePage(
-    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -218,7 +202,7 @@ private fun AboutHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(scroll)
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {

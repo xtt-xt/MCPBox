@@ -5,6 +5,7 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -12,7 +13,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -75,7 +75,7 @@ import com.xtt.mcpbox.core.ServerMeta
  *
  * 四件必修都在这里做齐：
  *  ① 子页进出场动画（进入滑 1/3 屏宽，返回反向）
- *  ② 子页接 [PredictiveBackBox]（内部是 BackHandler / 预见式返回动画），顶层不接（顶层再按返回就该退出应用）
+ *  ② 子页接 [BackHandler]，顶层不接（顶层再按返回就该退出应用）
  *  ③ 标题属于各自的页面：顶层用「设置」，子页用各自的 `PageHeader`
  *  ④ 每页滚动位置用 [rememberSaveableStateHolder] 按 key 保留
  *
@@ -129,127 +129,86 @@ fun SettingsScreen(
         }
     }
 
-    // 页面 key 是**路径**（例：shell/rules/path）。返回只退一级 ——
-    // 所以「规则」返回「终端与命令」，「终端与命令」再返回设置首页。
-    //
-    // 注意取的是**第一段**而不是最后一段：`shell/rules/path` 的父页是 `shell`，
-    // 写成 substringBeforeLast('/') 会得到 `shell/rules`（不是有效页面 → 会掉进兜底分支 = 设置首页）。
-    val parent = if (page.contains('/')) page.substringBefore('/') else ""
-    val back = { onPage(parent) }
+    val back = { onPage("") }
+
+    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）
+    BackHandler(enabled = page.isNotEmpty()) { back() }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
 
-    // 设置首页的滚动状态放在这里（而不是页面内部）：预见式返回的预览层要和真页面共用同一个，
-    // 否则拖出来的预览永远是最顶部、松手后真页面跳回当前滚动位置
-    val homeScroll = rememberScrollState()
-
-    // 渲染「设置里的某一页」（含首页）。抽出来是为了给预览层复用：
-    // 拖动时下面露出来的必须是**上一级**那页（规则 → 终端与命令 → 设置首页）。
-    val renderPage: @Composable (String) -> Unit = { key ->
-        when (key) {
-        "appearance" -> AppearanceSettingsPage(
-            ctx = ctx,
-            revision = revision,
-            onChanged = onChanged,
-            onThemeChanged = onThemeChanged,
-            onLangChanged = onLangChanged,
-            onOpenSeed = { showSeed = true },
-            onOpenLangPack = { langInfo = ""; showLang = true },
-            onBack = back
-        )
-        "network" -> NetworkSettingsPage(
-            status = status,
-            onChanged = onChanged,
-            onOpenPort = { showPort = true },
-            onOpenPassword = {
-                passwordText = AppCore.config.consolePassword
-                showPassword = true
-            },
-            onBack = back
-        )
-        "security" -> SecuritySettingsPage(
-            ctx = ctx,
-            revision = revision,
-            onChanged = onChanged,
-            onBack = back
-        )
-        "shell/rules/path" -> RulesSettingsPage(
-            kind = RuleKind.PATH,
-            revision = revision,
-            onChanged = onChanged,
-            onBack = back
-        )
-        "shell/rules/command" -> RulesSettingsPage(
-            kind = RuleKind.COMMAND,
-            revision = revision,
-            onChanged = onChanged,
-            onBack = back
-        )
-        "shell" -> ShellSettingsPage(
-            revision = revision,
-            onChanged = onChanged,
-            onOpenRules = { onPage("shell/rules/$it") },
-            onBack = back
-        )
-        "browser" -> BrowserSettingsPage(
-            revision = revision,
-            onChanged = onChanged,
-            onBack = back
-        )
-        "background" -> BackgroundSettingsPage(
-            revision = revision,
-            onChanged = onChanged,
-            onRestartService = onRestartService,
-            onOpenReset = { showReset = true },
-            onBack = back
-        )
-        "stats" -> StatsSettingsPage(onBack = back)
-        else -> SettingsHomePage(
-                scroll = homeScroll,
-                scrollTopTick = scrollTopTick,
-            toolCount = status.toolCount,
-            entityCount = AppCore.memory.graph.entities.size,
-            relationCount = AppCore.memory.graph.relations.size,
-            onPage = onPage,
-            onOpenTools = onOpenTools,
-            onOpenMemory = onOpenMemory,
-            onOpenBackup = onOpenBackup,
-            onOpenAbout = onOpenAbout
-        )
-        }
-    }
-
-    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）。
-    // 开了「预见式返回动画」时手指拖着走，松手才决定回不回；拖动时下面露出来的就是设置首页。
-    PredictiveBackBox(
-        onBack = back,
-        handleBack = page.isNotEmpty(),
-        follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
-        behind = {
-            // 拖动时露出来的是**上一级**那页（规则 → 终端与命令 → 设置首页）
-            pageStates.SaveableStateProvider("preview:" + parent) { renderPage(parent) }
-        }
-    ) {
-    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
-    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            pageSlide(
-                // 深度 = 非空段数：设置首页 "" → 0，外观 / 终端与命令 → 1，规则 → 3。
-                // 别写成 split('/').size - 1：一级子页会得到 0，跟设置首页同深度，方向就判反了。
-                entering = pageForward(targetState, initialState) {
-                    it.split('/').count { s -> s.isNotEmpty() }
-                },
-                commitDrag = commitDrag
+            val entering = targetState.isNotEmpty()
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
         },
         label = "settingsPage"
     ) { current ->
         // 顶层是空串，给它一个固定名字当 key
-        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) { renderPage(current) }
-    }
+        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
+            when (current) {
+                "appearance" -> AppearanceSettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onThemeChanged = onThemeChanged,
+                    onLangChanged = onLangChanged,
+                    onOpenSeed = { showSeed = true },
+                    onOpenLangPack = { langInfo = ""; showLang = true },
+                    onBack = back
+                )
+                "network" -> NetworkSettingsPage(
+                    status = status,
+                    onChanged = onChanged,
+                    onOpenPort = { showPort = true },
+                    onOpenPassword = {
+                        passwordText = AppCore.config.consolePassword
+                        showPassword = true
+                    },
+                    onBack = back
+                )
+                "security" -> SecuritySettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "shell" -> ShellSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "browser" -> BrowserSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "background" -> BackgroundSettingsPage(
+                    revision = revision,
+                    onChanged = onChanged,
+                    onRestartService = onRestartService,
+                    onOpenReset = { showReset = true },
+                    onBack = back
+                )
+                "stats" -> StatsSettingsPage(onBack = back)
+                else -> SettingsHomePage(
+                        scrollTopTick = scrollTopTick,
+                    toolCount = status.toolCount,
+                    entityCount = AppCore.memory.graph.entities.size,
+                    relationCount = AppCore.memory.graph.relations.size,
+                    onPage = onPage,
+                    onOpenTools = onOpenTools,
+                    onOpenMemory = onOpenMemory,
+                    onOpenBackup = onOpenBackup,
+                    onOpenAbout = onOpenAbout
+                )
+            }
+        }
     }
 
     if (showPort) {
@@ -622,7 +581,6 @@ fun SettingsScreen(
  */
 @Composable
 private fun SettingsHomePage(
-    scroll: ScrollState,
     scrollTopTick: Int = 0,
     toolCount: Int,
     entityCount: Int,
@@ -633,6 +591,7 @@ private fun SettingsHomePage(
     onOpenBackup: () -> Unit,
     onOpenAbout: () -> Unit
 ) {
+    val scroll = rememberScrollState()
     // 双击底栏「设置」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(

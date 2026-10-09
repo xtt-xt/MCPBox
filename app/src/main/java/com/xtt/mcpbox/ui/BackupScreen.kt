@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -21,7 +22,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -102,8 +102,6 @@ fun BackupScreen(
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(HOME) }
-    // 备份首页的滚动：预览层与真页面共用（否则拖出来的是最顶部）
-    val homeScroll = rememberScrollState()
 
     // 备份页挑了哪些、导出方式 —— 底栏在页面外面，得靠这些算文案和动作，所以状态放这里
     var pickMemory by rememberSaveable { mutableStateOf(true) }
@@ -307,34 +305,20 @@ fun BackupScreen(
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
     }
 
+    BackHandler(enabled = true) { backHome() }
+
     val pages = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
-            // 预见式返回动画：手指从边缘往右拖时页面跟着走，下面露出来的是备份首页
-            PredictiveBackBox(
-                onBack = { backHome() },
-                follow = page != HOME && AppCore.prefs.predictiveBack,
-                behind = {
-                    BackupHomePage(
-                        scroll = homeScroll,
-                        ctx = ctx,
-                        revision = revision,
-                        result = result,
-                        onOpenCreate = { page = CREATE },
-                        onPickZip = {},
-                        onPickFiles = {},
-                        onBack = onBack
-                    )
-                }
-            ) {
-            // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
-            val commitDrag = LocalPredictiveCommitDrag.current
             AnimatedContent(
                 targetState = page,
                 transitionSpec = {
-                    pageSlide(
-                        entering = pageForward(targetState, initialState) { if (it == HOME) 0 else 1 },
-                        commitDrag = commitDrag
+                    val entering = targetState != HOME
+                    val slide = if (entering) 1 else -1
+                    (
+                        slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                        ).togetherWith(
+                        slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
                     )
                 },
                 label = "backupPage"
@@ -365,7 +349,6 @@ fun BackupScreen(
                         )
 
                         else -> BackupHomePage(
-                            scroll = homeScroll,
                             ctx = ctx,
                             revision = revision,
                             result = result,
@@ -384,7 +367,6 @@ fun BackupScreen(
                         )
                     }
                 }
-            }
             }
         }
 
@@ -494,7 +476,6 @@ private data class RestoreMeta(
 
 @Composable
 private fun BackupHomePage(
-    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     result: String?,
@@ -514,7 +495,7 @@ private fun BackupHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(scroll)
+            .verticalScroll(rememberScrollState())
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {

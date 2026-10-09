@@ -59,7 +59,8 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
     // 右上角「⋯」：导出到文件 / 从文件导入
     var showMenu by remember { mutableStateOf(false) }
 
-    // 系统返回交给外层的 PredictiveBackBox（工具页 / 记忆页那层），这里不再自己接
+    // 系统返回键 = 退回设置页，而不是把整个 App 关掉
+    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
     val tools = remember(revision) { AppCore.customTools.tools }
 
     val exportLauncher = rememberLauncherForActivityResult(

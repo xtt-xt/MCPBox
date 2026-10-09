@@ -67,7 +67,7 @@ import com.xtt.mcpbox.core.Rule
 @Composable
 fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChanged: () -> Unit) {
     var showAdd by remember { mutableStateOf(false) }
-    var showAddRoot by remember { mutableStateOf(false) }
+    var showAddCommand by remember { mutableStateOf(false) }
     // 预设那一行的下拉展开了没
     var presetOpen by remember { mutableStateOf(false) }
     // 权限开关里哪一行的下拉展开了（点整行 = 点它右边那个胶囊）
@@ -83,6 +83,8 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
             .padding(bottom = 20.dp)
     ) {
         val switches = remember(revision) { AppCore.permissions.snapshot() }
+        val rules = remember(revision) { AppCore.permissions.pathRules() }
+        val cmdRules = remember(revision) { AppCore.permissions.commandRules() }
 
         PageHeader(
             title = L("权限"),
@@ -161,6 +163,101 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
         // ---------------------------------------------------------- 工具包
         // 「会话状态自动重置」也在这块里（工具包设置的最下面）。
         PacksSection(ctx = ctx, revision = revision, onChanged = onChanged)
+
+        // ---------------------------------------------------------- 路径规则
+        GroupLabel(L("路径规则（%s）").format(rules.size))
+        CardGroup(
+            rows = buildList {
+                if (rules.isEmpty()) {
+                    add(
+                        RowSpec(
+                            title = L("给目录单独定规则"),
+                            subtitle = L("例：Download 目录免审批；放密码/密钥的目录直接拒绝。最长匹配优先。"),
+                            subtitleMaxLines = 3,
+                            icon = Icons.Filled.Info
+                        )
+                    )
+                } else {
+                    rules.forEach { rule ->
+                        add(
+                            RowSpec(
+                                title = if (rule.perm == "*") L("全部权限") else L(PermKey.of(rule.perm)?.title ?: rule.perm),
+                                subtitle = rule.target.ifBlank { L("（未填写路径）") },
+                                icon = Icons.Filled.Place,
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        TagPill(L(rule.actionEnum.label), actionColor(rule.actionEnum))
+                                        Spacer(Modifier.width(8.dp))
+                                        RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
+                                            AppCore.permissions.removeRule(rule.id)
+                                            onChanged()
+                                        }
+                                    }
+                                }
+                            )
+                        )
+                    }
+                }
+                add(
+                    RowSpec(
+                        title = L("添加路径规则"),
+                        subtitle = L("给某个目录单独定允许 / 询问 / 拒绝"),
+                        icon = Icons.Filled.Add,
+                        onClick = { showAdd = true }
+                    )
+                )
+            }
+        )
+
+        // ---------------------------------------------------------- 命令规则
+        GroupLabel(L("命令规则（%s）").format(cmdRules.size))
+        CardGroup(
+            rows = buildList {
+                if (cmdRules.isEmpty()) {
+                    add(
+                        RowSpec(
+                            title = L("所有命令都要你点头"),
+                            subtitle = L("AI 执行命令时会弹窗；点「记住此命令」就会自动生成一条") +
+                                L("按命令名前缀匹配的规则，之后同类命令不再询问。"),
+                            subtitleMaxLines = 3,
+                            icon = Icons.Filled.Info
+                        )
+                    )
+                } else {
+                    cmdRules.forEach { rule ->
+                        add(
+                            RowSpec(
+                                title = rule.target,
+                                subtitle = when (rule.match) {
+                                    Rule.MATCH_EXACT -> L("完全匹配")
+                                    Rule.MATCH_REGEX -> L("正则匹配")
+                                    else -> L("前缀匹配")
+                                },
+                                icon = Icons.Filled.Build,
+                                trailing = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        TagPill(L(rule.actionEnum.label), actionColor(rule.actionEnum))
+                                        Spacer(Modifier.width(8.dp))
+                                        RoundIconButton(Icons.Filled.Delete, L("删除规则"), tint = Sem.bad, size = 40) {
+                                            AppCore.permissions.removeRule(rule.id)
+                                            onChanged()
+                                        }
+                                    }
+                                }
+                            )
+                        )
+                    }
+                }
+                add(
+                    RowSpec(
+                        title = L("添加命令规则"),
+                        subtitle = L("手动给某条命令定允许 / 询问 / 拒绝"),
+                        icon = Icons.Filled.Add,
+                        onClick = { showAddCommand = true }
+                    )
+                )
+            }
+        )
 
         // ---------------------------------------------------------- 安全选项
         GroupLabel(L("安全选项"))
@@ -257,10 +354,9 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
                 add(
                     RowSpec(
                         title = L("添加目录"),
-                        subtitle = L("让 AI 能访问这个目录（相对路径基于第一个目录）"),
-                        subtitleMaxLines = 2,
+                        subtitle = L("点「添加路径规则」旁边的 +，也可以在路径规则里直接写"),
                         icon = Icons.Filled.Add,
-                        onClick = { showAddRoot = true }
+                        onClick = { showAdd = true }
                     )
                 )
             }
@@ -282,20 +378,6 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
         Spacer(Modifier.height(24.dp))
     }
 
-    if (showAddRoot) {
-        AddRootDialog(
-            onDismiss = { showAddRoot = false },
-            onAdd = { dir ->
-                val list = AppCore.config.roots.toMutableList()
-                if (list.none { it.trim() == dir }) list.add(dir)
-                AppCore.config.roots = list
-                AppCore.saveConfig()
-                showAddRoot = false
-                onChanged()
-            }
-        )
-    }
-
     if (showAdd) {
         AddRuleDialog(
             onDismiss = { showAdd = false },
@@ -307,6 +389,19 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
         )
     }
 
+    if (showAddCommand) {
+        AddCommandRuleDialog(
+            onDismiss = { showAddCommand = false },
+            onAdd = { pattern, match, action ->
+                AppCore.permissions.addRule(
+                    PermKey.SHELL.id, pattern, action,
+                    type = Rule.TYPE_COMMAND, match = match
+                )
+                showAddCommand = false
+                onChanged()
+            }
+        )
+    }
 }
 
 private fun permIcon(key: PermKey): ImageVector = when (key) {
@@ -328,64 +423,7 @@ fun actionColor(action: PermAction): Color = when (action) {
 }
 
 @Composable
-private fun AddRootDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    val suggestions = remember { DefaultRootsHolder.suggestions().take(6) }
-    var path by remember { mutableStateOf(suggestions.firstOrNull().orEmpty()) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(28.dp),
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text(L("添加目录"), fontSize = 20.sp) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = path,
-                    onValueChange = { path = it },
-                    label = { Text(L("目录路径（绝对路径）")) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (suggestions.isNotEmpty()) {
-                    Spacer(Modifier.height(14.dp))
-                    Text(L("常用目录"), fontSize = 13.sp)
-                    suggestions.forEach { s ->
-                        Text(
-                            s,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = ripple(color = MaterialTheme.colorScheme.primary)
-                                ) { path = s }
-                                .padding(horizontal = 6.dp, vertical = 5.dp)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { if (path.isNotBlank()) onAdd(path.trim()) }) {
-                Text(L("添加"), color = MaterialTheme.colorScheme.primary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    )
-}
-
-@Composable
-internal fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAction) -> Unit) {
+private fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAction) -> Unit) {
     var path by remember { mutableStateOf(AppCore.config.primaryRoot()) }
     var permId by remember { mutableStateOf(PermKey.WRITE.id) }
     var action by remember { mutableStateOf(PermAction.ALLOW) }
@@ -463,7 +501,7 @@ internal fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAc
 }
 
 @Composable
-internal fun AddCommandRuleDialog(
+private fun AddCommandRuleDialog(
     onDismiss: () -> Unit,
     onAdd: (String, String, PermAction) -> Unit
 ) {

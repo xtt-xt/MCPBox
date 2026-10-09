@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -100,7 +99,6 @@ internal fun SettingsPageShell(
 internal fun AppearanceSettingsPage(
     ctx: Context,
     revision: Int,
-    onChanged: () -> Unit,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     onOpenSeed: () -> Unit,
@@ -111,8 +109,6 @@ internal fun AppearanceSettingsPage(
     // 读一下 revision：它是对外声明的「设置变了」，让本页在开关改动后真的重组
     // （不加这个参数的话，调用点的 lambda 全被 memoize 成相等，整页会被 Compose 跳过）
     val langChoices = remember(revision) { com.xtt.mcpbox.i18n.Lang.languageChoices() }
-    // 这一页自己的小版本号：改了开关之后让本页重组一次（外观页没有通用的 onChanged）
-    var localRev by remember { mutableStateOf(0) }
 
     SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack) {
         GroupLabel(L("主题"))
@@ -196,22 +192,6 @@ internal fun AppearanceSettingsPage(
                     icon = Icons.Filled.Info,
                     onClick = onOpenLangPack
                 )
-            )
-        )
-        GroupLabel(L("交互"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("预见式返回动画"),
-                    subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）"),
-                    subtitleMaxLines = 3,
-                    icon = Icons.Filled.ArrowBack,
-                    checked = remember(revision, localRev) { AppCore.prefs.predictiveBack }
-                ) { on ->
-                    AppCore.prefs.predictiveBack = on
-                    localRev++
-                    onChanged()
-                }
             )
         )
     }
@@ -469,7 +449,6 @@ internal fun SecuritySettingsPage(
 internal fun ShellSettingsPage(
     revision: Int,
     onChanged: () -> Unit,
-    onOpenRules: (String) -> Unit,   // "path" / "command"
     onBack: () -> Unit
 ) {
     val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
@@ -480,7 +459,7 @@ internal fun ShellSettingsPage(
         )
     }
 
-    SettingsPageShell(L("终端与命令"), L("命令后端、规则与默认超时"), onBack) {
+    SettingsPageShell(L("终端与命令"), L("命令后端、命令规则与默认超时"), onBack) {
         GroupLabel(L("命令执行"))
         CardGroup(
             listOf(
@@ -498,18 +477,9 @@ internal fun ShellSettingsPage(
                     onChanged()
                 },
                 RowSpec(
-                    title = L("路径规则"),
-                    subtitle = L("%s 条 · 给目录单独定允许 / 询问 / 拒绝")
-                        .format(remember(revision) { AppCore.permissions.pathRules().size }),
-                    icon = Icons.Filled.Place,
-                    onClick = { onOpenRules("path") }
-                ),
-                RowSpec(
                     title = L("命令规则"),
-                    subtitle = L("%s 条 · 给命令定允许 / 询问 / 拒绝")
-                        .format(remember(revision) { AppCore.permissions.commandRules().size }),
-                    icon = Icons.Filled.Lock,
-                    onClick = { onOpenRules("command") }
+                    subtitle = L("%s 条 · 在「权限」页里管理").format(AppCore.permissions.commandRules().size),
+                    icon = Icons.Filled.Lock
                 )
             )
         )

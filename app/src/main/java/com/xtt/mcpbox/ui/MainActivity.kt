@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -36,9 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,10 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.ShizukuHelper
@@ -338,53 +333,70 @@ fun AppRoot(
         )
     }
 
-    // 整个 App 的容器：底层常驻主界面 + 上层全屏子页。
-    // 两者必须是同一个 Box 的孩子 —— 在函数体里平铺两个并列的「兄弟」，
-    // 布局、命中测试、转场都不好保证（曾经因此整页白屏）。
-    Box(Modifier.fillMaxSize()) {
-
-    // 子页内容。抽成 lambda：转场自己驱动时，需要按「退出动画期间该显示哪一页」来渲染。
-    val renderSubPage: @Composable (String) -> Unit = { screen ->
-        when (screen) {
-            "about" -> AboutScreen(
-                ctx = ctx,
-                revision = revision,
-                onChanged = { revision++ },
-                onLangChanged = onLangChanged,
-                onPreviewUpdate = { previewUpdate = it },
-                // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
-                onUpdateFound = { updateInfo = it },
-                onBack = { subScreen = "" }
+    // 子页面（自定义工具）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧
+    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
+    AnimatedContent(
+        targetState = subScreen,
+        transitionSpec = {
+            val entering = targetState.isNotEmpty()
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
             )
-            "memory" -> MemoryScreen(
-                ctx = ctx,
-                revision = revision,
-                onChanged = { revision++ },
-                onBack = { subScreen = "" }
-            )
-            "backup" -> BackupScreen(
-                ctx = ctx,
-                revision = revision,
-                onChanged = { revision++ },
-                onThemeChanged = onThemeChanged,
-                onLangChanged = onLangChanged,
-                onBack = { subScreen = "" }
-            )
-            "tools" -> ToolsScreen(
-                ctx = ctx,
-                revision = revision,
-                onChanged = { revision++ },
-                onBack = { subScreen = "" }
-            )
-            // 未知值也兜到工具管理，避免整页空白
-            else -> ToolsScreen(
-                ctx = ctx,
-                revision = revision,
-                onChanged = { revision++ },
-                onBack = { subScreen = "" }
-            )
+        },
+        label = "subScreen"
+    ) { screen ->
+    screenStateHolder.SaveableStateProvider(screen) {
+    if (screen.isNotEmpty()) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
+            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
+            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+        ) { padding ->
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                when (screen) {
+                    "about" -> AboutScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onLangChanged = onLangChanged,
+                        onPreviewUpdate = { previewUpdate = it },
+                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
+                        onUpdateFound = { updateInfo = it },
+                        onBack = { subScreen = "" }
+                    )
+                    "memory" -> MemoryScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                    "backup" -> BackupScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onThemeChanged = onThemeChanged,
+                        onLangChanged = onLangChanged,
+                        onBack = { subScreen = "" }
+                    )
+                    // tools 以及任何意外值都兜到工具管理，避免白屏
+                    else -> ToolsScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = { revision++ },
+                        onBack = { subScreen = "" }
+                    )
+                }
+            }
         }
-    }
+    } else {
 
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
@@ -506,59 +518,10 @@ fun AppRoot(
             }
         }
     }
-
-
-    // 上层：全屏子页（工具管理 / 记忆库 / 备份与恢复 / 关于）。
-    //
-    // 转场**自己驱动**，不交给 AnimatedContent —— 这几页一直存在「进出都是瞬间切换、没有动画」的问题
-    // （拖动预览却正常，说明是这一层转场本身没演）。自己控位移/透明度最直接：
-    //   · 进入：从右边滑入 1/3 屏宽 + 淡入
-    //   · 返回：滑回右边 + 淡出，动画期间继续显示旧页（用它自己的内容）
-    //   · 跟手提交：这一页已经被拖出屏幕了，直接收掉（再演一遍会看到「跳回屏幕中间再滑走」）
-    androidx.compose.runtime.key(langRev) {
-    PredictiveBackBox(
-        onBack = { subScreen = "" },
-        handleBack = subScreen.isNotEmpty(),
-        follow = subScreen.isNotEmpty() && AppCore.prefs.predictiveBack,
-        // 这一层盖在常驻的主界面之上：**不能自带底色**，否则没有子页时会把主界面盖黑
-        opaque = false
-    ) {
-    val commitDrag = LocalPredictiveCommitDrag.current
-    val slide = remember {
-        Animatable(if (subScreen.isNotEmpty()) 0f else 1f)   // 1 = 整层在右边屏外
-    }
-    var shown by remember { mutableStateOf(subScreen) }      // 退出动画期间还要显示的那一页
-    LaunchedEffect(subScreen) {
-        if (subScreen.isNotEmpty()) {
-            shown = subScreen
-            if (slide.value != 0f) {                          // 恢复现场时不重播进入动画
-                slide.snapTo(1f)
-                slide.animateTo(0f, tween(300, easing = FastOutSlowInEasing))
-            }
-        } else if (shown.isNotEmpty()) {
-            if (commitDrag > 0) {
-                shown = ""                                     // 已经拖出去了，直接收掉
-            } else {
-                slide.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
-                shown = ""
-            }
-        }
-    }
-    if (shown.isNotEmpty()) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    translationX = slide.value * size.width / 3f
-                    alpha = 1f - slide.value * 0.85f
-                }
-        ) {
-            screenStateHolder.SaveableStateProvider(shown) { renderSubPage(shown) }
-        }
     }
     }
     }
-    }   // ← 关掉整个 App 的容器 Box
+    }
 }
 
 /* ------------------------------------------------- 权限：能静默开就直接开 */
