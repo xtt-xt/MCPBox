@@ -243,6 +243,56 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.2 · 2026-10-09 —— 第四个发行版 / Fourth release
+
+<details open>
+<summary><b>中文</b></summary>
+
+### 新增功能
+
+- **静态站点托管**：把主目录里的文件通过 `/web/…` 只读托管出来，带目录索引页面；需要访问令牌（带上一次 `?token=` 即可，页面里的子资源自动放行），网页控制台里有入口
+- **预见式返回动画**：手指从屏幕边缘向右拖动时，页面跟着手指移动，松手后再决定是否返回；拖动过程中能看到上一页的真实内容（包括原来的滚动位置与筛选条件）。开关在「设置 → 外观与语言 → 交互」，默认开启，需要 Android 13 及以上
+- **路径规则与命令规则**移到「设置 → 终端与命令」，两个入口分别进入独立页面，不再放在权限页面里
+- **新建工具包**改为独立页面：按工具名称或说明搜索、勾选加入，不再需要手动输入工具名称
+
+### 内置浏览器
+
+- 允许明文 HTTP，http 网站可以正常访问（内网地址的拦截策略保持不变）
+- cookie 与 User-Agent 改为按页面分别管理，打开页面时可以直接带上登录状态与身份
+- 悬浮窗新增「刷新页面」按钮，手动刷新不会被「暂停 AI」拦住
+
+### 修复与体验
+
+- 修复退出工具详情、记忆详情时动画方向相反的问题
+- 子页面统一：进入子页面时底栏滑动收起，系统返回键由统一入口处理，返回时保留原来的滚动位置
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### New
+
+- **Static site hosting**: serve files from the main root read-only under `/web/…`, with a directory index page. An access token is required (pass it once as `?token=`, then sub-resources are allowed automatically); there is an entry in the web console
+- **Predictive back animation**: drag from the screen edge and the page follows your finger; release to decide whether to go back, and the previous page stays visible while dragging (including its scroll position and filters). Toggle under Settings → Appearance & language → Interaction, on by default; requires Android 13 or newer
+- **Path rules and command rules** moved to Settings → Terminal & commands, each entry opening its own page instead of living on the permissions page
+- **Creating a tool pack** is now a dedicated page: search tools by name or description and tick them, no need to type tool names by hand
+
+### Built-in browser
+
+- Plain HTTP is allowed, so http websites open normally (intranet blocking is unchanged)
+- Cookies and User-Agent are now managed per page, so a page can open with your login state and identity already attached
+- Added a "Reload page" button to the floating window; manual reload is not blocked by "Pause AI"
+
+### Fixes and polish
+
+- Fixed the reversed animation direction when leaving tool detail and memory detail pages
+- Unified sub-pages: the bottom bar slides away when entering a sub-page, the system back key is handled in a single place, and the previous scroll position is kept
+
+</details>
+
+---
+
 ## v1.2.1 · 2026-10-03 —— 第三个发行版 / Third release
 
 <details open>
