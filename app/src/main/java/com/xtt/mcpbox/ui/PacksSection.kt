@@ -48,14 +48,15 @@ import com.xtt.mcpbox.core.ToolPack
 fun PacksSection(
     ctx: Context,
     revision: Int,
-    onChanged: () -> Unit
+    onChanged: () -> Unit,
+    /** 打开工具包编辑器（整页）：null = 新建，否则是那个包的 id。 */
+    onOpenPack: (String?) -> Unit
 ) {
     // 正在查看哪个会话：存进 Prefs，切走再回来（甚至重启 App）都还在原处。
     // 注意这只是「界面在看哪个」，AI 实际用哪个由它请求的 /mcp/p/<名字> 决定。
     var profile by remember { mutableStateOf(AppCore.prefs.packProfileView) }
     var pickProfile by remember { mutableStateOf(false) }
     var creatingProfile by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDelete by remember { mutableStateOf<ToolPack?>(null) }
     var confirmDeleteProfile by remember { mutableStateOf<String?>(null) }
     // 会话自动重置的分钟数：拖动时先存本地态，松手才写进配置
@@ -241,7 +242,7 @@ fun PacksSection(
                 subtitle = L("把常用工具打包，按需激活"),
                 icon = Icons.Filled.Add,
                 iconTint = MaterialTheme.colorScheme.primary,
-                onClick = { editing = ToolPack() }
+                onClick = { onOpenPack(null) }
             )
         )
     )
@@ -323,30 +324,6 @@ fun PacksSection(
         }
     }
 
-
-    // ------------------------------------------------------------- 编辑工具包
-
-    val target = editing
-    if (target != null) {
-        PackEditorDialog(
-            pack = target,
-            isNew = target.id.isBlank(),
-            allToolNames = remember(revision) { AppCore.server.tools.map { it.name } },
-            onDismiss = { editing = null },
-            onSave = { saved ->
-                val r = runCatching {
-                    if (saved.id.isBlank()) AppCore.packs.add(saved) else AppCore.packs.update(saved)
-                }
-                r.onSuccess {
-                    toast(ctx, L("已保存工具包「%s」").format(it.title))
-                    editing = null
-                    onChanged()
-                }.onFailure {
-                    toast(ctx, it.message ?: L("保存失败"))
-                }
-            }
-        )
-    }
 
     confirmDelete?.let { pack ->
         androidx.compose.material3.AlertDialog(
@@ -444,117 +421,6 @@ private fun PackNameDialog(
             }
         }
     }
-}
-
-/**
- * 工具包编辑器。新建时给个自动生成的 id；已有包保持 id 不变。
- */
-@Composable
-private fun PackEditorDialog(
-    pack: ToolPack,
-    isNew: Boolean,
-    allToolNames: List<String>,
-    onDismiss: () -> Unit,
-    onSave: (ToolPack) -> Unit
-) {
-    var title by remember { mutableStateOf(pack.title) }
-    var desc by remember { mutableStateOf(pack.description) }
-    var toolsText by remember { mutableStateOf(pack.tools.joinToString("\n")) }
-    var id by remember { mutableStateOf(if (isNew) "" else pack.id) }
-
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(28.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-        ) {
-            MaxTvScrollView(fraction = 0.82f) {
-                Column(Modifier.padding(22.dp)) {
-                    Text(
-                        if (isNew) L("新建工具包") else L("编辑工具包"),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    Spacer(Modifier.height(14.dp))
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text(L("包名"), fontSize = 12.sp) },
-                        placeholder = { Text(L("例如：图片处理"), fontSize = 12.sp) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = desc,
-                        onValueChange = { desc = it },
-                        label = { Text(L("给 AI 看的说明"), fontSize = 12.sp) },
-                        placeholder = { Text(L("写清什么时候该激活这个包"), fontSize = 12.sp) },
-                        minLines = 2,
-                        maxLines = 4,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = toolsText,
-                        onValueChange = { toolsText = it },
-                        label = { Text(L("工具名（每行一个）"), fontSize = 12.sp) },
-                        minLines = 4,
-                        maxLines = 12,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            fontSize = 12.5.sp,
-                            fontFamily = FontFamily.Monospace
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        L("可用工具：%s").format(allToolNames.joinToString("、")),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PillButton(
-                            L("取消"), Modifier.weight(1f), outlined = true,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, compact = true
-                        ) { onDismiss() }
-                        PillButton(
-                            L("保存"), Modifier.weight(1f),
-                            color = MaterialTheme.colorScheme.primary, compact = true
-                        ) {
-                            val names = toolsText.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                            onSave(
-                                ToolPack(
-                                    id = if (isNew) autoId(title) else id,
-                                    title = title.trim(),
-                                    description = desc.trim(),
-                                    tools = names,
-                                    builtin = false
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 给新包生成一个安全的 id（用户不用关心它）。 */
-private fun autoId(title: String): String {
-    val base = title.trim().take(24).replace(Regex("[^\\p{L}\\p{N}._-]"), "_")
-    return base.ifBlank { "pack" } + "_" + System.currentTimeMillis().toString(36).takeLast(4)
 }
 
 /** 「3 分钟前」这种相对时间，给会话列表用。 */

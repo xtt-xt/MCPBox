@@ -194,7 +194,8 @@ fun MemoryScreen(
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState.isNotEmpty()
+            // 同工具页：根页 key 是 "list"，方向要按层级比，不能看「key 是否空串」
+            val entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 }
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))

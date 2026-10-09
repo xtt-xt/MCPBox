@@ -386,13 +386,31 @@ fun AppRoot(
                         onLangChanged = onLangChanged,
                         onBack = { subScreen = "" }
                     )
-                    // tools 以及任何意外值都兜到工具管理，避免白屏
-                    else -> ToolsScreen(
+                    // 工具包编辑器："pack" = 新建，"pack:<id>" = 编辑已有包
+                    "pack" -> PackEditPage(
                         ctx = ctx,
+                        packId = null,
                         revision = revision,
                         onChanged = { revision++ },
                         onBack = { subScreen = "" }
                     )
+                    // tools 以及任何意外值都兜到工具管理，避免白屏
+                    else -> if (screen.startsWith("pack:")) {
+                        PackEditPage(
+                            ctx = ctx,
+                            packId = screen.removePrefix("pack:"),
+                            revision = revision,
+                            onChanged = { revision++ },
+                            onBack = { subScreen = "" }
+                        )
+                    } else {
+                        ToolsScreen(
+                            ctx = ctx,
+                            revision = revision,
+                            onChanged = { revision++ },
+                            onBack = { subScreen = "" }
+                        )
+                    }
                 }
             }
         }
@@ -494,7 +512,12 @@ fun AppRoot(
                     onChanged = { revision++ },
                     scrollTopTick = scrollTopTick
                 )
-                2 -> PermissionScreen(ctx, revision, scrollTopTick) { revision++ }
+                2 -> PermissionScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    scrollTopTick = scrollTopTick,
+                    onOpenPack = { id -> subScreen = if (id == null) "pack" else "pack:$id" }
+                ) { revision++ }
                 3 -> LogScreen(ctx, logs, scrollTopTick) { revision++ }
                 else -> SettingsScreen(
                     // 这里的入口是「松手才触发」（Compose 的 clickable 语义：按下高亮、松手进入、滑出取消）

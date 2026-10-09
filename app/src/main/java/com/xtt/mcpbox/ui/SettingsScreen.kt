@@ -142,7 +142,7 @@ fun SettingsScreen(
         transitionSpec = {
             // 方向看**层级**，不看「key 是不是空串」：
             // 二级页（规则）回一级页时 key 照样非空，用空串判断会让返回动画反过来。
-            val entering = settingsDepth(targetState) > settingsDepth(initialState)
+            val entering = pageForward(targetState, initialState) { settingsDepth(it) }
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))

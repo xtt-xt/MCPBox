@@ -64,7 +64,14 @@ import com.xtt.mcpbox.core.PermPreset
 import com.xtt.mcpbox.core.Rule
 
 @Composable
-fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChanged: () -> Unit) {
+fun PermissionScreen(
+    ctx: Context,
+    revision: Int,
+    scrollTopTick: Int = 0,
+    /** 打开工具包编辑器（整页）：null = 新建，否则是那个包的 id。 */
+    onOpenPack: (String?) -> Unit = {},
+    onChanged: () -> Unit
+) {
     // 「添加目录」弹窗
     var showAddRoot by remember { mutableStateOf(false) }
     // 预设那一行的下拉展开了没
@@ -159,7 +166,7 @@ fun PermissionScreen(ctx: Context, revision: Int, scrollTopTick: Int = 0, onChan
 
         // ---------------------------------------------------------- 工具包
         // 「会话状态自动重置」也在这块里（工具包设置的最下面）。
-        PacksSection(ctx = ctx, revision = revision, onChanged = onChanged)
+        PacksSection(ctx = ctx, revision = revision, onChanged = onChanged, onOpenPack = onOpenPack)
 
         // ---------------------------------------------------------- 安全选项
         GroupLabel(L("安全选项"))

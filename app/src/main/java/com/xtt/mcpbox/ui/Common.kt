@@ -116,6 +116,18 @@ fun copyText(context: Context, text: String, label: String = L("已复制")) {
     }
 }
 
+/**
+ * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
+ *
+ * **别拿「页面 key 是不是空串」当方向判断**：设置页 / 关于页的根页 key 恰好是空串，
+ * 那么写能跑对；工具页和记忆库页的根页 key 是 `"list"`（不是空串），
+ * 于是永远被判成「往里进」—— 关详情时页面又从右边滑进来，看着和别的页面相反。
+ *
+ * [depth] 由各页面自己给：单层的给 `if (it == ROOT) 0 else 1`，多层（设置页）按路径算。
+ */
+fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolean =
+    depth(target) >= depth(initial)
+
 fun toast(context: Context, text: String) {
     runCatching { Toast.makeText(context, text, Toast.LENGTH_SHORT).show() }
 }
