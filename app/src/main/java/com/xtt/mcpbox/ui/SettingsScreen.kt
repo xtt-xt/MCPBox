@@ -5,7 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -131,23 +130,36 @@ fun SettingsScreen(
 
     val back = { onPage(parentPage(page)) }
 
-    // 子页里按系统返回 → 回上一级，而不是退出整个应用（顶层不接）
-    BackHandler(enabled = page.isNotEmpty()) { back() }
-
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
 
+    // 子页里按系统返回 → 回上一级（顶层不接，交给系统退出应用）。
+    // 开了「预见式返回动画」时手指从边缘拖着走、松手才决定回不回；拖动时下面露出来的就是设置首页。
+    PredictiveBackBox(
+        onBack = back,
+        handleBack = page.isNotEmpty(),
+        follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
+        behind = {
+            SettingsHomePage(
+                scrollTopTick = scrollTopTick,
+                toolCount = status.toolCount,
+                entityCount = AppCore.memory.graph.entities.size,
+                relationCount = AppCore.memory.graph.relations.size,
+                onPage = onPage
+            )
+        }
+    ) {
+    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
+    // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
+    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            // 方向看**层级**，不看「key 是不是空串」：
-            // 二级页（规则）回一级页时 key 照样非空，用空串判断会让返回动画反过来。
-            val entering = pageForward(targetState, initialState) { settingsDepth(it) }
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            pageSlide(
+                // 深度 = 非空段数：设置首页 "" → 0，外观 / 终端与命令 → 1，规则 → 3。
+                // 别写成 split('/').size - 1：一级子页会得到 0、跟首页同深度，方向就判反了。
+                entering = pageForward(targetState, initialState) { settingsDepth(it) },
+                commitDrag = commitDrag
             )
         },
         label = "settingsPage"
@@ -251,6 +263,7 @@ fun SettingsScreen(
                 )
             }
         }
+    }
     }
 
     if (showPort) {

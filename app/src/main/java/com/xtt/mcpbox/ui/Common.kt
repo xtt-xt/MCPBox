@@ -11,7 +11,18 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -36,6 +47,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -65,7 +77,12 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +93,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -115,18 +134,6 @@ fun copyText(context: Context, text: String, label: String = L("已复制")) {
         Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
     }
 }
-
-/**
- * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
- *
- * **别拿「页面 key 是不是空串」当方向判断**：设置页 / 关于页的根页 key 恰好是空串，
- * 那么写能跑对；工具页和记忆库页的根页 key 是 `"list"`（不是空串），
- * 于是永远被判成「往里进」—— 关详情时页面又从右边滑进来，看着和别的页面相反。
- *
- * [depth] 由各页面自己给：单层的给 `if (it == ROOT) 0 else 1`，多层（设置页）按路径算。
- */
-fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolean =
-    depth(target) >= depth(initial)
 
 fun toast(context: Context, text: String) {
     runCatching { Toast.makeText(context, text, Toast.LENGTH_SHORT).show() }
@@ -1204,6 +1211,139 @@ fun SelectionBar(
                 compact = true,
                 enabled = actionEnabled
             ) { onAction() }
+        }
+    }
+}
+
+/* ------------------------------------------------------- 预见式返回动画 */
+
+/**
+ * 页面栈的方向：层级变大 = 往里进（新页从右侧滑入），变小 = 往回退。
+ *
+ * **别拿「页面 key 是不是空串」当方向判断**：设置页 / 关于页的根页 key 恰好是空串，
+ * 那么写能跑对；工具页和记忆库页的根页 key 是 `"list"`（不是空串），
+ * 于是永远被判成「往里进」—— 关详情时页面又从右边滑进来，看着和别的页面相反。
+ *
+ * [depth] 由各页面自己给：单层的给 `if (it == ROOT) 0 else 1`，多层（设置页）按路径算。
+ */
+fun pageForward(target: String, initial: String, depth: (String) -> Int): Boolean =
+    depth(target) >= depth(initial)
+
+/** 手指拖动时页面位移相对系统进度的比例。 */
+const val PREDICTIVE_DRAG_SCALE = 0.34f
+
+/**
+ * 跟手提交时，正在退出的那一页已经偏移了多少（0..1 屏宽）；普通返回是 0。
+ *
+ * 作用：提交后位移由**退出的那一页自己**接着带走（从当前位置一路滑出屏幕），
+ * 这样新页面就是**原地出现**的，而不是被整块内容平移着推出来 —— 否则会看到「返回完成后左右动一下」。
+ */
+val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
+
+/**
+ * 页面栈的通用转场（各页的 `transitionSpec` 都调它，别各写一份）。
+ *
+ *  · 往里进：新页从右侧滑入 1/3 屏宽 + 淡入，旧页往左滑 1/6 + 淡出
+ *  · 往回退：新页从左侧滑入 1/3 + 淡入，旧页往右滑 1/6 + 淡出
+ *  · **跟手提交**（[commitDrag] > 0）：退出的那一页在切换前**已经由 [PredictiveBackBox] 滑出屏幕**了，
+ *    所以这里两边都不演动画（新页原地出现、旧页直接收掉）——
+ *    否则旧页会「跳回屏幕中间再淡出」，新页还会被平移着推出来（用户看到的就是「返回完成后左右动一下」）。
+ */
+fun pageSlide(entering: Boolean, commitDrag: Float = 0f): ContentTransform {
+    if (!entering && commitDrag > 0f) return EnterTransition.None togetherWith ExitTransition.None
+    val slide = if (entering) 1 else -1
+    val enter: EnterTransition =
+        slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+    val exit: ExitTransition =
+        slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+    return enter togetherWith exit
+}
+
+/**
+ * 预见式返回动画（Android 13+ 的 predictive back）。
+ *
+ * 手指从屏幕边缘往右拖时，[content] 跟着手指往右平移（下面露出 [behind]），松手按系统判定：
+ * 提交就把这一页滑出去并调 [onBack]；取消就弹回原位。
+ *
+ * 参数：
+ *  · [handleBack] —— 这一层要不要**接管返回**。自己确实有上一级时才传 true；
+ *    已经在根页了就传 false，把返回**交还给外面那一层**（最外层没人接时系统就退出应用）
+ *  · [follow] —— 拖动时**跟手**（设置开关 + 这一层确实有上一页可回）；关掉退回普通 [BackHandler]
+ *  · [behind] —— 拖动/滑出时**露出来的那一页**（一般是这个栈的根页）
+ *
+ * **三个坑（都踩过）**：
+ *  ① 收尾（滑出 + onBack）必须跑在**这个 composable 自己的**协程里（下面的 [LaunchedEffect]）。
+ *     手势回调那个协程在页面被替换 / [follow] 一变就会被取消，动画到不了终点 →
+ *     页面永久偏在屏幕外，表现就是「按返回整页变黑」。
+ *  ② 被拖动的这一层要**自己铺底色**，否则会透出下面的 [behind]，看着像两层叠在一起。
+ *  ③ 提交后**别让整块内容平移回 0**：先把这一页顺着方向滑出屏幕（位移归 1），
+ *     再切状态 —— 这样新页面是**原地出现**的（见 [pageSlide] 的 `commitDrag` 分支）。
+ *
+ * 跟手的前提是清单里的 `android:enableOnBackInvokedCallback="true"`（编译期写死、App 里改不了）。
+ */
+@Composable
+fun PredictiveBackBox(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    handleBack: Boolean = true,
+    follow: Boolean = true,
+    behind: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val drag = remember { Animatable(0f) }            // 0..1：内容整体右移多少屏宽
+    var commitDrag by remember { mutableFloatStateOf(0f) }
+    var commitTick by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    val bg = MaterialTheme.colorScheme.background
+
+    // 兜底：不再跟手（回到根页 / 开关关掉）时位移一定归零
+    LaunchedEffect(follow) {
+        if (!follow && drag.value != 0f) drag.animateTo(0f, tween(200, easing = FastOutSlowInEasing))
+    }
+
+    if (handleBack) {
+        if (follow) {
+            PredictiveBackHandler(enabled = true) { events ->
+                try {
+                    events.collect { e ->
+                        drag.snapTo(e.progress.coerceIn(0f, 1f) * PREDICTIVE_DRAG_SCALE)
+                    }
+                    // 松手提交：只记一个号，收尾交给下面的 LaunchedEffect（这个协程随时会被取消）
+                    commitTick++
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    scope.launch { drag.animateTo(0f, tween(220, easing = FastOutSlowInEasing)) }
+                    throw cancel
+                }
+            }
+        } else {
+            BackHandler(enabled = true) { onBack() }
+        }
+    }
+
+    LaunchedEffect(commitTick) {
+        if (commitTick == 0) return@LaunchedEffect
+        // 先让这一页顺着方向滑出去（这一段只有内容在动，behind 是静止的，所以看着就是「上一页露出来」）
+        drag.animateTo(1f, tween(170, easing = FastOutLinearInEasing))
+        commitDrag = 1f
+        // 状态切到上一页：位移交给退出的那一页自己带走，所以这里立刻归零（新页原地出现）
+        onBack()
+        drag.snapTo(0f)
+        delay(400)                        // 等转场演完，再把 commitDrag 复位
+        commitDrag = 0f
+    }
+
+    CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {
+        Box(modifier.fillMaxSize().background(bg)) {
+            // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）
+            if (behind != null && drag.value > 0f) {
+                Box(Modifier.fillMaxSize().background(bg)) { behind() }
+            }
+            // 被拖动 / 退出的这一层：自己铺底色，别透出下面
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationX = drag.value * size.width }
+            ) { content() }
         }
     }
 }

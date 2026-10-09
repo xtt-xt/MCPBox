@@ -5,7 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -71,17 +70,33 @@ fun ToolsScreen(
     // list / editor / detail:<工具名>
     var page by rememberSaveable { mutableStateOf("list") }
 
+    // 返回：详情 / 编辑器 → 回列表；已经在列表了就不接（交还给设置页栈，离开工具管理）。
+    // 开了「预见式返回动画」时手指拖着走、松手才决定；拖动时下面露出来的就是工具列表。
+    PredictiveBackBox(
+        onBack = { page = "list" },
+        handleBack = page != "list",
+        follow = page != "list" && AppCore.prefs.predictiveBack,
+        behind = {
+            ToolListPage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onBack = onBack,
+                onCreate = { page = "editor" },
+                onOpen = { page = "detail:$it" }
+            )
+        }
+    ) {
+    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
+    // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
+    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            // 方向按层级比：根页 key 是 "list"（不是空串），拿空串判会永远判成「往里进」，
-            // 关详情时页面就从右边滑进来 —— 和其他页面相反。
-            val entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 }
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            pageSlide(
+                // 方向按层级比：根页 key 是 "list"（不是空串），拿空串判会永远判成「往里进」
+                entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 },
+                commitDrag = commitDrag
             )
         },
         label = "toolPage"
@@ -104,6 +119,7 @@ fun ToolsScreen(
                 page = "detail:$it"
             }
         }
+    }
     }
 }
 
@@ -235,8 +251,7 @@ private fun ToolDetailPage(
     onChanged: () -> Unit,
     onBack: () -> Unit
 ) {
-    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
-
+    // 返回交给外层的 PredictiveBackBox（整栈一个），这里不再自己接
     val spec = remember(revision, name) { AppCore.server.tools.firstOrNull { it.name == name } }
     if (spec == null) {
         // 工具可能在别处被删了

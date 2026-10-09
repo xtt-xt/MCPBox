@@ -46,6 +46,8 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_SHELL_TIMEOUT_LAST = "shell_timeout_last_sec"
         /** 有 Root / Shizuku 时，进入 App 自动补齐缺失的系统权限。 */
         const val KEY_AUTO_GRANT_PERMS = "auto_grant_perms"
+        /** 预见式返回动画（Android 13+ 的 predictive back，默认开）。 */
+        const val KEY_PREDICTIVE_BACK = "predictive_back"
         /** 审批请求怎么呈现：overlay（悬浮窗，默认）/ notify（通知栏）。 */
         const val KEY_APPROVAL_PRESENTATION = "approval_presentation"
     }
@@ -249,6 +251,17 @@ class Prefs(context: Context) : SettingsSource {
         get() = getString(KEY_APPROVAL_PRESENTATION, com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id)
             ?: com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id
         set(value) = putString(KEY_APPROVAL_PRESENTATION, value)
+
+    /**
+     * 预见式返回动画（Android 13+ 的 predictive back，默认开）。
+     *
+     * 手指从边缘往右拖时子页面跟着手指横向走（下面露出上一页），松手才决定返回还是弹回。
+     * 只影响「子页跟手」这一层：清单里的 `enableOnBackInvokedCallback` 是编译期写死的，
+     * 根页返回桌面时那个系统动画跟这个开关无关。
+     */
+    var predictiveBack: Boolean
+        get() = getBoolean(KEY_PREDICTIVE_BACK, true)
+        set(value) = putBoolean(KEY_PREDICTIVE_BACK, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

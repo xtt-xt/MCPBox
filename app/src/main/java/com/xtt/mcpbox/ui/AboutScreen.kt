@@ -7,7 +7,6 @@ import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -104,20 +103,34 @@ fun AboutScreen(
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
 
-    // 系统返回：在开发者模式里先回关于页；已经在关于页了就不接 ——
-    // 交给设置页栈处理（退回设置首页），否则会把返回吃掉、退不出去
-    BackHandler(enabled = page == DEV_PAGE) { page = ABOUT_PAGE }
-
     val pages = rememberSaveableStateHolder()
+
+    // 开发者模式里按返回 → 回关于页；已经在关于页了就不接（交还给设置页栈）。
+    // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
+    PredictiveBackBox(
+        onBack = { page = ABOUT_PAGE },
+        handleBack = page == DEV_PAGE,
+        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
+        behind = {
+            AboutHomePage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onUpdateFound = onUpdateFound,
+                onOpenDev = { page = DEV_PAGE },
+                onBack = onBack
+            )
+        }
+    ) {
+    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
+    // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
+    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState == DEV_PAGE
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            pageSlide(
+                entering = pageForward(targetState, initialState) { if (it == DEV_PAGE) 1 else 0 },
+                commitDrag = commitDrag
             )
         },
         label = "aboutPage"
@@ -160,6 +173,7 @@ fun AboutScreen(
                 )
             }
         }
+    }
     }
 }
 

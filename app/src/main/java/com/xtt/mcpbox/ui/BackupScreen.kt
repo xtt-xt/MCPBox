@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -305,21 +304,36 @@ fun BackupScreen(
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
     }
 
-    // 子页（导出 / 恢复）里自己吃返回；已经在首页就把返回交还给设置页栈
-    BackHandler(enabled = page != HOME) { backHome() }
-
     val pages = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
+            // 子页（导出 / 恢复）里按返回 → 回备份首页；已经在首页了就不接（交还给设置页栈）。
+            // 开了「预见式返回动画」时手指拖着走，下面露出来的是备份首页。
+            PredictiveBackBox(
+                onBack = { backHome() },
+                handleBack = page != HOME,
+                follow = page != HOME && AppCore.prefs.predictiveBack,
+                behind = {
+                    BackupHomePage(
+                        ctx = ctx,
+                        revision = revision,
+                        result = result,
+                        onOpenCreate = { page = CREATE },
+                        onPickZip = {},
+                        onPickFiles = {},
+                        onBack = onBack
+                    )
+                }
+            ) {
+            // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
+            // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
+            val commitDrag = LocalPredictiveCommitDrag.current
             AnimatedContent(
                 targetState = page,
                 transitionSpec = {
-                    val entering = targetState != HOME
-                    val slide = if (entering) 1 else -1
-                    (
-                        slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                        ).togetherWith(
-                        slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+                    pageSlide(
+                        entering = pageForward(targetState, initialState) { if (it == HOME) 0 else 1 },
+                        commitDrag = commitDrag
                     )
                 },
                 label = "backupPage"
@@ -368,6 +382,7 @@ fun BackupScreen(
                         )
                     }
                 }
+            }
             }
         }
 

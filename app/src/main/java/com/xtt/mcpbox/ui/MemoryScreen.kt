@@ -5,7 +5,6 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -191,16 +190,33 @@ fun MemoryScreen(
         )
     }
 
+    // 详情里按返回 → 回列表；已经在列表了就不接（交还给设置页栈，离开记忆库）。
+    // 开了「预见式返回动画」时手指拖着走、松手才决定；拖动时下面露出来的就是记忆列表。
+    PredictiveBackBox(
+        onBack = { page = "list" },
+        handleBack = page.startsWith("detail:"),
+        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack,
+        behind = {
+            MemoryListPage(
+                ctx = ctx,
+                revision = revision,
+                onChanged = onChanged,
+                onBack = onBack,
+                onOpen = { page = "detail:$it" },
+                onMore = { showMenu = true }
+            )
+        }
+    ) {
+    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
+    // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
+    val commitDrag = LocalPredictiveCommitDrag.current
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            // 同工具页：根页 key 是 "list"，方向要按层级比，不能看「key 是否空串」
-            val entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 }
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            pageSlide(
+                // 同工具页：根页 key 是 "list"，方向要按层级比，不能看「key 是否空串」
+                entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 },
+                commitDrag = commitDrag
             )
         },
         label = "memoryPage"
@@ -224,6 +240,7 @@ fun MemoryScreen(
                 onMore = { showMenu = true }
             )
         }
+    }
     }
 }
 
@@ -473,8 +490,7 @@ private fun MemoryDetailPage(
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(enabled = true) { onBack() }
-
+    // 返回交给外层的 PredictiveBackBox（整栈一个），这里不再自己接
     val entity = remember(revision, name) { AppCore.memory.entity(name) }
     if (entity == null) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
