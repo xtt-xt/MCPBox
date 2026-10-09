@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -190,6 +191,12 @@ fun MemoryScreen(
         )
     }
 
+    // 列表页的滚动、搜索词与分区提到这一层：预览层要和真页面共用同一份，
+    // 否则拖动时露出来的记忆列表永远停在最顶部、筛选也是空的
+    val listScroll = rememberScrollState()
+    var listQuery by rememberSaveable { mutableStateOf("") }
+    var listFolder by rememberSaveable { mutableStateOf("") }
+
     // 详情里按返回 → 回列表；已经在列表了就不接（交还给设置页栈，离开记忆库）。
     // 开了「预见式返回动画」时手指拖着走、松手才决定；拖动时下面露出来的就是记忆列表。
     PredictiveBackBox(
@@ -198,6 +205,11 @@ fun MemoryScreen(
         follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack,
         behind = {
             MemoryListPage(
+                scroll = listScroll,
+                query = listQuery,
+                onQuery = { listQuery = it },
+                folder = listFolder,
+                onFolder = { listFolder = it },
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
@@ -232,6 +244,11 @@ fun MemoryScreen(
             )
         } else {
             MemoryListPage(
+                scroll = listScroll,
+                query = listQuery,
+                onQuery = { listQuery = it },
+                folder = listFolder,
+                onFolder = { listFolder = it },
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
@@ -248,6 +265,11 @@ fun MemoryScreen(
 
 @Composable
 private fun MemoryListPage(
+    scroll: ScrollState,
+    query: String,
+    onQuery: (String) -> Unit,
+    folder: String,
+    onFolder: (String) -> Unit,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -259,8 +281,6 @@ private fun MemoryListPage(
 
     val graph = remember(revision) { AppCore.memory.graph }
     val folders = remember(revision) { AppCore.memory.folders() }
-    var query by remember { mutableStateOf("") }
-    var folder by remember { mutableStateOf("") }
     var showNew by remember { mutableStateOf(false) }
 
     val list = remember(revision, query, folder) {
@@ -274,7 +294,6 @@ private fun MemoryListPage(
                     )
         }.sortedBy { it.name.lowercase() }
     }
-    val scroll = rememberScrollState()
     // 实体卡比日志行重（一张卡要渲染观察 + 关系），一次渲染太多会卡首帧：
     // 首批 20 张，离底半屏再补 20 张。
     val shownCount = rememberPagedCount(
@@ -339,7 +358,7 @@ private fun MemoryListPage(
         Column(Modifier.padding(horizontal = 14.dp)) {
             OutlinedTextField(
                 value = query,
-                onValueChange = { query = it },
+                onValueChange = onQuery,
                 placeholder = { Text(L("搜索名称 / 类型 / 观察内容"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
@@ -367,13 +386,13 @@ private fun MemoryListPage(
                     L("全部"), outlined = folder.isNotBlank(), compact = true,
                     color = if (folder.isBlank()) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant
-                ) { folder = "" }
+                ) { onFolder("") }
                 folders.forEach { (name, count) ->
                     PillButton(
                         "$name $count", outlined = folder != name, compact = true,
                         color = if (folder == name) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
-                    ) { folder = if (folder == name) "" else name }
+                    ) { onFolder(if (folder == name) "" else name) }
                 }
             }
         }

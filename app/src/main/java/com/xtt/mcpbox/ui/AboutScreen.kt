@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -105,6 +106,9 @@ fun AboutScreen(
 
     val pages = rememberSaveableStateHolder()
 
+    // 关于首页的滚动提到这一层：预览层与真页面共用（否则拖出来的是最顶部）
+    val homeScroll = rememberScrollState()
+
     // 开发者模式里按返回 → 回关于页；已经在关于页了就不接（交还给设置页栈）。
     // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
     PredictiveBackBox(
@@ -113,6 +117,7 @@ fun AboutScreen(
         follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
         behind = {
             AboutHomePage(
+                scroll = homeScroll,
                 ctx = ctx,
                 revision = revision,
                 onChanged = onChanged,
@@ -164,6 +169,7 @@ fun AboutScreen(
                 )
             } else {
                 AboutHomePage(
+                    scroll = homeScroll,
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
@@ -181,6 +187,7 @@ fun AboutScreen(
 
 @Composable
 private fun AboutHomePage(
+    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
@@ -215,7 +222,7 @@ private fun AboutHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {

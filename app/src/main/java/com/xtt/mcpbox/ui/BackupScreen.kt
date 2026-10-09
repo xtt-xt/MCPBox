@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -305,6 +306,8 @@ fun BackupScreen(
     }
 
     val pages = rememberSaveableStateHolder()
+    // 备份首页的滚动提到这一层：预览层与真页面共用（否则拖出来的是最顶部）
+    val homeScroll = rememberScrollState()
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f)) {
             // 子页（导出 / 恢复）里按返回 → 回备份首页；已经在首页了就不接（交还给设置页栈）。
@@ -315,6 +318,7 @@ fun BackupScreen(
                 follow = page != HOME && AppCore.prefs.predictiveBack,
                 behind = {
                     BackupHomePage(
+                        scroll = homeScroll,
                         ctx = ctx,
                         revision = revision,
                         result = result,
@@ -364,6 +368,7 @@ fun BackupScreen(
                         )
 
                         else -> BackupHomePage(
+                            scroll = homeScroll,
                             ctx = ctx,
                             revision = revision,
                             result = result,
@@ -492,6 +497,7 @@ private data class RestoreMeta(
 
 @Composable
 private fun BackupHomePage(
+    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     result: String?,
@@ -511,7 +517,7 @@ private fun BackupHomePage(
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {

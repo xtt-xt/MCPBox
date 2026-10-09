@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -96,6 +97,9 @@ fun PermissionScreen(
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
 
+    // 权限首页的滚动提到这一层：预览层与真页面共用同一份（否则拖出来的是最顶部）
+    val homeScroll = rememberScrollState()
+
     // 子页里按系统返回 → 回权限首页（首页不接，交给外面/系统）。
     // 开了「预见式返回动画」时手指拖着走、松手才决定；拖动时下面露出来的就是权限首页。
     PredictiveBackBox(
@@ -104,6 +108,7 @@ fun PermissionScreen(
         follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
         behind = {
             PermissionHomePage(
+                scroll = homeScroll,
                 ctx = ctx,
                 revision = revision,
                 scrollTopTick = scrollTopTick,
@@ -129,6 +134,7 @@ fun PermissionScreen(
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
             if (current.isEmpty()) {
                 PermissionHomePage(
+                    scroll = homeScroll,
                     ctx = ctx,
                     revision = revision,
                     scrollTopTick = scrollTopTick,
@@ -156,6 +162,7 @@ fun PermissionScreen(
  */
 @Composable
 private fun PermissionHomePage(
+    scroll: ScrollState,
     ctx: Context,
     revision: Int,
     scrollTopTick: Int,
@@ -169,7 +176,6 @@ private fun PermissionHomePage(
     // 权限开关里哪一行的下拉展开了（点整行 = 点它右边那个胶囊）
     var openPerm by remember { mutableStateOf<PermKey?>(null) }
 
-    val scroll = rememberScrollState()
     // 双击底栏「权限」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
     Column(

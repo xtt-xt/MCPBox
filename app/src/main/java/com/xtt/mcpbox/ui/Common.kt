@@ -1334,15 +1334,25 @@ fun PredictiveBackBox(
 
     CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {
         Box(modifier.fillMaxSize().background(bg)) {
-            // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）
-            if (behind != null && drag.value > 0f) {
+            // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）。
+            // **提交后也要继续垫着**（commitDrag > 0）：这段时间真页面正在重新组合，
+            // 撤早了中间会空一下 —— 看起来就是「返回的时候底下没有背景」。
+            if (behind != null && (drag.value > 0f || commitDrag > 0f)) {
                 Box(Modifier.fillMaxSize().background(bg)) { behind() }
             }
-            // 被拖动 / 退出的这一层：自己铺底色，别透出下面
+            // 被拖动 / 退出的这一层：**必须自己铺不透明底色**。
+            // 页面自己的根 Column 大多没有背景（设置子页、工具列表都是），不铺的话
+            // 它一透明就把下面预览层的内容透出来 —— 真机表现就是「透过下面的文字」，两层叠字。
+            //
+            // ⚠️ 顺序不能反：修饰符是「左边的包住右边的」，`graphicsLayer` 必须写在 `background`
+            // **前面**（背景画在图层里面 → 跟着平移）。写成 .background().graphicsLayer{} 的话，
+            // 底色画在图层外面：内容走了、底色不动，而且那层不动的底色会把下面的预览页整个盖住
+            // （真机表现：拖动时左边一片空、看不到上一页）。
             Box(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { translationX = drag.value * size.width }
+                    .background(bg)
             ) { content() }
         }
     }
