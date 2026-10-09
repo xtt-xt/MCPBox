@@ -104,10 +104,9 @@ fun AboutScreen(
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
 
-    // 系统返回：在开发者模式里先回关于页，在关于页才回设置
-    BackHandler(enabled = true) {
-        if (page == DEV_PAGE) page = ABOUT_PAGE else onBack()
-    }
+    // 系统返回：在开发者模式里先回关于页；已经在关于页了就不接 ——
+    // 交给设置页栈处理（退回设置首页），否则会把返回吃掉、退不出去
+    BackHandler(enabled = page == DEV_PAGE) { page = ABOUT_PAGE }
 
     val pages = rememberSaveableStateHolder()
     AnimatedContent(

@@ -305,7 +305,8 @@ fun BackupScreen(
         if (page == RESTORE && restoreItems.isEmpty()) page = HOME
     }
 
-    BackHandler(enabled = true) { backHome() }
+    // 子页（导出 / 恢复）里自己吃返回；已经在首页就把返回交还给设置页栈
+    BackHandler(enabled = page != HOME) { backHome() }
 
     val pages = rememberSaveableStateHolder()
     Column(Modifier.fillMaxSize()) {

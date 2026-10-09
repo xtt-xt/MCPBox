@@ -238,7 +238,7 @@ private fun MemoryListPage(
     onOpen: (String) -> Unit,
     onMore: () -> Unit
 ) {
-    BackHandler(enabled = true) { onBack() }
+    // 列表页是「记忆库」这一栈的根：不接返回，交给设置页栈统一处理
 
     val graph = remember(revision) { AppCore.memory.graph }
     val folders = remember(revision) { AppCore.memory.folders() }

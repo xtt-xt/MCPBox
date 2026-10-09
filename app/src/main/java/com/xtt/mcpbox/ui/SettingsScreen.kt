@@ -91,10 +91,10 @@ fun SettingsScreen(
     onPage: (String) -> Unit,
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenMemory: () -> Unit,
-    onOpenBackup: () -> Unit,
-    onOpenAbout: () -> Unit,
+    /** 关于页里「预览更新弹窗」拿到的东西（开发者模式用），交给 MainActivity 去弹。 */
+    onPreviewUpdate: (com.xtt.mcpbox.UpdateChecker.Info) -> Unit = {},
+    /** 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗。 */
+    onUpdateFound: (com.xtt.mcpbox.UpdateChecker.Info) -> Unit = {},
     onChanged: () -> Unit,
     onRestartService: () -> Unit,
     scrollTopTick: Int = 0
@@ -180,6 +180,37 @@ fun SettingsScreen(
                     onChanged = onChanged,
                     onBack = back
                 )
+                // ---- 原来挂在 subScreen（另起全屏 Scaffold）上的四页，现在都并进设置栈：
+                // 页面挂在 tab 内容里，底栏是同一个、会滑动收起；返回由本页统一接。
+                "tools" -> ToolsScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "memory" -> MemoryScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "backup" -> BackupScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onThemeChanged = onThemeChanged,
+                    onLangChanged = onLangChanged,
+                    onBack = back
+                )
+                "about" -> AboutScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onLangChanged = onLangChanged,
+                    onPreviewUpdate = onPreviewUpdate,
+                    onUpdateFound = onUpdateFound,
+                    onBack = back
+                )
                 "shell/rules/path" -> RulesSettingsPage(
                     kind = RuleKind.PATH,
                     revision = revision,
@@ -217,10 +248,6 @@ fun SettingsScreen(
                     entityCount = AppCore.memory.graph.entities.size,
                     relationCount = AppCore.memory.graph.relations.size,
                     onPage = onPage,
-                    onOpenTools = onOpenTools,
-                    onOpenMemory = onOpenMemory,
-                    onOpenBackup = onOpenBackup,
-                    onOpenAbout = onOpenAbout
                 )
             }
         }
@@ -600,11 +627,7 @@ private fun SettingsHomePage(
     toolCount: Int,
     entityCount: Int,
     relationCount: Int,
-    onPage: (String) -> Unit,
-    onOpenTools: () -> Unit,
-    onOpenMemory: () -> Unit,
-    onOpenBackup: () -> Unit,
-    onOpenAbout: () -> Unit
+    onPage: (String) -> Unit
 ) {
     val scroll = rememberScrollState()
     // 双击底栏「设置」：回到顶部
@@ -659,12 +682,12 @@ private fun SettingsHomePage(
                     L("共 %s 个 · 可单独启用/禁用、设权限（跟随 / 允许 / 询问 / 拒绝）；右上角 + 新建自定义工具")
                         .format(toolCount),
                     Icons.Filled.Build
-                ) { onOpenTools() },
+                ) { onPage("tools") },
                 entrySpec(
                     L("记忆库"),
                     L("给 AI 的长期记忆：%s 个实体 · %s 条关系").format(entityCount, relationCount),
                     Icons.Filled.Star
-                ) { onOpenMemory() }
+                ) { onPage("memory") }
             )
         )
 
@@ -685,12 +708,12 @@ private fun SettingsHomePage(
                     L("备份与恢复"),
                     L("把记忆、设置、自定义工具和统计打包导出，或从备份里挑着恢复"),
                     Icons.Filled.Share
-                ) { onOpenBackup() },
+                ) { onPage("backup") },
                 entrySpec(
                     L("关于"),
                     L("%s · 开发者 xtt · 检查更新与开源鸣谢").format(ServerMeta.fullVersion),
                     Icons.Filled.Info
-                ) { onOpenAbout() }
+                ) { onPage("about") }
             )
         )
 

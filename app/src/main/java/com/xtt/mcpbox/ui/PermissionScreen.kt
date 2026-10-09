@@ -5,6 +5,14 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,13 +72,81 @@ import com.xtt.mcpbox.core.PermKey
 import com.xtt.mcpbox.core.PermPreset
 import com.xtt.mcpbox.core.Rule
 
+/**
+ * 权限页 = **一个页面栈**（首页 + 子页）。
+ *
+ * 子页只有「工具包编辑页」一个，但它走的是和「设置」那套**完全一样**的路子：
+ * 页面挂在 tab 内容里（不另起 Scaffold），所以底栏是同一个 bottomBar、会**滑动收起**；
+ * 返回键由这里**统一接**（子页不用各自 BackHandler，也就不会漏）；
+ * 滚动位置按页面 key 保留。
+ *
+ * 页面 key：空串 = 首页；`pack` / `pack:<id>` = 新建 / 编辑工具包。
+ */
 @Composable
 fun PermissionScreen(
     ctx: Context,
     revision: Int,
     scrollTopTick: Int = 0,
-    /** 打开工具包编辑器（整页）：null = 新建，否则是那个包的 id。 */
-    onOpenPack: (String?) -> Unit = {},
+    /** 当前子页：空串 = 权限首页；`pack` / `pack:<id>` = 工具包编辑页。 */
+    page: String = "",
+    onPage: (String) -> Unit = {},
+    onChanged: () -> Unit
+) {
+    val back = { onPage("") }
+
+    // 子页里按系统返回 → 回权限首页，而不是退出整个应用（首页不接）
+    BackHandler(enabled = page.isNotEmpty()) { back() }
+
+    // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
+    val pageStates = rememberSaveableStateHolder()
+
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            // 方向看**层级**，不看「key 是不是空串」（首页 0 / 子页 1）
+            val entering = pageForward(targetState, initialState) { if (it.isEmpty()) 0 else 1 }
+            val slide = if (entering) 1 else -1
+            (
+                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+                ).togetherWith(
+                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
+            )
+        },
+        label = "permPage"
+    ) { current ->
+        pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
+            if (current.isEmpty()) {
+                PermissionHomePage(
+                    ctx = ctx,
+                    revision = revision,
+                    scrollTopTick = scrollTopTick,
+                    onOpenPack = { id -> onPage(if (id == null) "pack" else "pack:$id") },
+                    onChanged = onChanged
+                )
+            } else {
+                PackEditPage(
+                    ctx = ctx,
+                    packId = if (current == "pack") null else current.removePrefix("pack:"),
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 权限首页：预设会话、权限开关、工具包、安全选项、目录与文件通道。
+ *
+ * 这一页里**只管自己**：滚动位置、各种弹窗状态都在这里，切到子页再回来位置不丢。
+ */
+@Composable
+private fun PermissionHomePage(
+    ctx: Context,
+    revision: Int,
+    scrollTopTick: Int,
+    onOpenPack: (String?) -> Unit,
     onChanged: () -> Unit
 ) {
     // 「添加目录」弹窗
@@ -302,6 +379,7 @@ fun PermissionScreen(
         )
     }
 }
+
 
 private fun permIcon(key: PermKey): ImageVector = when (key) {
     PermKey.READ -> Icons.Filled.List

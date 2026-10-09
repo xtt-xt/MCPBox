@@ -116,7 +116,8 @@ private fun ToolListPage(
     onCreate: () -> Unit,
     onOpen: (String) -> Unit
 ) {
-    androidx.activity.compose.BackHandler(enabled = true) { onBack() }
+    // 这里是「工具管理」这一栈的根页：**不接返回**，交给设置页栈统一处理
+    // （以前它自己接，现在页面挂在设置 tab 里，接了就把返回吃掉、退不回设置首页）
 
     val all = remember(revision) { AppCore.server.tools }
     val builtinNames = remember(revision) { AppCore.server.builtinTools.map { it.name }.toSet() }

@@ -266,10 +266,12 @@ fun AppRoot(
 ) {
     val ctx = LocalContext.current
     var tab by rememberSaveable { mutableStateOf(0) }
-    var subScreen by rememberSaveable { mutableStateOf("") }
-    // 设置页停在哪个子页。**故意放在 key(langRev) 之外**：切语言/主题会重建整棵树，
-    // 状态放在里面的话用户会被从子页甩回设置首页
+    // 两个「有子页」的 tab，各自一个页面栈。**故意放在 key(langRev) 之外**：
+    // 切语言/主题会重建整棵树，状态放在里面的话用户会被从子页甩回首页。
+    //   设置 tab：外观与语言 / 网络与访问 / 终端与命令 / 规则 / 工具管理 / 记忆库 / 备份与恢复 / 关于
+    //   权限 tab：工具包编辑页
     var settingsPage by rememberSaveable { mutableStateOf("") }
+    var permPage by rememberSaveable { mutableStateOf("") }
     var revision by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf(AppCore.server.status()) }
     var logs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
@@ -278,7 +280,6 @@ fun AppRoot(
     // 让每个页面（含子页面）的滚动位置、输入内容在切换后保留 ——
     // 否则从「自定义工具」返回设置页时会跳回顶部
     val tabStateHolder = rememberSaveableStateHolder()
-    val screenStateHolder = rememberSaveableStateHolder()
 
     // 每天第一次打开时检查一次更新（可以在「关于」里关掉）；
     // 开发者模式里的「下次启动强制检查更新」会把它变成无条件检查一次
@@ -333,89 +334,6 @@ fun AppRoot(
         )
     }
 
-    // 子页面（自定义工具）进/出都带滑动动画：进去时从右侧滑入，返回时滑回右侧
-    androidx.compose.runtime.key(langRev) {   // 只重建内容，导航状态留在外面
-    AnimatedContent(
-        targetState = subScreen,
-        transitionSpec = {
-            val entering = targetState.isNotEmpty()
-            val slide = if (entering) 1 else -1
-            (
-                slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
-                ).togetherWith(
-                slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
-            )
-        },
-        label = "subScreen"
-    ) { screen ->
-    screenStateHolder.SaveableStateProvider(screen) {
-    if (screen.isNotEmpty()) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            // inset 一律交给页面自己：PageHeader 吃掉状态栏，底部由各页（或底栏）自己处理，
-            // 这样底栏的底色才能一路铺到屏幕最底、不会被 Scaffold 顶起来
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
-        ) { padding ->
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                when (screen) {
-                    "about" -> AboutScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onLangChanged = onLangChanged,
-                        onPreviewUpdate = { previewUpdate = it },
-                        // 关于页里手动「检查更新」查到新版 → 走同一个「发现新版本」弹窗
-                        onUpdateFound = { updateInfo = it },
-                        onBack = { subScreen = "" }
-                    )
-                    "memory" -> MemoryScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                    "backup" -> BackupScreen(
-                        ctx = ctx,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onThemeChanged = onThemeChanged,
-                        onLangChanged = onLangChanged,
-                        onBack = { subScreen = "" }
-                    )
-                    // 工具包编辑器："pack" = 新建，"pack:<id>" = 编辑已有包
-                    "pack" -> PackEditPage(
-                        ctx = ctx,
-                        packId = null,
-                        revision = revision,
-                        onChanged = { revision++ },
-                        onBack = { subScreen = "" }
-                    )
-                    // tools 以及任何意外值都兜到工具管理，避免白屏
-                    else -> if (screen.startsWith("pack:")) {
-                        PackEditPage(
-                            ctx = ctx,
-                            packId = screen.removePrefix("pack:"),
-                            revision = revision,
-                            onChanged = { revision++ },
-                            onBack = { subScreen = "" }
-                        )
-                    } else {
-                        ToolsScreen(
-                            ctx = ctx,
-                            revision = revision,
-                            onChanged = { revision++ },
-                            onBack = { subScreen = "" }
-                        )
-                    }
-                }
-            }
-        }
-    } else {
-
     val navItems = listOf(
         NavItem(L("首页"), Icons.Filled.Home),
         NavItem(L("终端"), Icons.Filled.Build),
@@ -424,10 +342,13 @@ fun AppRoot(
         NavItem(L("设置"), Icons.Filled.Settings)
     )
 
-    // 设置页进到子页（外观 / 网络 / 安全 / 终端 / 后台…）时隐藏底栏 ——
-    // 跟「工具管理 / 记忆库 / 关于」这些全屏子页保持一致，子页里只有一个返回按钮，
-    // 不然底栏还亮着、点了又跳走，等于给用户两条互相矛盾的出口。
-    val inSettingsSubPage = tab == 4 && settingsPage.isNotEmpty()
+    // 进了子页就把底栏收起来（子页里只有一个返回按钮，底栏还亮着等于给用户两条互相矛盾的出口）。
+    //
+    // 【统一后的规则】所有子页都挂在**各自的 tab 内容里**，共用这一个 Scaffold 的 bottomBar，
+    // 所以底栏是**滑动收起**的（AnimatedVisibility）；页面栈和返回键也由各自的宿主统一接。
+    // 以前那套「另起一个全屏 Scaffold」的路子已经删掉了 —— 底栏只会瞬间消失，
+    // 而且返回键得每个页面自己接（漏一个就没反应）。
+    val inSubPage = (tab == 4 && settingsPage.isNotEmpty()) || (tab == 2 && permPage.isNotEmpty())
 
     // 「再点一下底栏当前 tab」的计数器：每次双击 +1。页面只在自己活着的时候
     // 看到它变化才滚动（NavReselectEffect），所以切页回来不会误回顶。
@@ -438,12 +359,14 @@ fun AppRoot(
     var lastTapTab by remember { mutableStateOf(-1) }
     var lastTapAt by remember { mutableStateOf(0L) }
 
+    // 切语言 / 主题时只重建内容，导航状态（tab / 两个页面栈）留在外面
+    androidx.compose.runtime.key(langRev) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             AnimatedVisibility(
-                visible = !inSettingsSubPage,
+                visible = !inSubPage,
                 enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
                 exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
             ) {
@@ -516,7 +439,8 @@ fun AppRoot(
                     ctx = ctx,
                     revision = revision,
                     scrollTopTick = scrollTopTick,
-                    onOpenPack = { id -> subScreen = if (id == null) "pack" else "pack:$id" }
+                    page = permPage,
+                    onPage = { permPage = it }
                 ) { revision++ }
                 3 -> LogScreen(ctx, logs, scrollTopTick) { revision++ }
                 else -> SettingsScreen(
@@ -528,10 +452,8 @@ fun AppRoot(
                     onPage = { settingsPage = it },
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
-                    onOpenTools = { subScreen = "tools" },
-                    onOpenMemory = { subScreen = "memory" },
-                    onOpenBackup = { subScreen = "backup" },
-                    onOpenAbout = { subScreen = "about" },
+                    onPreviewUpdate = { previewUpdate = it },
+                    onUpdateFound = { updateInfo = it },
                     onChanged = { revision++ },
                     onRestartService = { McpService.restart(ctx) },
                     scrollTopTick = scrollTopTick
@@ -540,9 +462,6 @@ fun AppRoot(
             }
             }
         }
-    }
-    }
-    }
     }
     }
 }
