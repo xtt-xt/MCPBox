@@ -129,9 +129,9 @@ fun SettingsScreen(
         }
     }
 
-    val back = { onPage("") }
+    val back = { onPage(parentPage(page)) }
 
-    // 子页里按系统返回 → 回设置首页，而不是退出整个应用（顶层不接）
+    // 子页里按系统返回 → 回上一级，而不是退出整个应用（顶层不接）
     BackHandler(enabled = page.isNotEmpty()) { back() }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
@@ -140,7 +140,9 @@ fun SettingsScreen(
     AnimatedContent(
         targetState = page,
         transitionSpec = {
-            val entering = targetState.isNotEmpty()
+            // 方向看**层级**，不看「key 是不是空串」：
+            // 二级页（规则）回一级页时 key 照样非空，用空串判断会让返回动画反过来。
+            val entering = settingsDepth(targetState) > settingsDepth(initialState)
             val slide = if (entering) 1 else -1
             (
                 slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
@@ -178,9 +180,22 @@ fun SettingsScreen(
                     onChanged = onChanged,
                     onBack = back
                 )
+                "shell/rules/path" -> RulesSettingsPage(
+                    kind = RuleKind.PATH,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "shell/rules/command" -> RulesSettingsPage(
+                    kind = RuleKind.COMMAND,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
                 "shell" -> ShellSettingsPage(
                     revision = revision,
                     onChanged = onChanged,
+                    onOpenRules = { onPage("shell/rules/$it") },
                     onBack = back
                 )
                 "browser" -> BrowserSettingsPage(
@@ -735,3 +750,22 @@ private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRa
         )
     }
 }
+
+/* ------------------------------------------------------------ 子页路由 */
+
+/**
+ * 设置页的层级：首页 0 / 一级子页（外观、终端与命令…）1 / 二级子页（路径规则、命令规则）3。
+ *
+ * 用**非空段数**算，别写成 `split('/').size - 1` —— 那样一级子页会算成 0、跟首页一样深，
+ * 从规则页返回时就分不出「往里进」还是「往回退」，动画会反过来。
+ */
+private fun settingsDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
+
+/**
+ * 上一级页面：规则页（`shell/rules/path`）退到「终端与命令」（`shell`），一级子页退到设置首页（空串）。
+ *
+ * 二级页只取**第一段**是有意的：拿 `substringBeforeLast('/')` 会得到 `shell/rules`，
+ * 那不是一个有效页面，会掉进兜底分支 → 看起来就是「一返回就跳回设置首页」。
+ */
+private fun parentPage(page: String): String =
+    if (page.contains('/')) page.substringBefore('/') else ""
