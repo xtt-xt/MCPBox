@@ -2358,7 +2358,6 @@ object LangEn {
     "文件在、播放器也没报错，但一帧都没渲染出来；退出重进 App 一般就好，也可以换一段视频" to "The file is there and the player reported no error, but not a single frame was rendered; restarting the app usually fixes it, or pick another video",
     "用一张静态图片做背景" to "Use a still image as the backdrop",
     "视频背景（开发者模式）" to "Video backdrop (developer mode)",
-    "视频模式下页面是透明的，所以拖动时看不到上一页预览、转场时旧页直接收掉；打开关于页里的开发者模式后，这里才会出现「视频」这个类型" to "In video mode the pages are transparent, so dragging shows no preview of the previous page and the old page is dropped instantly during transitions. Turn on developer mode (in the About page) to get the video option here",
     "开发者模式已关闭，背景改回图片；视频文件会留着，重新打开开发者模式就能切回来" to "Developer mode is off, so the backdrop went back to an image; the video file is kept and will come back when developer mode is on again",
     "视频模式下页面是透明的，所以拖动时看不到上一页预览、转场时旧页直接收掉；打开关于页里的开发者模式后，这里才会出现「视频」这个类型" to "In video mode the pages are transparent, so dragging shows no preview of the previous page and the old page is dropped instantly during transitions; turn on developer mode (in the About page) and the video option shows up here",
 
