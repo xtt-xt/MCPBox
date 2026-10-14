@@ -110,8 +110,9 @@ fun ToolsScreen(
         },
         label = "toolPage"
     ) { current ->
-        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
-        PageSurface {
+        // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
+        // 工具管理整页是设置里的子页 → sub = true
+        PageSurface(sub = true) {
         when {
             current == "editor" -> CustomToolsScreen(
                 ctx = ctx,

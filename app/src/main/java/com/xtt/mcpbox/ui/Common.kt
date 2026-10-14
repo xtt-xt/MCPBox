@@ -1218,22 +1218,37 @@ fun SelectionBar(
 /* ------------------------------------------------------- 预见式返回动画 */
 
 /**
- * 给**页面自己**铺一层不透明底。
+ * 给**页面自己**铺一层底。
  *
- * 为什么不能只靠外面那层（Scaffold / PredictiveBackBox）兜 backgroundColor：
+ * 为什么不能只靠外面那层（Scaffold / PredictiveBackBox）兜背景：
  *  · [androidx.compose.animation.AnimatedContent] 转场时**新旧两页同时存在**，两页都贴在
  *    同一个底上、各自又没有底色 —— 中间重叠的那块就会**互相透出文字**（看着像两层字叠在一起）
  *  · 退回时旧页还要淡出（fadeOut），半透明的时候更是直接把下面那页的字透出来
  *
  * 所以：**每个页面分支自己带底**（这个 + [pageSlide] 里去掉淡出，两件一起才是干净的）。
+ *
+ * 自定义背景开着的时候，这层底就变成「背景 + 半透遮罩」（见 [BackdropPageSurface]）：
+ *  · 图片模式：**每页各画一份**图 → 转场时两页各自完整，不会有遮罩叠出来的暗带
+ *  · 视频模式：只画遮罩，视频是全局那一份（[BackdropLayer]）
+ *
+ * @param sub 这一页是不是**子页**（工具管理 / 记忆库 / 设置子页…）。
+ *            「子页也显示背景」关掉时，子页仍然铺不透明底。
  */
 @Composable
-fun PageSurface(content: @Composable () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) { content() }
+fun PageSurface(sub: Boolean = false, content: @Composable () -> Unit) {
+    val bd = LocalBackdrop.current
+    Box(Modifier.fillMaxSize()) {
+        if (bd.showsOn(sub)) {
+            BackdropPageSurface(bd)
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            )
+        }
+        content()
+    }
 }
 
 /**
@@ -1315,7 +1330,9 @@ fun PredictiveBackBox(
     var commitDrag by remember { mutableFloatStateOf(0f) }
     var commitTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    val bg = MaterialTheme.colorScheme.background
+    // 底色：有自定义背景时留空（页面自己那一层铺遮罩，只铺一次 —— 盒子是嵌套的，
+    // 这里再铺一遍会和页面那层叠起来，滑块调出来的透明度就不准了）
+    val bg = backdropBoxColor(LocalBackdrop.current)
 
     // 兜底：不再跟手（回到根页 / 开关关掉）时位移一定归零
     LaunchedEffect(follow) {
@@ -1361,9 +1378,10 @@ fun PredictiveBackBox(
             if (behind != null && (drag.value > 0f || commitDrag > 0f)) {
                 Box(Modifier.fillMaxSize().background(bg)) { behind() }
             }
-            // 被拖动 / 退出的这一层：**必须自己铺不透明底色**。
+            // 被拖动 / 退出的这一层：**必须自己铺底色**（页面自己的 [PageSurface] 也算），
             // 页面自己的根 Column 大多没有背景（设置子页、工具列表都是），不铺的话
             // 它一透明就把下面预览层的内容透出来 —— 真机表现就是「透过下面的文字」，两层叠字。
+            // 自定义背景开着时这里留空（透明），遮罩交给页面自己那一层，只铺一次。
             //
             // ⚠️ 顺序不能反：修饰符是「左边的包住右边的」，`graphicsLayer` 必须写在 `background`
             // **前面**（背景画在图层里面 → 跟着平移）。写成 .background().graphicsLayer{} 的话，

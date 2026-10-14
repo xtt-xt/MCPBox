@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -112,22 +113,30 @@ class MainActivity : ComponentActivity() {
                         outline = cs.outline.toArgb()
                     )
                 }
-                // 首次引导盖在整棵界面之前：走完（或跳过走完）才会进 AppRoot
-                if (OnboardingState.visible) {
-                    OnboardingScreen(
-                        onLangChanged = { langRev++ },
-                        onThemeChanged = { themeRev++ },
-                        requestPermission = ::handlePermNeed
-                    )
-                } else {
-                    AppRoot(
-                        requestPermission = ::handlePermNeed,
-                        onAutoGrant = ::handleAutoGrant,
-                        onRequestShizuku = ::requestShizuku,
-                        onThemeChanged = { themeRev++ },
-                        onLangChanged = { langRev++ },
-                        langRev = langRev
-                    )
+                // 自定义背景（图片 / 视频）铺在最底下；页面自己的 PageSurface 负责往上叠遮罩。
+                // 它现读 Prefs，所以主题版本号变了（也就是背景设置改了）要重新取一遍。
+                val backdrop = rememberBackdropState(themeRev)
+                Box(Modifier.fillMaxSize()) {
+                    BackdropLayer(backdrop)
+                    CompositionLocalProvider(LocalBackdrop provides backdrop) {
+                        // 首次引导盖在整棵界面之前：走完（或跳过走完）才会进 AppRoot
+                        if (OnboardingState.visible) {
+                            OnboardingScreen(
+                                onLangChanged = { langRev++ },
+                                onThemeChanged = { themeRev++ },
+                                requestPermission = ::handlePermNeed
+                            )
+                        } else {
+                            AppRoot(
+                                requestPermission = ::handlePermNeed,
+                                onAutoGrant = ::handleAutoGrant,
+                                onRequestShizuku = ::requestShizuku,
+                                onThemeChanged = { themeRev++ },
+                                onLangChanged = { langRev++ },
+                                langRev = langRev
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -362,7 +371,7 @@ fun AppRoot(
     // 切语言 / 主题时只重建内容，导航状态（tab / 两个页面栈）留在外面
     androidx.compose.runtime.key(langRev) {
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = backdropBoxColor(LocalBackdrop.current),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             AnimatedVisibility(
@@ -411,7 +420,8 @@ fun AppRoot(
                 },
                 label = "tabContent"
             ) { current ->
-            // 每个 tab 首页自己也铺一层不透明底：转场时两页重叠，各自有底才不会互相透出文字
+            // 每个 tab 首页自己也铺一层底：转场时两页重叠，各自有底才不会互相透出文字。
+            // 这里是 tab 根页 → sub = false（「子页也显示背景」关掉时这层照样透出背景）
             PageSurface {
             tabStateHolder.SaveableStateProvider(current) {
             when (current) {

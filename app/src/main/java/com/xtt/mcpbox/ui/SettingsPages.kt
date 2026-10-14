@@ -5,12 +5,14 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -46,13 +50,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +71,7 @@ import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.ServerMeta
+import kotlin.math.roundToInt
 
 /**
  * 设置页的各个子页。
@@ -104,6 +113,7 @@ internal fun AppearanceSettingsPage(
     onLangChanged: () -> Unit,
     onOpenSeed: () -> Unit,
     onOpenLangPack: () -> Unit,
+    onOpenWallpaper: () -> Unit,
     onBack: () -> Unit
 ) {
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
@@ -167,7 +177,13 @@ internal fun AppearanceSettingsPage(
                 ) { index ->
                     AppCore.prefs.darkMode = DarkMode.entries[index].id
                     onThemeChanged()
-                }
+                },
+                entrySpec(
+                    L("背景"),
+                    L("自定义背景图或视频，上面盖一层可调透明度的遮罩"),
+                    Icons.Filled.PlayArrow,
+                    onOpenWallpaper
+                )
             )
         )
 
@@ -927,6 +943,232 @@ internal fun BackgroundSettingsPage(
         CardColumn {
             PillButton(L("重置全部设置"), Modifier.fillMaxWidth(), outlined = true, color = Sem.bad) {
                 onOpenReset()
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------ 背景（图 / 视频） */
+
+/**
+ * 「背景」子页：选一张图片或一段视频垫在最底下，上面盖一层**主题背景色**的遮罩，
+ * 遮罩的不透明度可调（100% = 回到原来那种纯色底）。
+ *
+ * 三个口径别搞错：
+ *  · 遮罩**只由页面那一层**铺（[PageSurface] → [BackdropPageSurface]）：盒子层（Scaffold /
+ *    [PredictiveBackBox]）在有背景时一律留空 —— 盒子是嵌套的，每层都铺一遍的话
+ *    0.88 的遮罩叠三层已经接近全不透明，滑块就白调了。
+ *  · 视频全 App 只有一份（[BackdropLayer]），钉在屏幕最底层；图片是**每页各画一份**。
+ *  · 文件会被**复制**进 App 私有目录（`files/backdrop/`），原文件删了 / 授权过期都不影响。
+ */
+@Composable
+internal fun WallpaperSettingsPage(
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onBack: () -> Unit
+) {
+    // 本页自己的计数器：改完偏好顺手 +1，保证这一页一定重组（调用点的 lambda 会被 memoize）
+    var localRev by remember { mutableStateOf(0) }
+    val rev = revision + localRev
+    val enabled = remember(rev) { AppCore.prefs.backdropEnabled }
+    val kind = remember(rev) { BackdropKind.of(AppCore.prefs.backdropKind) }
+    val file = remember(rev) { BackdropFiles.current(ctx) }
+    val scale = remember(rev) { BackdropScale.of(AppCore.prefs.backdropScale) }
+    val subPages = remember(rev) { AppCore.prefs.backdropSubpages }
+    val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
+
+    // 滑块拖的时候只动本页预览：每一帧都写盘 + 让整棵树重组会卡，松手（onValueChangeFinished）才落盘
+    var tint by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropTint.toFloat()) }
+    var blur by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBlur.toFloat()) }
+
+    fun commit() {
+        localRev++
+        onChanged()
+    }
+
+    val pickImage = rememberBackdropPicker(ctx, BackdropKind.IMAGE) { commit() }
+    val pickVideo = rememberBackdropPicker(ctx, BackdropKind.VIDEO) { commit() }
+
+    // 当前文件的信息（名字 / 大小 / 像素），视频还要时长
+    val info by produceState<BackdropInfo?>(null, file?.path, rev) {
+        value = file?.let { BackdropFiles.info(it, kind) }
+    }
+    // 预览用的一帧：图片就是它自己，视频截第一秒（不为预览再开一路解码）
+    val poster by produceState<ImageBitmap?>(null, file?.path, kind) {
+        value = file?.let { BackdropFiles.poster(it, kind) }
+    }
+
+    SettingsPageShell(L("背景"), L("自定义背景图 / 视频，上面盖一层可调透明度的遮罩"), onBack) {
+
+        GroupLabel(L("预览"))
+        CardColumn {
+            CardBox {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                ) {
+                    val p = poster
+                    if (p != null) {
+                        Image(
+                            bitmap = p,
+                            contentDescription = null,
+                            contentScale = if (scale == BackdropScale.CROP) ContentScale.Crop
+                            else ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    // 遮罩：和真实渲染同一层（模糊没在这儿模拟，它只是「糊一点」的提示）
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                MaterialTheme.colorScheme.background.copy(alpha = tint / 100f)
+                            )
+                    )
+                    if (p == null) {
+                        Text(
+                            if (file == null) L("还没选图片或视频") else L("读不出预览"),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+            }
+        }
+
+        GroupLabel(L("背景"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("启用背景"),
+                    subtitle = L("关掉就回到原来的纯色底，选好的文件会留着"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    checked = enabled
+                ) { on ->
+                    AppCore.prefs.backdropEnabled = on
+                    commit()
+                },
+                dropdownSpec(
+                    title = L("背景类型"),
+                    subtitle = L("视频钉在屏幕最底层；图片跟着页面一起走"),
+                    icon = Icons.Filled.PlayArrow,
+                    options = BackdropKind.entries.map { L(it.label) },
+                    selectedIndex = BackdropKind.entries.indexOf(kind)
+                ) { index ->
+                    AppCore.prefs.backdropKind = BackdropKind.entries[index].id
+                    commit()
+                }.copy(visible = enabled),
+                RowSpec(
+                    title = L("选择图片"),
+                    subtitle = info?.takeIf { kind == BackdropKind.IMAGE }
+                        ?.let { L("%s · %s · %s").format(it.name, it.sizeText, it.detail) }
+                        ?: L("从系统文件选择器里挑一张，会复制进应用私有目录"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Add,
+                    visible = enabled && kind == BackdropKind.IMAGE,
+                    onClick = pickImage
+                ),
+                RowSpec(
+                    title = L("选择视频"),
+                    subtitle = info?.takeIf { kind == BackdropKind.VIDEO }
+                        ?.let { L("%s · %s · %s").format(it.name, it.sizeText, it.detail) }
+                        ?: L("从系统文件选择器里挑一段，会复制进应用私有目录"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Add,
+                    visible = enabled && kind == BackdropKind.VIDEO,
+                    onClick = pickVideo
+                )
+            )
+        )
+
+        GroupLabel(L("外观"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("遮罩不透明度"),
+                    subtitle = L("%s%%（100%% = 完全盖住背景）").format(tint.roundToInt()),
+                    visible = enabled,
+                    content = {
+                        Slider(
+                            value = tint,
+                            onValueChange = { tint = it },
+                            valueRange = 0f..100f,
+                            onValueChangeFinished = {
+                                AppCore.prefs.backdropTint = tint.roundToInt()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                RowSpec(
+                    title = L("模糊"),
+                    subtitle = if (!sdkOk) L("需要 Android 12 及以上，当前系统不支持")
+                    else L("%s（0 = 不模糊，糊一点文字更好读）").format(blur.roundToInt()),
+                    subtitleMaxLines = 2,
+                    visible = enabled,
+                    content = {
+                        Slider(
+                            value = blur,
+                            onValueChange = { blur = it },
+                            valueRange = 0f..40f,
+                            enabled = sdkOk,
+                            onValueChangeFinished = {
+                                AppCore.prefs.backdropBlur = blur.roundToInt()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                dropdownSpec(
+                    title = L("填充方式"),
+                    subtitle = L("裁剪铺满 = 填满整屏；完整显示 = 按原比例，留边的地方露出遮罩"),
+                    options = BackdropScale.entries.map { L(it.label) },
+                    selectedIndex = BackdropScale.entries.indexOf(scale)
+                ) { index ->
+                    AppCore.prefs.backdropScale = BackdropScale.entries[index].id
+                    commit()
+                }.copy(visible = enabled),
+                switchSpec(
+                    title = L("子页也显示背景"),
+                    subtitle = L("关掉后只有 5 个 tab 透出背景，工具管理 / 记忆库 / 各种子页回到纯色底"),
+                    subtitleMaxLines = 3,
+                    checked = subPages
+                ) { on ->
+                    AppCore.prefs.backdropSubpages = on
+                    commit()
+                }.copy(visible = enabled)
+            )
+        )
+
+        GroupLabel(L("说明"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("视频背景更耗电"),
+                    subtitle = L("背景视频只在 App 在前台时播放，切出去自动暂停；想省电可以换成图片"),
+                    subtitleMaxLines = 3,
+                    subtitleColor = Sem.warn,
+                    visible = enabled && kind == BackdropKind.VIDEO
+                )
+            )
+        )
+
+        if (file != null) {
+            Spacer(Modifier.height(7.dp))
+            CardColumn {
+                PillButton(L("清除背景"), Modifier.fillMaxWidth(), outlined = true, color = Sem.bad) {
+                    BackdropFiles.clear(ctx)
+                    AppCore.prefs.backdropFile = ""
+                    AppCore.prefs.backdropEnabled = false
+                    toast(ctx, L("背景已清除"))
+                    commit()
+                }
             }
         }
     }

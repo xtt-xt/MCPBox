@@ -233,8 +233,9 @@ fun MemoryScreen(
         },
         label = "memoryPage"
     ) { current ->
-        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
-        PageSurface {
+        // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
+        // 记忆库整页是设置里的子页 → sub = true
+        PageSurface(sub = true) {
         if (current.startsWith("detail:")) {
             MemoryDetailPage(
                 ctx = ctx,

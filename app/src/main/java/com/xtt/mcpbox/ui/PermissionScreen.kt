@@ -131,8 +131,9 @@ fun PermissionScreen(
         },
         label = "permPage"
     ) { current ->
-        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
-        PageSurface {
+        // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
+        // 权限首页是 tab 根页（sub = false），工具包编辑页是子页
+        PageSurface(sub = current.isNotEmpty()) {
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
             if (current.isEmpty()) {
                 PermissionHomePage(

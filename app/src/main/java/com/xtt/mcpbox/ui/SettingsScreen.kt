@@ -170,8 +170,9 @@ fun SettingsScreen(
         },
         label = "settingsPage"
     ) { current ->
-        // 每页自带不透明底：转场时新旧两页重叠，各自有底才不会互相透出文字
-        PageSurface {
+        // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
+        // 子页（current 非空）在「子页也显示背景」关掉时保持纯色底。
+        PageSurface(sub = current.isNotEmpty()) {
         // 顶层是空串，给它一个固定名字当 key
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
             when (current) {
@@ -182,6 +183,7 @@ fun SettingsScreen(
                     onLangChanged = onLangChanged,
                     onOpenSeed = { showSeed = true },
                     onOpenLangPack = { langInfo = ""; showLang = true },
+                    onOpenWallpaper = { onPage("wallpaper") },
                     onBack = back
                 )
                 "network" -> NetworkSettingsPage(
@@ -259,6 +261,14 @@ fun SettingsScreen(
                     onChanged = onChanged,
                     onRestartService = onRestartService,
                     onOpenReset = { showReset = true },
+                    onBack = back
+                )
+                "wallpaper" -> WallpaperSettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    // 背景参数存的是 Prefs，但要**整棵树重新取一遍**才生效：
+                    // revision 让设置栈重组，onThemeChanged（主题版本号）让最外层那一份背景重新读。
+                    onChanged = { onChanged(); onThemeChanged() },
                     onBack = back
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
@@ -745,7 +755,8 @@ private fun SettingsHomePage(
 }
 
 /** 顶层入口行：图标 + 标题 + 一句「里面有什么」 + 右侧箭头。 */
-private fun entrySpec(
+/** 设置首页 / 子页里「点进去」的那种行（副标题 + 右侧箭头）。 */
+internal fun entrySpec(
     title: String,
     subtitle: String,
     icon: ImageVector,

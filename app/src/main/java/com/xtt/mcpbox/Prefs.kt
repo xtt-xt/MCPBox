@@ -50,6 +50,21 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_PREDICTIVE_BACK = "predictive_back"
         /** 审批请求怎么呈现：overlay（悬浮窗，默认）/ notify（通知栏）。 */
         const val KEY_APPROVAL_PRESENTATION = "approval_presentation"
+
+        // ---- 自定义背景（背景图 / 背景视频 + 一层可调透明度的遮罩）----
+        const val KEY_BACKDROP_ENABLED = "backdrop_enabled"
+        /** 背景类型：image / video。 */
+        const val KEY_BACKDROP_KIND = "backdrop_kind"
+        /** 背景文件名（落在 App 私有目录 files/backdrop/ 下；空 = 还没选）。 */
+        const val KEY_BACKDROP_FILE = "backdrop_file"
+        /** 遮罩不透明度 0~100（用的就是主题背景色，100 = 完全盖住背景）。 */
+        const val KEY_BACKDROP_TINT = "backdrop_tint"
+        /** 背景模糊半径（dp）0~40，0 = 不模糊（默认）。 */
+        const val KEY_BACKDROP_BLUR = "backdrop_blur"
+        /** 填充方式：crop（裁剪铺满）/ fit（完整显示）。 */
+        const val KEY_BACKDROP_SCALE = "backdrop_scale"
+        /** 子页面（工具管理 / 记忆库 / 设置子页…）要不要也透出背景。 */
+        const val KEY_BACKDROP_SUBPAGES = "backdrop_subpages"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -262,6 +277,48 @@ class Prefs(context: Context) : SettingsSource {
     var predictiveBack: Boolean
         get() = getBoolean(KEY_PREDICTIVE_BACK, true)
         set(value) = putBoolean(KEY_PREDICTIVE_BACK, value)
+
+    /* ---------------------------------------------------------- 自定义背景 */
+
+    /** 要不要显示自定义背景（图 / 视频）。默认关。 */
+    var backdropEnabled: Boolean
+        get() = getBoolean(KEY_BACKDROP_ENABLED, false)
+        set(value) = putBoolean(KEY_BACKDROP_ENABLED, value)
+
+    /** 背景类型：`image` / `video`。 */
+    var backdropKind: String
+        get() = getString(KEY_BACKDROP_KIND, "image") ?: "image"
+        set(value) = putString(KEY_BACKDROP_KIND, value)
+
+    /**
+     * 背景文件名（`files/backdrop/<名字>`）。
+     *
+     * 选中的文件会被**复制**进 App 私有目录，所以原文件删了 / 授权失效都不影响；
+     * 换一张时旧文件会被删掉（见 `BackdropFiles.import`）。
+     */
+    var backdropFile: String
+        get() = getString(KEY_BACKDROP_FILE, "") ?: ""
+        set(value) = putString(KEY_BACKDROP_FILE, value)
+
+    /** 遮罩不透明度 0~100（主题背景色的 alpha，100 = 完全盖住背景）。 */
+    var backdropTint: Int
+        get() = getInt(KEY_BACKDROP_TINT, 88).coerceIn(0, 100)
+        set(value) = putInt(KEY_BACKDROP_TINT, value.coerceIn(0, 100))
+
+    /** 背景模糊半径（dp）0~40，0 = 不模糊。需要 Android 12 及以上。 */
+    var backdropBlur: Int
+        get() = getInt(KEY_BACKDROP_BLUR, 0).coerceIn(0, 40)
+        set(value) = putInt(KEY_BACKDROP_BLUR, value.coerceIn(0, 40))
+
+    /** 填充方式：`crop`（裁剪铺满，默认）/ `fit`（完整显示）。 */
+    var backdropScale: String
+        get() = getString(KEY_BACKDROP_SCALE, "crop") ?: "crop"
+        set(value) = putString(KEY_BACKDROP_SCALE, value)
+
+    /** 子页面要不要也透出背景（关掉 = 只有 5 个 tab 有背景，子页保持纯色）。默认开。 */
+    var backdropSubpages: Boolean
+        get() = getBoolean(KEY_BACKDROP_SUBPAGES, true)
+        set(value) = putBoolean(KEY_BACKDROP_SUBPAGES, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()
