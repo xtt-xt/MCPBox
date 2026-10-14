@@ -100,6 +100,11 @@ fun AboutScreen(
     onLangChanged: () -> Unit,
     onPreviewUpdate: (UpdateChecker.Info) -> Unit,
     onUpdateFound: (UpdateChecker.Info) -> Unit,
+    /**
+     * 开发者模式开关变了（连点图标解锁 / 开发者页里关掉）。
+     * 「设置 → 背景」里的「视频」类型跟着它开放，所以要让设置栈也重组一次。
+     */
+    onDevModeChanged: () -> Unit = {},
     onBack: () -> Unit
 ) {
     var page by rememberSaveable { mutableStateOf(ABOUT_PAGE) }
@@ -123,6 +128,7 @@ fun AboutScreen(
                 onChanged = onChanged,
                 onUpdateFound = onUpdateFound,
                 onOpenDev = { page = DEV_PAGE },
+                onDevModeChanged = onDevModeChanged,
                 onBack = onBack
             )
         }
@@ -171,6 +177,8 @@ fun AboutScreen(
                         page = ABOUT_PAGE
                         toast(ctx, L("开发者模式已关闭"))
                         onChanged()
+                        // 视频背景也跟着开发者模式一起收起来（「背景」子页会退回图片）
+                        onDevModeChanged()
                     },
                     onBack = { page = ABOUT_PAGE }
                 )
@@ -182,6 +190,7 @@ fun AboutScreen(
                     onChanged = onChanged,
                     onUpdateFound = onUpdateFound,
                     onOpenDev = { page = DEV_PAGE },
+                    onDevModeChanged = onDevModeChanged,
                     onBack = onBack
                 )
             }
@@ -201,6 +210,8 @@ private fun AboutHomePage(
     onChanged: () -> Unit,
     onUpdateFound: (UpdateChecker.Info) -> Unit,
     onOpenDev: () -> Unit,
+    /** 连点图标解锁开发者模式时通知外面（「背景」子页里有没有「视频」跟着它变）。 */
+    onDevModeChanged: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -275,6 +286,8 @@ private fun AboutHomePage(
                                 AppCore.prefs.devModeUnlocked = true
                                 toast(ctx, L("喵～ 开发者模式已解锁"))
                                 onChanged()
+                                // 「设置 → 背景」里的「视频」类型跟着开发者模式开放
+                                onDevModeChanged()
                             }
                         } else {
                             // 第 1 次「喵」，第 2 次「喵喵」…这样点着就有反馈

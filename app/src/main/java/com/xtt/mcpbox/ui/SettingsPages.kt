@@ -967,6 +967,8 @@ internal fun WallpaperSettingsPage(
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
+    /** 开发者模式开关变化时通知设置栈（「背景类型」里有没有「视频」跟着它变）。 */
+    onDevModeChanged: () -> Unit = {},
     onBack: () -> Unit
 ) {
     // 本页自己的计数器：改完偏好顺手 +1，保证这一页一定重组（调用点的 lambda 会被 memoize）
@@ -980,6 +982,11 @@ internal fun WallpaperSettingsPage(
     val scale = remember(rev) { BackdropScale.of(AppCore.prefs.backdropScale) }
     val subPages = remember(rev) { AppCore.prefs.backdropSubpages }
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
+    // 视频背景是**开发者模式**里的东西（默认只给图片）：视频模式下页面必须是透明的，
+    // 于是拖动时没有「上一页预览」、转场也只能让旧页直接收掉 —— 这些取舍不该默认摊给所有人。
+    // 已经设成视频的（比如从备份恢复来的）照样显示两个选项，免得卡住没法切回去。
+    val devMode = remember(rev) { AppCore.prefs.devModeUnlocked }
+    val kinds = if (devMode || kind == BackdropKind.VIDEO) BackdropKind.entries else listOf(BackdropKind.IMAGE)
 
     // 滑块拖的时候只动本页预览：每一帧都写盘 + 让整棵树重组会卡，松手（onValueChangeFinished）才落盘
     var tint by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropTint.toFloat()) }
@@ -1012,7 +1019,7 @@ internal fun WallpaperSettingsPage(
         }
     }
 
-    SettingsPageShell(L("背景"), L("自定义背景图 / 视频，上面盖一层可调透明度的遮罩"), onBack) {
+    SettingsPageShell(L("背景"), L("自定义背景图或视频，上面盖一层可调透明度的遮罩"), onBack) {
 
         GroupLabel(L("预览"))
         CardColumn {
@@ -1069,12 +1076,13 @@ internal fun WallpaperSettingsPage(
                 },
                 dropdownSpec(
                     title = L("背景类型"),
-                    subtitle = L("图片和视频各留一份，来回切不用重选"),
+                    subtitle = if (kinds.size > 1) L("图片和视频各留一份，来回切不用重选")
+                    else L("用一张静态图片做背景"),
                     icon = Icons.Filled.PlayArrow,
-                    options = BackdropKind.entries.map { L(it.label) },
-                    selectedIndex = BackdropKind.entries.indexOf(kind)
+                    options = kinds.map { L(it.label) },
+                    selectedIndex = kinds.indexOf(kind).coerceAtLeast(0)
                 ) { index ->
-                    val k = BackdropKind.entries[index]
+                    val k = kinds[index.coerceIn(0, kinds.lastIndex)]
                     AppCore.prefs.backdropKind = k.id
                     // 切类型后把偏好里的文件名对齐到这个类型自己的那份（有就自动认领）
                     BackdropFiles.syncPref(ctx, k)
@@ -1191,6 +1199,14 @@ internal fun WallpaperSettingsPage(
                     subtitleMaxLines = 3,
                     subtitleColor = Sem.bad,
                     visible = enabled && kind == BackdropKind.VIDEO && lateNoFrame
+                ),
+                // 视频是开发者模式里的东西：说明白这层门在哪儿、以及为什么默认不给
+                RowSpec(
+                    title = L("视频背景（开发者模式）"),
+                    subtitle = L("视频模式下页面是透明的，所以拖动时看不到上一页预览、转场时旧页直接收掉；打开关于页里的开发者模式后，这里才会出现「视频」这个类型"),
+                    subtitleMaxLines = 3,
+                    subtitleColor = Sem.warn,
+                    visible = !devMode
                 )
             )
         )
@@ -1205,6 +1221,17 @@ internal fun WallpaperSettingsPage(
                     toast(ctx, L("背景已清除"))
                     commit()
                 }
+            }
+        }
+
+        // 开发者模式又被关掉、而当前类型还是视频 —— 打个招呼再退回图片，
+        // 免得用户以为「视频设置丢了」（其实重新打开开发者模式就还在）
+        if (!devMode && kind == BackdropKind.VIDEO) {
+            LaunchedEffect(rev) {
+                AppCore.prefs.backdropKind = BackdropKind.IMAGE.id
+                BackdropFiles.syncPref(ctx, BackdropKind.IMAGE)
+                toast(ctx, L("开发者模式已关闭，背景改回图片；视频文件会留着，重新打开开发者模式就能切回来"))
+                commit()
             }
         }
     }

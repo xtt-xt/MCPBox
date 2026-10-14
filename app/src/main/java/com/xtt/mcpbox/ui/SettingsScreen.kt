@@ -235,6 +235,8 @@ fun SettingsScreen(
                     onLangChanged = onLangChanged,
                     onPreviewUpdate = onPreviewUpdate,
                     onUpdateFound = onUpdateFound,
+                    // 开发者模式一开一关，「背景」子页里有没有「视频」要跟着变
+                    onDevModeChanged = onChanged,
                     onBack = back
                 )
                 "shell/rules/path" -> RulesSettingsPage(
@@ -273,6 +275,8 @@ fun SettingsScreen(
                     // 背景参数存的是 Prefs，但要**整棵树重新取一遍**才生效：
                     // revision 让设置栈重组，onThemeChanged（主题版本号）让最外层那一份背景重新读。
                     onChanged = { onChanged(); onThemeChanged() },
+                    // 开发者模式一开一关，「背景类型」里有没有「视频」要跟着变（Prefs 不是可观察状态）
+                    onDevModeChanged = onChanged,
                     onBack = back
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
