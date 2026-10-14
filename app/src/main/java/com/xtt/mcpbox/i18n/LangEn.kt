@@ -2349,6 +2349,13 @@ object LangEn {
     "尺寸未知" to "Unknown size",
     "播放失败" to "Playback failed",
     "背景视频播放失败：%s" to "Background video failed: %s",
+    "图片和视频各留一份，来回切不用重选" to "One image and one video are kept separately, so switching types needs no re-picking",
+    "还没有选图片，从系统文件选择器里挑一张" to "No image chosen yet - pick one from the system file picker",
+    "还没有选视频，从系统文件选择器里挑一段" to "No video chosen yet - pick one from the system file picker",
+    "这个视频放不出来" to "This video cannot be played",
+    "解码失败：%s。换一段视频，或者先换成图片" to "Decoder failed: %s. Try another video, or switch to an image",
+    "视频没有画面" to "The video shows no picture",
+    "文件在、播放器也没报错，但一帧都没渲染出来；退出重进 App 一般就好，也可以换一段视频" to "The file is there and the player reported no error, but not a single frame was rendered; restarting the app usually fixes it, or pick another video",
 
     )
 }

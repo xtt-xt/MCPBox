@@ -49,6 +49,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -973,7 +974,9 @@ internal fun WallpaperSettingsPage(
     val rev = revision + localRev
     val enabled = remember(rev) { AppCore.prefs.backdropEnabled }
     val kind = remember(rev) { BackdropKind.of(AppCore.prefs.backdropKind) }
-    val file = remember(rev) { BackdropFiles.current(ctx) }
+    // 按**当前类型**找文件（不是「拿偏好里那个名字开文件」）。
+    // 图片和视频各留一份在私有目录里，所以来回切类型不用重新选。
+    val file = remember(rev) { BackdropFiles.current(ctx, kind) }
     val scale = remember(rev) { BackdropScale.of(AppCore.prefs.backdropScale) }
     val subPages = remember(rev) { AppCore.prefs.backdropSubpages }
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
@@ -997,6 +1000,16 @@ internal fun WallpaperSettingsPage(
     // 预览用的一帧：图片就是它自己，视频截第一秒（不为预览再开一路解码）
     val poster by produceState<ImageBitmap?>(null, file?.path, kind) {
         value = file?.let { BackdropFiles.poster(it, kind) }
+    }
+
+    // 视频「在播但没画面」的判定：等两秒半再看有没有渲染过第一帧
+    var lateNoFrame by remember(rev, kind) { mutableStateOf(false) }
+    LaunchedEffect(rev, kind, enabled, file?.path) {
+        lateNoFrame = false
+        if (enabled && kind == BackdropKind.VIDEO && file != null) {
+            kotlinx.coroutines.delay(2500)
+            lateNoFrame = BackdropRuntime.videoError == null && !BackdropRuntime.videoRendered
+        }
     }
 
     SettingsPageShell(L("背景"), L("自定义背景图 / 视频，上面盖一层可调透明度的遮罩"), onBack) {
@@ -1056,19 +1069,23 @@ internal fun WallpaperSettingsPage(
                 },
                 dropdownSpec(
                     title = L("背景类型"),
-                    subtitle = L("视频钉在屏幕最底层；图片跟着页面一起走"),
+                    subtitle = L("图片和视频各留一份，来回切不用重选"),
                     icon = Icons.Filled.PlayArrow,
                     options = BackdropKind.entries.map { L(it.label) },
                     selectedIndex = BackdropKind.entries.indexOf(kind)
                 ) { index ->
-                    AppCore.prefs.backdropKind = BackdropKind.entries[index].id
+                    val k = BackdropKind.entries[index]
+                    AppCore.prefs.backdropKind = k.id
+                    // 切类型后把偏好里的文件名对齐到这个类型自己的那份（有就自动认领）
+                    BackdropFiles.syncPref(ctx, k)
                     commit()
                 }.copy(visible = enabled),
                 RowSpec(
                     title = L("选择图片"),
                     subtitle = info?.takeIf { kind == BackdropKind.IMAGE }
                         ?.let { L("%s · %s · %s").format(it.name, it.sizeText, it.detail) }
-                        ?: L("从系统文件选择器里挑一张，会复制进应用私有目录"),
+                        ?: if (kind == BackdropKind.IMAGE) L("还没有选图片，从系统文件选择器里挑一张")
+                        else L("从系统文件选择器里挑一张，会复制进应用私有目录"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Add,
                     visible = enabled && kind == BackdropKind.IMAGE,
@@ -1078,7 +1095,8 @@ internal fun WallpaperSettingsPage(
                     title = L("选择视频"),
                     subtitle = info?.takeIf { kind == BackdropKind.VIDEO }
                         ?.let { L("%s · %s · %s").format(it.name, it.sizeText, it.detail) }
-                        ?: L("从系统文件选择器里挑一段，会复制进应用私有目录"),
+                        ?: if (kind == BackdropKind.VIDEO) L("还没有选视频，从系统文件选择器里挑一段")
+                        else L("从系统文件选择器里挑一段，会复制进应用私有目录"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Add,
                     visible = enabled && kind == BackdropKind.VIDEO,
@@ -1155,6 +1173,24 @@ internal fun WallpaperSettingsPage(
                     subtitleMaxLines = 3,
                     subtitleColor = Sem.warn,
                     visible = enabled && kind == BackdropKind.VIDEO
+                ),
+                // 视频真的放不出来时给个明确提示（不然屏幕上就是一片纯色，看不出是哪儿的问题）
+                RowSpec(
+                    title = L("这个视频放不出来"),
+                    subtitle = L("解码失败：%s。换一段视频，或者先换成图片").format(
+                        BackdropRuntime.videoError ?: ""
+                    ),
+                    subtitleMaxLines = 3,
+                    subtitleColor = Sem.bad,
+                    visible = enabled && kind == BackdropKind.VIDEO && BackdropRuntime.videoError != null
+                ),
+                // 在播、也没报错，但一帧都没出来（历史上踩过：视图挂上的时机不巧，要重启 App 才有画面）
+                RowSpec(
+                    title = L("视频没有画面"),
+                    subtitle = L("文件在、播放器也没报错，但一帧都没渲染出来；退出重进 App 一般就好，也可以换一段视频"),
+                    subtitleMaxLines = 3,
+                    subtitleColor = Sem.bad,
+                    visible = enabled && kind == BackdropKind.VIDEO && lateNoFrame
                 )
             )
         )

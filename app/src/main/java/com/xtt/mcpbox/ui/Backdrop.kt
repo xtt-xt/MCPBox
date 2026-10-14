@@ -111,29 +111,35 @@ object BackdropFiles {
 
     fun dir(ctx: Context): File = File(ctx.filesDir, "backdrop").also { it.mkdirs() }
 
-    /** 当前设置指向的那个文件；没有 / 不在了就返回 null。 */
-    fun current(ctx: Context): File? {
-        val name = AppCore.prefs.backdropFile
-        if (name.isNotBlank()) {
-            val f = File(dir(ctx), name)
-            if (f.isFile) return f
-        }
-        // 兜底认领：偏好里没记（或记的文件不在了），但目录里躺着文件 —— 直接用它，
-        // 并把名字与类型补写回偏好。历史版本漏写过这个键，不认领的话文件明明在却显示不出来。
-        val orphan = listFiles(ctx).firstOrNull() ?: return null
-        AppCore.prefs.backdropFile = orphan.name
-        AppCore.prefs.backdropKind = if (orphan.name.startsWith("video_")) "video" else "image"
-        return orphan
-    }
-
-    /** 目录里有效的背景文件（按修改时间新→旧；临时文件不算）。 */
+    /** 目录里的背景文件（按修改时间新→旧；临时文件不算）。 */
     private fun listFiles(ctx: Context): List<File> =
         dir(ctx).listFiles()
             ?.filter { it.isFile && !it.name.endsWith(".part") && it.length() > 0 }
             ?.sortedByDescending { it.lastModified() }
             ?: emptyList()
 
-    /** 把选中的 uri 复制进私有目录，返回新的文件名（旧文件顺手删掉）。 */
+    /**
+     * 当前**这个类型**该用的文件；没有就返回 null。
+     *
+     * 关键点：文件名带类型前缀（`image_…` / `video_…`），所以是**按类型找**的，
+     * 不是「拿偏好里那个名字去开文件」。踩过的坑：偏好里记的是视频、类型被切成图片，
+     * 拿 mp4 去解码 → 什么都出不来（表现就是「切换类型后要重新上传」）。
+     *
+     * 这个函数**纯查询、不写盘**（渲染层每帧都可能调它），要落偏好用 [syncPref]。
+     */
+    fun current(ctx: Context, kind: BackdropKind): File? {
+        val mine = listFiles(ctx).filter { it.name.startsWith("${kind.id}_") }
+        if (mine.isEmpty()) return null
+        val recorded = AppCore.prefs.backdropFile
+        return mine.firstOrNull { it.name == recorded } ?: mine.first()
+    }
+
+    /** 把偏好里的文件名对齐到 [kind] 现在该用的那份（切类型 / 导入后调）。 */
+    fun syncPref(ctx: Context, kind: BackdropKind) {
+        AppCore.prefs.backdropFile = current(ctx, kind)?.name ?: ""
+    }
+
+    /** 把选中的 uri 复制进私有目录，返回新的文件名（**只清同类型的旧文件**）。 */
     suspend fun import(ctx: Context, uri: Uri, kind: BackdropKind): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -168,7 +174,12 @@ object BackdropFiles {
                     tmp.delete()
                     error(L("复制到应用目录失败"))
                 }
-                dir(ctx).listFiles()?.forEach { if (it.name != dest.name) it.delete() }
+                // 只删同类型的旧文件：另一类型的留着，来回切类型不用重新选
+                dir(ctx).listFiles()?.forEach { f ->
+                    if (f.name != dest.name && (f.name.startsWith("${kind.id}_") || f.name.endsWith(".part"))) {
+                        f.delete()
+                    }
+                }
                 dest.name
             }
         }
@@ -350,10 +361,13 @@ fun rememberBackdropState(revision: Int): BackdropState {
     val ctx = LocalContext.current
     return remember(revision) {
         val p = AppCore.prefs
-        val file = BackdropFiles.current(ctx)
+        val kind = BackdropKind.of(p.backdropKind)
+        // 按**类型**找文件：类型和文件名对不上时（历史版本留下的）这里会直接找不到，
+        // 而不是拿 mp4 去当图片解码（那就是「切类型后什么都不显示」的原因）。
+        val file = BackdropFiles.current(ctx, kind)
         BackdropState(
             active = p.backdropEnabled && file != null,
-            kind = BackdropKind.of(p.backdropKind),
+            kind = kind,
             file = file,
             tintAlpha = p.backdropTint / 100f,
             blur = p.backdropBlur.toFloat(),
@@ -363,31 +377,48 @@ fun rememberBackdropState(revision: Int): BackdropState {
     }
 }
 
-/**
- * 页面自己的底色（遮罩）。
- *
- * 没背景 = 原来的不透明主题底色；有背景 = 主题底色**带透明度**（下面的背景透出来）。
- *
- * ⚠️ 只由**页面**铺这一层（[PageSurface]）。盒子（Scaffold / [PredictiveBackBox] 的那几层）
- * 在有背景时一律留空 —— 盒子是嵌套的，每层都铺一遍就是这么个结果：
- * 0.88 的遮罩叠三层实际已经接近不透明，滑块白调了。
- */
-@Composable
-fun backdropSurfaceColor(bd: BackdropState): Color =
-    if (bd.active) MaterialTheme.colorScheme.background.copy(alpha = bd.tintAlpha)
-    else MaterialTheme.colorScheme.background
+/** 背景运行时状态（设置页要显示「视频放不出来」这类信息，所以得是 Compose 能观察的）。 */
+object BackdropRuntime {
+    /** 背景视频最近一次的错误（null = 没出错）。 */
+    var videoError: String? by mutableStateOf(null)
 
-/** 盒子的兜底底色：有背景时留空（页面自己会铺遮罩），没背景时还是原来的不透明底。 */
+    /** 视频有没有真的出过画面（onSurfaceTextureUpdated 第一帧）。 */
+    var videoRendered: Boolean by mutableStateOf(false)
+}
+
+/**
+ * 盒子的兜底底色：有背景时留空。
+ *
+ * 关键：**遮罩只铺一次**，而且铺在「最外层画布」上（[BackdropLayer]）。
+ * 之前是每个页面各铺一层（PageSurface 自己画半透明遮罩），结果：
+ *  · 页面栈是**嵌套**的（tab → 设置 → 工具管理 → …），每层各铺一遍 →
+ *    0.88 的遮罩叠三层实际已经接近全不透明，「视频的遮罩看着很奇怪」就是这么来的；
+ *  · 页面只铺自己那一块，底栏那一条（Scaffold 的 padding 区）没人铺 →
+ *    底栏滑动动画和页面转场动画时长不一样时，那一条会露出**没打遮罩的背景**（一道亮带 / 空白）。
+ */
 @Composable
 fun backdropBoxColor(bd: BackdropState): Color =
     if (bd.active) Color.Transparent else MaterialTheme.colorScheme.background
 
+/** 遮罩：主题背景色 + 用户调的不透明度。全 App 只铺这一层（在最外层画布上）。 */
+@Composable
+private fun BackdropMask(alpha: Float) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background.copy(alpha = alpha))
+    )
+}
+
 /**
- * 最外层的背景层（整个 App 共用这一份）。
+ * **最外层的背景画布**（整个 App 只有这一份，铺满整个窗口，包括底栏下面）。
  *
- * 视频：真正的播放窗口就在这儿，全 App 只有这一个 MediaPlayer。
- * 图片：也在这儿画一份（**不打遮罩**）—— 页面盖不到的角落（比如底栏那一条）不至于露白；
- *       页面上那份**带遮罩**的图是页面自己画的（见 [BackdropPageSurface]）。
+ *  · 视频：真正的播放窗口就在这儿（全 App 一个 MediaPlayer），所以视频**不跟着页面走**；
+ *  · 图片：也在这儿画一份（页面各画一份是为了转场干净，见 [BackdropPageSurface]）；
+ *  · 遮罩：[BackdropMask] —— 页面上**不再**铺第二层（否则会叠加变深，见 [backdropBoxColor]）。
+ *
+ * 它铺满整窗，所以底栏 / 转场中途那一条「谁都没盖住」的地方也是「背景 + 遮罩」，
+ * 不会露出一道没打遮罩的亮带。
  */
 @Composable
 fun BackdropLayer(state: BackdropState) {
@@ -398,21 +429,25 @@ fun BackdropLayer(state: BackdropState) {
         } else {
             BackdropImage(state.file, state.scale, state.blur)
         }
+        BackdropMask(state.tintAlpha)
     }
 }
 
-/** 页面自己的背景层：图片模式画「图 + 遮罩」，视频模式只画遮罩（视频在最外层）。 */
+/**
+ * 页面那一层要铺的东西。
+ *
+ *  · **图片模式**：画「图 + 遮罩」。图是不透明的，所以转场时后面的那一页会被它整块盖住
+ *    （不会两层字叠在一起）；同一张 bitmap 全 App 共用一份，画两三次也不心疼。
+ *    遮罩在这里画是**幂等**的：图不透明，先画的遮罩被后画的图盖掉，最后的观感仍是「一层遮罩」。
+ *  · **视频模式**：**什么都不画** —— 视频和遮罩都在最外层画布上，这里透明就好。
+ *    （视频没法每页复制一份：一页一个解码器不仅重，画面还会不同步。）
+ */
 @Composable
 fun BackdropPageSurface(state: BackdropState) {
+    if (state.kind != BackdropKind.IMAGE) return
     Box(Modifier.fillMaxSize()) {
-        if (state.kind == BackdropKind.IMAGE) {
-            BackdropImage(state.file, state.scale, state.blur)
-        }
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background.copy(alpha = state.tintAlpha))
-        )
+        BackdropImage(state.file, state.scale, state.blur)
+        BackdropMask(state.tintAlpha)
     }
 }
 
@@ -467,9 +502,18 @@ private fun VideoBackdrop(state: BackdropState) {
                     return true
                 }
 
-                override fun onSurfaceTextureUpdated(st: SurfaceTexture) {}
+                override fun onSurfaceTextureUpdated(st: SurfaceTexture) {
+                    // 真的出画面了（用来分辨「在播但没画面」和「压根没播起来」）
+                    if (!BackdropRuntime.videoRendered) BackdropRuntime.videoRendered = true
+                }
             }
         }
+    }
+
+    // 换视频 / 刚建好时清掉上一次的错误
+    LaunchedEffect(file.path) {
+        BackdropRuntime.videoError = null
+        BackdropRuntime.videoRendered = false
     }
 
     // 视频尺寸（prepare 之后才拿得到）+ 窗口尺寸 → 自己算缩放矩阵。
@@ -480,6 +524,7 @@ private fun VideoBackdrop(state: BackdropState) {
             videoHeight = h
         }
         holder.onError = { reason ->
+            BackdropRuntime.videoError = reason
             AppCore.log.add(
                 LogKind.ERROR,
                 ok = false,
@@ -531,6 +576,14 @@ private fun VideoBackdrop(state: BackdropState) {
 
     AndroidView(
         factory = { view },
+        // update 里再兜一次 attach：onSurfaceTextureAvailable 只在「视图刚拿到纹理」那一刻回调，
+        // 如果那时侯还没进组合（比如刚从文件选择器回来）就会漏掉 —— 漏了的后果是
+        // 「选了视频但没画面，重启 App 才出来」。这里每次重组都检查一下，补上。
+        update = { v ->
+            if (v.isAvailable && !holder.attached) {
+                v.surfaceTexture?.let { holder.attach(it) }
+            }
+        },
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { boxSize = it }
@@ -545,6 +598,10 @@ private class VideoHolder(private val file: File) {
     private var prepared = false
     private var wantPlay = true
 
+    /** 已经挂上 SurfaceTexture 了（attach 只做一次）。 */
+    var attached = false
+        private set
+
     /** 视频尺寸回调（prepare 完成后）。 */
     var onSize: ((Int, Int) -> Unit)? = null
 
@@ -553,6 +610,7 @@ private class VideoHolder(private val file: File) {
 
     fun attach(texture: SurfaceTexture) {
         if (player != null) return
+        attached = true
         val s = Surface(texture)
         surface = s
         val mp = MediaPlayer()
@@ -569,6 +627,8 @@ private class VideoHolder(private val file: File) {
             }
             mp.setOnPreparedListener { p ->
                 prepared = true
+                // 尺寸也在这儿补一次：有些机器 onVideoSizeChanged 来得比 onPrepared 晚（或不来）
+                onSize?.invoke(p.videoWidth, p.videoHeight)
                 if (wantPlay) runCatching { p.start() }
             }
             mp.prepareAsync()
@@ -594,6 +654,7 @@ private class VideoHolder(private val file: File) {
         runCatching { player?.release() }
         player = null
         prepared = false
+        attached = false
         runCatching { surface?.release() }
         surface = null
     }

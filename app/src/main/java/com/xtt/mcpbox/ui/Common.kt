@@ -1227,21 +1227,29 @@ fun SelectionBar(
  *
  * 所以：**每个页面分支自己带底**（这个 + [pageSlide] 里去掉淡出，两件一起才是干净的）。
  *
- * 自定义背景开着的时候，这层底就变成「背景 + 半透遮罩」（见 [BackdropPageSurface]）：
- *  · 图片模式：**每页各画一份**图 → 转场时两页各自完整，不会有遮罩叠出来的暗带
- *  · 视频模式：只画遮罩，视频是全局那一份（[BackdropLayer]）
+ * 自定义背景（[LocalBackdrop]）开着时这里分三种情况：
+ *  · **图片模式**：铺「图 + 遮罩」。图不透明 → 转场时两页不会互相透字；
+ *    遮罩是幂等的（先画的会被后画的不透明图盖掉），嵌套的页面栈也不会叠深。
+ *  · **视频模式**：什么都不铺 —— 视频和遮罩都在最外层的 [BackdropLayer] 上，
+ *    页面上再铺一层遮罩就会和它叠起来（那正是「视频的遮罩看着很奇怪」的原因）。
+ *  · **这一页不该显示背景**（子页 + 「子页也显示背景」关掉）：铺不透明底色盖住。
  *
- * @param sub 这一页是不是**子页**（工具管理 / 记忆库 / 设置子页…）。
- *            「子页也显示背景」关掉时，子页仍然铺不透明底。
+ * @param sub 这一页是不是**子页**（工具管理 / 记忆库 / 设置子页…），受「子页也显示背景」控制。
  */
 @Composable
 fun PageSurface(sub: Boolean = false, content: @Composable () -> Unit) {
     val bd = LocalBackdrop.current
     Box(Modifier.fillMaxSize()) {
-        if (bd.showsOn(sub)) {
-            BackdropPageSurface(bd)
-        } else {
-            Box(
+        when {
+            !bd.active -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            )
+
+            bd.showsOn(sub) -> BackdropPageSurface(bd)
+
+            else -> Box(
                 Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
