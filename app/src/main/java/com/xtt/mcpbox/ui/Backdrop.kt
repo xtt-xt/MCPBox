@@ -114,9 +114,24 @@ object BackdropFiles {
     /** 当前设置指向的那个文件；没有 / 不在了就返回 null。 */
     fun current(ctx: Context): File? {
         val name = AppCore.prefs.backdropFile
-        if (name.isBlank()) return null
-        return File(dir(ctx), name).takeIf { it.isFile }
+        if (name.isNotBlank()) {
+            val f = File(dir(ctx), name)
+            if (f.isFile) return f
+        }
+        // 兜底认领：偏好里没记（或记的文件不在了），但目录里躺着文件 —— 直接用它，
+        // 并把名字与类型补写回偏好。历史版本漏写过这个键，不认领的话文件明明在却显示不出来。
+        val orphan = listFiles(ctx).firstOrNull() ?: return null
+        AppCore.prefs.backdropFile = orphan.name
+        AppCore.prefs.backdropKind = if (orphan.name.startsWith("video_")) "video" else "image"
+        return orphan
     }
+
+    /** 目录里有效的背景文件（按修改时间新→旧；临时文件不算）。 */
+    private fun listFiles(ctx: Context): List<File> =
+        dir(ctx).listFiles()
+            ?.filter { it.isFile && !it.name.endsWith(".part") && it.length() > 0 }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
 
     /** 把选中的 uri 复制进私有目录，返回新的文件名（旧文件顺手删掉）。 */
     suspend fun import(ctx: Context, uri: Uri, kind: BackdropKind): Result<String> =
@@ -602,7 +617,10 @@ internal fun rememberBackdropPicker(
             val result = BackdropFiles.import(ctx, uri, kind)
             busy.value = false
             result.fold(
-                onSuccess = {
+                onSuccess = { fileName ->
+                    // 文件名必须落进偏好 —— 少了这一句，文件复制进去了、开关也开了，
+                    // 渲染层还是以为「没选文件」，表现就是「选了没反应」
+                    AppCore.prefs.backdropFile = fileName
                     AppCore.prefs.backdropKind = kind.id
                     AppCore.prefs.backdropEnabled = true
                     toast(ctx, L("背景已更新"))
