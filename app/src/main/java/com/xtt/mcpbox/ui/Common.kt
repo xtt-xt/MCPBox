@@ -1291,16 +1291,25 @@ val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
  *    所以这里两边都不演动画（新页原地出现、旧页直接收掉）——
  *    否则旧页会「跳回屏幕中间再淡出」，新页还会被平移着推出来（用户看到的就是「返回完成后左右动一下」）。
  */
-fun pageSlide(entering: Boolean, commitDrag: Float = 0f): ContentTransform {
+fun pageSlide(entering: Boolean, commitDrag: Float = 0f, noOverlap: Boolean = false): ContentTransform {
     if (!entering && commitDrag > 0f) return EnterTransition.None togetherWith ExitTransition.None
     val slide = if (entering) 1 else -1
-    // 转场期间新旧两页是**重叠**的，所以两页各自都必须有不透明底（见 [PageSurface]）——
-    // 靠外面那层兜底色是不够的（挡不住重叠区互相透字）。
     val enter: EnterTransition =
         slideInHorizontally(tween(300)) { w -> slide * w / 3 } + fadeIn(tween(220))
+    // 视频背景：页面自己是**透明**的（视频在最底下一层，见 ui/Backdrop.kt），
+    // 两页重叠就一定会互相透出文字（以前每页自带不透明底色，所以盖得住）。
+    // 视频没法每页复制一份 → 那就**不让两页重叠**：退出的那一页直接收掉，不演滑出 / 淡出。
+    if (noOverlap) return enter togetherWith ExitTransition.None
     val exit: ExitTransition =
         slideOutHorizontally(tween(260)) { w -> -slide * w / 6 } + fadeOut(tween(180))
     return enter togetherWith exit
+}
+
+/** 当前是不是「视频背景」——页面是透明的，转场 / 拖动都要走不重叠的那套（见 [pageSlide] / [PredictiveBackBox]）。 */
+@Composable
+fun rememberTransparentPages(): Boolean {
+    val bd = LocalBackdrop.current
+    return bd.active && bd.kind == BackdropKind.VIDEO
 }
 
 /**
@@ -1341,6 +1350,10 @@ fun PredictiveBackBox(
     // 底色：有自定义背景时留空（页面自己那一层铺遮罩，只铺一次 —— 盒子是嵌套的，
     // 这里再铺一遍会和页面那层叠起来，滑块调出来的透明度就不准了）
     val bg = backdropBoxColor(LocalBackdrop.current)
+    // 视频背景时页面是透明的，铺预览层会在被拖动的那一页**下面**透出上一页的文字
+    // （用户看到的「切换页面时下面闪一下的文字」）→ 这种模式下干脆不铺预览，
+    // 拖出来的那片区域显示最底下的视频。
+    val showBehind = !rememberTransparentPages()
 
     // 兜底：不再跟手（回到根页 / 开关关掉）时位移一定归零
     LaunchedEffect(follow) {
@@ -1383,7 +1396,7 @@ fun PredictiveBackBox(
             // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）。
             // **提交后也要继续垫着**（commitDrag > 0）：这段时间真页面正在重新组合，
             // 撤早了中间会空一下 —— 看起来就是「返回的时候底下没有背景」。
-            if (behind != null && (drag.value > 0f || commitDrag > 0f)) {
+            if (behind != null && showBehind && (drag.value > 0f || commitDrag > 0f)) {
                 Box(Modifier.fillMaxSize().background(bg)) { behind() }
             }
             // 被拖动 / 退出的这一层：**必须自己铺底色**（页面自己的 [PageSurface] 也算），

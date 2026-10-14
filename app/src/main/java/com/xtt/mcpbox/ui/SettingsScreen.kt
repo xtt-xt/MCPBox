@@ -158,6 +158,9 @@ fun SettingsScreen(
     // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
     // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
     val commitDrag = LocalPredictiveCommitDrag.current
+    // 视频背景时页面是透明的（视频在最底层），两页重叠就会互相透出文字 →
+    // 这种模式下转场走「退出的那一页直接收掉」（见 pageSlide 的 noOverlap）。
+    val noOverlap = rememberTransparentPages()
     AnimatedContent(
         targetState = page,
         transitionSpec = {
@@ -165,7 +168,8 @@ fun SettingsScreen(
                 // 深度 = 非空段数：设置首页 "" → 0，外观 / 终端与命令 → 1，规则 → 3。
                 // 别写成 split('/').size - 1：一级子页会得到 0、跟首页同深度，方向就判反了。
                 entering = pageForward(targetState, initialState) { settingsDepth(it) },
-                commitDrag = commitDrag
+                commitDrag = commitDrag,
+                noOverlap = noOverlap
             )
         },
         label = "settingsPage"

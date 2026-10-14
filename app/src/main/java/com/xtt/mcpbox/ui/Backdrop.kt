@@ -64,14 +64,19 @@ import kotlin.math.min
  * 自定义背景：一张图片或一段视频垫在最底下，上面盖一层**主题背景色**的遮罩，
  * 遮罩的不透明度可调（100% = 原来那种纯色底）。
  *
- * 三条渲染规则（改之前先读这段）：
- *  ① **视频只有一份**，铺在最外层（[BackdropLayer]）—— 一个 MediaPlayer、一个 TextureView，
- *     页面只往上叠遮罩，所以转场时背景**不会跟着页面滑动**。
- *  ② **图片是每页各画一份**（[BackdropPageSurface]）—— 同一张 bitmap 画两次很便宜，
- *     换来的是「转场时两页各自完整」，不会出现两页遮罩叠在一起（一条更暗的带子）。
- *     代价：图片会跟着页面移动（有一点视差感）。
- *  ③ 页面盖不到的地方（底栏那一条）也要有东西：所以图片模式在最外层**也画一份不打遮罩的图**，
- *     免得那儿露出空白。
+ * 四条渲染规则（改之前先读这段）：
+ *  ① **遮罩只有一层**，铺在最外层画布（[BackdropLayer]）上、铺满整个窗口：
+ *     · 页面栈是**嵌套**的，每层各铺一遍遮罩会相加（0.88 叠三层≈全不透明，滑块白调）；
+ *     · 底栏是 Scaffold 的 padding 区、不归任何页面管，底栏动画（180ms）和页面转场（300ms）
+ *       对不齐的那几帧会露出没打遮罩的亮带。
+ *  ② **图片模式**：页面各画一份「图 + 遮罩」（[BackdropPageSurface]）——图是不透明的，
+ *     所以转场时两页不会互相透字，遮罩在这里画是**幂等**的（先画的会被后画的图盖掉）。
+ *     同一张 bitmap 全 App 共一份。
+ *  ③ **视频模式**：页面**全透明**（视频没法每页复制一份：一页一个解码器又重又不同步），
+ *     视频与遮罩都在最外层。代价是页面不再自带不透明底色 → 两页重叠就会互相透出文字，
+ *     所以这种模式下：转场走「退出的那一页直接收掉」（`pageSlide(noOverlap = true)`），
+ *     拖动时不铺预览层（`PredictiveBackBox` 的 `showBehind`）—— 一律**不让两页同时可见**。
+ *  ④ 页面盖不到的地方（底栏那一条、手势条）也必须是「背景 + 遮罩」—— 所以最外层画布铺满整窗。
  *
  * 遮罩色永远取 `MaterialTheme.colorScheme.background` —— 跟随主题 / 深浅色自动变。
  */
@@ -446,6 +451,13 @@ fun BackdropLayer(state: BackdropState) {
 fun BackdropPageSurface(state: BackdropState) {
     if (state.kind != BackdropKind.IMAGE) return
     Box(Modifier.fillMaxSize()) {
+        // 先垫一层**不透明**的主题底色：图片还没解码完、或者选的是「完整显示」留了边的时候，
+        // 这一层负责把后面的东西盖住（不然那几帧又会透出下一页的文字）。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        )
         BackdropImage(state.file, state.scale, state.blur)
         BackdropMask(state.tintAlpha)
     }

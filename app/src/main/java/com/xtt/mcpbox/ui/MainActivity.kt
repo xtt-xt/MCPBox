@@ -359,6 +359,10 @@ fun AppRoot(
     // 而且返回键得每个页面自己接（漏一个就没反应）。
     val inSubPage = (tab == 4 && settingsPage.isNotEmpty()) || (tab == 2 && permPage.isNotEmpty())
 
+    // 视频背景时页面是透明的（视频在最底层）→ tab 切换也不能让两页重叠（见 pageSlide 的 noOverlap）。
+    // 必须在组合作用域里读一次：transitionSpec 那个 lambda 不是 @Composable。
+    val tabHardCut = rememberTransparentPages()
+
     // 「再点一下底栏当前 tab」的计数器：每次双击 +1。页面只在自己活着的时候
     // 看到它变化才滚动（NavReselectEffect），所以切页回来不会误回顶。
     var scrollTopTick by remember { mutableStateOf(0) }
@@ -410,13 +414,14 @@ fun AppRoot(
                     // 往右切就内容从右边滑进来，往左切反过来
                     val forward = targetState > initialState
                     val slide = if (forward) 1 else -1
-                    (
-                        slideInHorizontally(tween(230)) { width -> slide * width / 10 } +
-                            fadeIn(tween(200))
-                        ).togetherWith(
-                        slideOutHorizontally(tween(200)) { width -> -slide * width / 10 } +
+                    val enter = slideInHorizontally(tween(230)) { width -> slide * width / 10 } +
+                        fadeIn(tween(200))
+                    // 视频背景时页面是透明的，两页重叠会互相透字 → 旧页直接收掉（和 pageSlide 一个口径）
+                    val exit: androidx.compose.animation.ExitTransition =
+                        if (tabHardCut) androidx.compose.animation.ExitTransition.None
+                        else slideOutHorizontally(tween(200)) { width -> -slide * width / 10 } +
                             fadeOut(tween(150))
-                    )
+                    enter togetherWith exit
                 },
                 label = "tabContent"
             ) { current ->
