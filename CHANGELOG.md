@@ -22,6 +22,21 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.2-137 · 2026-10-17
+
+**新增：可切换的应用图标（7 个）**
+
+- 设置 → 外观与语言 → **应用图标**：线性极简（默认）/ 扁平 / 渐变 / 液体玻璃 / 暗色玻璃 / 新拟物 / 档案抽屉
+- 实现走 Android 的 activity-alias：每个图标在清单里是一个带 MAIN/LAUNCHER 的 alias，
+  切换 = 目标 ENABLED、其余 DISABLED（`ui/AppIcon.kt`）。`MainActivity` 自己**不再带 LAUNCHER**，
+  否则桌面会出现两个图标；显式组件启动（`am start -n …/.ui.MainActivity`）不受影响
+- 图标资源：432px 方形整图（`mipmap-xxxhdpi/ic_icon_*.png`）+ 自适应图标
+  （`mipmap-anydpi-v26/ic_icon_*.xml`，整图放 background 层、前景留空，圆形 / 方圆遮罩切不到内容）
+- 默认图标改成「线性极简」（`ic_launcher` / `ic_launcher_round` 也指向它）
+- 切换用 `DONT_KILL_APP`：**不会**杀掉 App（也就不会停掉服务器）；个别启动器要几秒才刷新
+- 升级提醒：桌面上那个旧组件名会失效，升级后可能要**把旧图标删掉、再重新拖一个**到桌面
+- 基线：端到端测试 **633 项全绿**
+
 ## v1.2.2-136 · 2026-10-17
 
 **修：规则页拖动返回时露的是设置首页（松手才跳到终端与命令）**

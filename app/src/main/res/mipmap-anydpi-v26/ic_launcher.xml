@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  默认应用图标 = 「线性极简」（和 ui/AppIcon 里的 LINE 是同一张图）。
+  桌面图标实际由清单里那组 activity-alias 提供，这里是给 @mipmap/ic_launcher 这种
+  「按名字引用图标」的地方兜底（通知、分享面板、旧版启动器等）。
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_icon_line" />
+    <foreground android:drawable="@android:color/transparent" />
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

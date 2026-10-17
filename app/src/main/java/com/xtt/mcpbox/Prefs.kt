@@ -71,6 +71,9 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_BACKDROP_BAR_ALPHA = "backdrop_bar_alpha"
         /** 按钮 / 下拉 / 弹窗要不要跟着卡片一起变透明。 */
         const val KEY_BACKDROP_CHROME_TINT = "backdrop_chrome_tint"
+
+        /** 桌面图标用哪一个（见 ui/AppIcon.kt 的 id）。 */
+        const val KEY_APP_ICON = "app_icon"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -340,6 +343,11 @@ class Prefs(context: Context) : SettingsSource {
     var backdropChromeTint: Boolean
         get() = getBoolean(KEY_BACKDROP_CHROME_TINT, false)
         set(value) = putBoolean(KEY_BACKDROP_CHROME_TINT, value)
+
+    /** 桌面图标用哪一个（ui/AppIcon 的 id，默认 `line`）。 */
+    var appIcon: String
+        get() = getString(KEY_APP_ICON, "line") ?: "line"
+        set(value) = putString(KEY_APP_ICON, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用图标（可切换）：drawer。
+  图案本身已经是一张完整的方形图（含浅色渐变底），所以整张图放在 background 层，
+  前面板留空 —— 自适应图标的遮罩（圆形 / 方圆 / 圆角矩形）就是最终形状，
+  画在 background 上不会被前景的安全区再缩一次。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_icon_drawer" />
+    <foreground android:drawable="@android:color/transparent" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

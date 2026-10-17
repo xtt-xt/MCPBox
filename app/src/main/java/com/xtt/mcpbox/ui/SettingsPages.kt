@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -63,6 +65,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -124,6 +127,8 @@ internal fun AppearanceSettingsPage(
     onOpenSeed: () -> Unit,
     onOpenLangPack: () -> Unit,
     onOpenWallpaper: () -> Unit,
+    /** 打开「应用图标」子页。 */
+    onOpenIcon: () -> Unit = {},
     onBack: () -> Unit,
     /** 滚动位置由外面持有：预览层要和真页面共用同一份（见 [SettingsPageShell]）。 */
     scroll: ScrollState = rememberScrollState()
@@ -195,6 +200,12 @@ internal fun AppearanceSettingsPage(
                     L("自定义背景图或视频，上面盖一层可调透明度的遮罩"),
                     Icons.Filled.PlayArrow,
                     onOpenWallpaper
+                ),
+                entrySpec(
+                    L("应用图标"),
+                    L("换一个桌面图标：线性极简 / 扁平 / 渐变 / 玻璃…"),
+                    Icons.Filled.Star,
+                    onOpenIcon
                 )
             )
         )
@@ -973,6 +984,82 @@ internal fun BackgroundSettingsPage(
                 onOpenReset()
             }
         }
+    }
+}
+
+/* ------------------------------------------------------------ 应用图标 */
+
+/**
+ * 「应用图标」子页：换桌面上那个图标。
+ *
+ * 真正的实现是 activity-alias 的开关（见 [AppIcon]）：每个图标在清单里都有一个
+ * 带 MAIN/LAUNCHER 的 alias，切换就是把目标那个 ENABLED、其余 DISABLED。
+ * 所以这里只管「写偏好 + 调 [AppIcon.apply]」，不需要重建界面。
+ */
+@Composable
+internal fun IconSettingsPage(
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onBack: () -> Unit
+) {
+    // 本页自己的计数器：切完立刻刷新「哪一个是选中的」（Prefs 不是可观察状态）
+    var localRev by remember { mutableStateOf(0) }
+    val current = remember(revision, localRev) { AppIcon.current() }
+
+    SettingsPageShell(L("应用图标"), L("换一个桌面图标，切换后立刻生效；不会影响服务器"), onBack) {
+        GroupLabel(L("图标"))
+        CardGroup(
+            rows = AppIcon.entries.map { icon ->
+                val selected = icon == current
+                RowSpec(
+                    title = L(icon.label),
+                    subtitle = L(icon.note),
+                    subtitleMaxLines = 1,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(icon.art),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                            if (selected) {
+                                Spacer(Modifier.width(8.dp))
+                                Icon(
+                                    Icons.Filled.Done,
+                                    contentDescription = L("已选中"),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        if (!selected) {
+                            AppCore.prefs.appIcon = icon.id
+                            AppIcon.apply(ctx, icon)
+                            toast(ctx, L("图标已切换为「%s」").format(L(icon.label)))
+                            localRev++
+                            onChanged()
+                        }
+                    }
+                )
+            }
+        )
+
+        GroupLabel(L("说明"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("桌面图标没变？"),
+                    subtitle = L("有的启动器要等几秒才刷新；也可以把旧图标从桌面删掉再重新拖一个。切换不会停掉服务器。"),
+                    subtitleMaxLines = 3
+                )
+            )
+        )
     }
 }
 

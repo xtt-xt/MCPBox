@@ -162,6 +162,7 @@ fun SettingsScreen(
                     onOpenSeed = {},
                     onOpenLangPack = {},
                     onOpenWallpaper = {},
+                    onOpenIcon = {},
                     onBack = {},
                     scroll = appearanceScroll
                 )
@@ -216,6 +217,7 @@ fun SettingsScreen(
                     onOpenSeed = { showSeed = true },
                     onOpenLangPack = { langInfo = ""; showLang = true },
                     onOpenWallpaper = { onPage("appearance/wallpaper") },
+                    onOpenIcon = { onPage("appearance/icon") },
                     onBack = back,
                     scroll = appearanceScroll
                 )
@@ -300,6 +302,12 @@ fun SettingsScreen(
                     onBack = back
                 )
                 // 挂在「外观与语言」下面（`appearance/…`）：返回才会回到外观页、转场方向也才对。
+                "appearance/icon" -> IconSettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
                 "appearance/wallpaper" -> WallpaperSettingsPage(
                     ctx = ctx,
                     revision = revision,

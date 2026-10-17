@@ -50,16 +50,122 @@
         android:theme="@style/Theme.MCPBox"
         android:enableOnBackInvokedCallback="true">
 
+        <!--
+            主界面。**故意不带 MAIN/LAUNCHER**：桌面图标由下面那组 activity-alias 提供
+            （每个 alias 一种图标，切换＝把目标 alias 设成 ENABLED、其余 DISABLED，见 ui/AppIcon.kt）。
+            带在这里的话桌面上会同时出现两个图标。
+            `am start -n com.xtt.mcpbox/.ui.MainActivity` 这种显式组件启动不受影响。
+        -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- 桌面图标 · 线性极简（默认） -->
+        <activity-alias
+            android:name=".ui.IconDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_line"
+            android:roundIcon="@mipmap/ic_icon_line"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+
+        <!-- 桌面图标 · 扁平 -->
+        <activity-alias
+            android:name=".ui.IconFlat"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_flat"
+            android:roundIcon="@mipmap/ic_icon_flat"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 桌面图标 · 渐变 -->
+        <activity-alias
+            android:name=".ui.IconGradient"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_gradient"
+            android:roundIcon="@mipmap/ic_icon_gradient"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 桌面图标 · 液体玻璃 -->
+        <activity-alias
+            android:name=".ui.IconGlass"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_glass"
+            android:roundIcon="@mipmap/ic_icon_glass"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 桌面图标 · 暗色玻璃 -->
+        <activity-alias
+            android:name=".ui.IconDarkGlass"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_darkglass"
+            android:roundIcon="@mipmap/ic_icon_darkglass"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 桌面图标 · 新拟物 -->
+        <activity-alias
+            android:name=".ui.IconSoft"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_soft"
+            android:roundIcon="@mipmap/ic_icon_soft"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 桌面图标 · 档案抽屉（D 拉出式） -->
+        <activity-alias
+            android:name=".ui.IconDrawer"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_icon_drawer"
+            android:roundIcon="@mipmap/ic_icon_drawer"
+            android:label="@string/app_name"
+            android:targetActivity=".ui.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <service
             android:name=".server.McpService"
