@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   应用图标（可切换）：drawer。
-  图案本身是一张完整的方形图（自带浅色 / 彩色底），所以整张图放在 background 层，
-  前景用空白矢量占位 —— 自适应图标的遮罩（圆形 / 方圆 / 圆角矩形）就是最终形状。
+  图案画在 background 层（[ic_bg_drawer]，已缩到中心 72dp 安全区），前景是空白矢量占位 ——
+  自适应图标的遮罩（圆形 / 方圆 / 圆角矩形）就是最终形状。
   ⚠️ 前景**不能**写 @android:color/transparent：那是个颜色资源，不是 drawable，
-  Compose 的 painterResource 也读不了 adaptive-icon（会抛
-  "Only VectorDrawables and rasterized asset types are supported"）。
-  设置页里的缩略图用的是 @drawable/art_icon_*（同一张 png），别拿这个 mipmap 去画。
+  整张图标会加载失败、桌面退回系统默认图。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/art_icon_drawer" />
+    <background android:drawable="@drawable/ic_bg_drawer" />
     <foreground android:drawable="@drawable/ic_icon_blank" />
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

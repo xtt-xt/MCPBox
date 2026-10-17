@@ -7,6 +7,23 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.R
 
@@ -57,8 +74,11 @@ enum class AppIcon(
          * 用 `DONT_KILL_APP`：桌面上那个图标要等系统把 launcher 的数据刷一遍才换过来，
          * 但 App 本身不用被杀（杀进程等于把正在跑的 MCP 服务一起带走）。
          */
-        fun apply(ctx: Context, target: AppIcon) {
+        fun apply(ctx: Context, target: AppIcon, restart: Boolean = true) {
             val pm = ctx.packageManager
+            // restart = true 时**不**带 DONT_KILL_APP：系统会把进程杀掉，桌面图标立刻换新的，
+            // 服务几秒后自恢复（和装了一次 App 一样）。设置页切换前会先弹窗讲清楚。
+            val flags = if (restart) 0 else PackageManager.DONT_KILL_APP
             entries.forEach { icon ->
                 val state = if (icon == target) {
                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -69,10 +89,51 @@ enum class AppIcon(
                     pm.setComponentEnabledSetting(
                         ComponentName(ctx, ctx.packageName + icon.alias),
                         state,
-                        PackageManager.DONT_KILL_APP
+                        flags
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 画一个图标图案（设置页的缩略图、关于页顶上那个大图标）。
+ *
+ * 为什么只吃**位图**（`@drawable/art_icon_*`）：`painterResource` 遇到 adaptive-icon XML 会抛
+ * `Only VectorDrawables and rasterized asset types are supported`（API 26+ 上 mipmap 解析到的就是
+ * 自适应图标 XML），点进「应用图标」页直接闪退。这里只取 BitmapDrawable，再兜一层 runCatching。
+ *
+ * 尺寸口径和桌面一致：adaptive icon 的可见区是中心 72/108，图案已经按这个缩过（`ic_bg_*`），
+ * 所以这里直接按整张图画出来就不会「比实物大一圈」。
+ */
+@Composable
+fun AppIconArt(
+    @DrawableRes res: Int,
+    size: Dp,
+    corner: Dp = 12.dp,
+    modifier: Modifier = Modifier
+) {
+    val ctx = LocalContext.current
+    val bitmap = remember(res) {
+        runCatching {
+            (ctx.getDrawable(res) as? android.graphics.drawable.BitmapDrawable)?.bitmap?.asImageBitmap()
+        }.getOrNull()
+    }
+    Box(
+        modifier
+            .size(size)
+            .clip(RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
         }
     }
 }

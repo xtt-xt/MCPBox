@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「line」这套图标的自适应图标底图。
+
+  为什么要 inset 18dp：adaptive icon 是 108dp 的图层，启动器只显示**中心 72dp**
+  （四周 18dp 留作遮罩动画）。整张图直接铺满 108 的话，可见区里只剩图案的中间那段、
+  等于把图案放大 1.5 倍（桌面图标顶满、和设计稿差得远）。缩到中心 72dp 之后，
+  可见区正好是整张图，观感和设计稿一致。
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/art_icon_line"
+    android:insetLeft="18dp"
+    android:insetTop="18dp"
+    android:insetRight="18dp"
+    android:insetBottom="18dp" />

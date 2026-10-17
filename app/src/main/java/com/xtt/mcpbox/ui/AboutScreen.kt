@@ -259,6 +259,8 @@ private fun AboutHomePage(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(
+                // 图标跟着「应用图标」里选的那个走（AppIconArt 只画图案本身；
+                // 那 7 张图是 108dp 整图 + 中心 72dp 安全区，所以这里要按 84dp 画满再裁圆角）
                 Modifier
                     .size(84.dp)
                     .clip(RoundedCornerShape(24.dp))
@@ -286,7 +288,6 @@ private fun AboutHomePage(
                                 AppCore.prefs.devModeUnlocked = true
                                 toast(ctx, L("喵～ 开发者模式已解锁"))
                                 onChanged()
-                                // 「设置 → 背景」里的「视频」类型跟着开发者模式开放
                                 onDevModeChanged()
                             }
                         } else {
@@ -296,14 +297,10 @@ private fun AboutHomePage(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(
-                        ctx.resources.getIdentifier(
-                            "ic_launcher_foreground", "drawable", ctx.packageName
-                        )
-                    ),
-                    contentDescription = null,
-                    modifier = Modifier.size(72.dp)
+                AppIconArt(
+                    res = AppIcon.current().art,
+                    size = 84.dp,
+                    corner = 24.dp
                 )
             }
             Spacer(Modifier.height(12.dp))

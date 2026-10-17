@@ -59,6 +59,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +79,7 @@ import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.ServerMeta
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
@@ -1008,8 +1010,11 @@ internal fun IconSettingsPage(
     // 本页自己的计数器：切完立刻刷新「哪一个是选中的」（Prefs 不是可观察状态）
     var localRev by remember { mutableStateOf(0) }
     val current = remember(revision, localRev) { AppIcon.current() }
+    // 待确认的那一个：点一下先弹窗（换图标会重启 App），同意后再动手
+    var pending by remember { mutableStateOf<AppIcon?>(null) }
+    val scope = rememberCoroutineScope()
 
-    SettingsPageShell(L("应用图标"), L("换一个桌面图标，切换后立刻生效；不会影响服务器"), onBack) {
+    SettingsPageShell(L("应用图标"), L("换一个桌面图标，切换时需要重启一次 App"), onBack) {
         GroupLabel(L("图标"))
         CardGroup(
             rows = AppIcon.entries.map { icon ->
@@ -1021,7 +1026,7 @@ internal fun IconSettingsPage(
                     iconTint = MaterialTheme.colorScheme.primary,
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconThumb(icon.art)
+                            AppIconArt(icon.art, 44.dp, 12.dp)
                             if (selected) {
                                 Spacer(Modifier.width(8.dp))
                                 Icon(
@@ -1033,15 +1038,7 @@ internal fun IconSettingsPage(
                             }
                         }
                     },
-                    onClick = {
-                        if (!selected) {
-                            AppCore.prefs.appIcon = icon.id
-                            AppIcon.apply(ctx, icon)
-                            toast(ctx, L("图标已切换为「%s」").format(L(icon.label)))
-                            localRev++
-                            onChanged()
-                        }
-                    }
+                    onClick = { if (!selected) pending = icon }
                 )
             }
         )
@@ -1050,47 +1047,64 @@ internal fun IconSettingsPage(
         CardGroup(
             listOf(
                 RowSpec(
-                    title = L("桌面图标没变？"),
-                    subtitle = L("有的启动器要等几秒才刷新；也可以把旧图标从桌面删掉再重新拖一个。切换不会停掉服务器。"),
+                    title = L("换图标要重启一次 App"),
+                    subtitle = L("图标是系统级的东西，改完必须让系统重新读一遍组件：App 会重启，服务器断几秒后自己恢复。桌面上的图标会立刻换成新的。"),
                     subtitleMaxLines = 3
+                ),
+                RowSpec(
+                    title = L("桌面图标没变？"),
+                    subtitle = L("有的启动器要等几秒才刷新；也可以把旧图标从桌面删掉再重新拖一个。升级过 App 的话，旧图标指向的是旧组件，必须重新拖。"),
+                    subtitleMaxLines = 3
+                ),
+                RowSpec(
+                    title = L("想要别的图标？"),
+                    subtitle = L("图标是社区一起攒的：可以到 GitHub 的 Discussions 发讨论，或者直接开 Issue 投稿（附上 1024×1024 的方形图就行）。"),
+                    subtitleMaxLines = 3,
+                    onClick = {
+                        openUrl(ctx, "https://github.com/xtt-xt/MCPBox/discussions")
+                    }
                 )
             )
         )
     }
-}
 
-/**
- * 图标缩略图：**安全解码**。
- *
- * 为什么不用 `painterResource`：它只认矢量图和位图，遇到 adaptive-icon XML 会直接抛
- * `IllegalArgumentException: Only VectorDrawables and rasterized asset types are supported`
- * —— 这正是「点进「应用图标」页闪退」的原因（`R.mipmap.ic_icon_*` 在 API 26+ 上解析到的是
- * 自适应图标 XML）。所以这里只取位图（`@drawable/art_icon_*`），并且再兜一层：解码失败就
- * 画一个空框，绝不让整页崩掉。
- */
-@Composable
-private fun IconThumb(@DrawableRes res: Int, size: Int = 44) {
-    val ctx = LocalContext.current
-    val bitmap = remember(res) {
-        runCatching {
-            val d = ctx.getDrawable(res) as? android.graphics.drawable.BitmapDrawable
-            d?.bitmap?.asImageBitmap()
-        }.getOrNull()
-    }
-    Box(
-        Modifier
-            .size(size.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-    ) {
-        bitmap?.let {
-            Image(
-                bitmap = it,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+    pending?.let { icon ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("换成「%s」？").format(L(icon.label)), fontSize = 20.sp) },
+            text = {
+                Text(
+                    L("换图标会让 App 重启一次：正在跑的 MCP 服务器会断开几秒，之后自动恢复；桌面上的图标会立刻变成新的。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.5.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    AppCore.prefs.appIcon = icon.id
+                    localRev++
+                    onChanged()
+                    toast(ctx, L("正在切换图标，App 马上重启…"))
+                    // 等一下再动组件开关：restart = true 会让系统杀掉进程，toast 得先显示出来
+                    scope.launch {
+                        kotlinx.coroutines.delay(500)
+                        AppIcon.apply(ctx, icon, restart = true)
+                    }
+                }) {
+                    Text(L("换图标并重启"), color = MaterialTheme.colorScheme.primary)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pending = null }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
     }
 }
 
