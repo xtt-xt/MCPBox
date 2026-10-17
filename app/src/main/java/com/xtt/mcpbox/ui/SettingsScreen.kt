@@ -137,9 +137,11 @@ fun SettingsScreen(
     // 设置首页的滚动位置**提到这一层**：预见式返回的预览层要和真页面共用同一份，
     // 否则拖动时露出来的那一页永远停在最顶部（预览层是第二个实例，状态从零开始）
     val homeScroll = rememberScrollState()
-    // 同理：「背景」页的上一级是「外观与语言」，拖动时露出来的外观页也得停在当前位置，
-    // 不能每次从顶部开始（用户会以为「返回到了上一个页面的顶部」）
+    // 同理：「背景」页的上一级是「外观与语言」、规则页的上一级是「终端与命令」，
+    // 拖动时露出来的那一页也得停在当前位置（不能每次从顶部开始）；而且必须**真的**
+    // 渲染上一级那一页 —— 以前统一露设置首页，松手后再跳到上一级，看着像「关闭后跳了一下」。
     val appearanceScroll = rememberScrollState()
+    val shellScroll = rememberScrollState()
 
     // 子页里按系统返回 → 回上一级（顶层不接，交给系统退出应用）。
     // 开了「预见式返回动画」时手指从边缘拖着走、松手才决定回不回；拖动时下面露出来的就是设置首页。
@@ -148,11 +150,11 @@ fun SettingsScreen(
         handleBack = page.isNotEmpty(),
         follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
         behind = {
-            // 拖动时下面露出来的那一页。正常是设置首页；「背景」页挂在「外观与语言」下面
-            // （appearance/wallpaper），露出来的就该是外观页 —— 不然松手后从「设置首页」跳到
-            // 「外观与语言」，看着像闪了一下。
-            if (page == "appearance/wallpaper") {
-                AppearanceSettingsPage(
+            // 拖动时下面露出来的那一页 —— **必须是这一页真正的上一级**，松手后就地返回，
+            // 不做「先露设置首页、松手再跳到上一级」那种补丁（那看着就是「关闭界面后跳转」）。
+            // 预览层在拖动 / 提交后的 0.4 秒里只负责显示，回调全给空 lambda。
+            when (parentPage(page)) {
+                "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
                     revision = revision,
                     onThemeChanged = onThemeChanged,
@@ -163,8 +165,14 @@ fun SettingsScreen(
                     onBack = {},
                     scroll = appearanceScroll
                 )
-            } else {
-                SettingsHomePage(
+                "shell" -> ShellSettingsPage(
+                    revision = revision,
+                    onChanged = {},
+                    onOpenRules = {},
+                    onBack = {},
+                    scroll = shellScroll
+                )
+                else -> SettingsHomePage(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
@@ -276,7 +284,8 @@ fun SettingsScreen(
                     revision = revision,
                     onChanged = onChanged,
                     onOpenRules = { onPage("shell/rules/$it") },
-                    onBack = back
+                    onBack = back,
+                    scroll = shellScroll
                 )
                 "browser" -> BrowserSettingsPage(
                     revision = revision,
