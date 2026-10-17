@@ -22,6 +22,20 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.2-138 · 2026-10-17
+
+**修：点「应用图标」页闪退 / 桌面图标变成系统默认图**
+
+- **闪退**：`painterResource(R.mipmap.ic_icon_*)` 在 API 26+ 上解析到的是**自适应图标 XML**，
+  Compose 只认矢量图和位图 → 抛 `Only VectorDrawables and rasterized asset types are supported`。
+  现在缩略图只用位图（`@drawable/art_icon_*`），并且外面再兜一层：解码失败就画空框，不崩
+- **自适应图标的前景**不能写 `@android:color/transparent`（那是颜色资源，不是 drawable）——
+  整张图标因此加载失败，桌面上就退回系统默认图。改成空白矢量 `@drawable/ic_icon_blank`，
+  图案本身放 background 层
+- 升级提醒：**桌面上那个旧图标是旧组件名，升级后要删掉、重新拖一个**（组件从
+  `.ui.MainActivity` 换成了 `.ui.IconDefault` 这组 alias），否则桌面上会显示成系统默认图
+- 基线：端到端测试 **633 项全绿**
+
 ## v1.2.2-137 · 2026-10-17
 
 **新增：可切换的应用图标（7 个）**
