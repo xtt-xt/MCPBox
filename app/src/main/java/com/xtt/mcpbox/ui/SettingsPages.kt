@@ -5,6 +5,7 @@ package com.xtt.mcpbox.ui
 
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -63,7 +64,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -1019,13 +1022,7 @@ internal fun IconSettingsPage(
                     iconTint = MaterialTheme.colorScheme.primary,
                     trailing = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(icon.art),
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                            )
+                            IconThumb(icon.art)
                             if (selected) {
                                 Spacer(Modifier.width(8.dp))
                                 Icon(
@@ -1060,6 +1057,41 @@ internal fun IconSettingsPage(
                 )
             )
         )
+    }
+}
+
+/**
+ * 图标缩略图：**安全解码**。
+ *
+ * 为什么不用 `painterResource`：它只认矢量图和位图，遇到 adaptive-icon XML 会直接抛
+ * `IllegalArgumentException: Only VectorDrawables and rasterized asset types are supported`
+ * —— 这正是「点进「应用图标」页闪退」的原因（`R.mipmap.ic_icon_*` 在 API 26+ 上解析到的是
+ * 自适应图标 XML）。所以这里只取位图（`@drawable/art_icon_*`），并且再兜一层：解码失败就
+ * 画一个空框，绝不让整页崩掉。
+ */
+@Composable
+private fun IconThumb(@DrawableRes res: Int, size: Int = 44) {
+    val ctx = LocalContext.current
+    val bitmap = remember(res) {
+        runCatching {
+            val d = ctx.getDrawable(res) as? android.graphics.drawable.BitmapDrawable
+            d?.bitmap?.asImageBitmap()
+        }.getOrNull()
+    }
+    Box(
+        Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 

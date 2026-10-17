@@ -5,7 +5,7 @@
   「按名字引用图标」的地方兜底（通知、分享面板、旧版启动器等）。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@mipmap/ic_icon_line" />
-    <foreground android:drawable="@android:color/transparent" />
+    <background android:drawable="@drawable/art_icon_line" />
+    <foreground android:drawable="@drawable/ic_icon_blank" />
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

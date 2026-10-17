@@ -36,13 +36,13 @@ enum class AppIcon(
     /** 设置页里的补充说明。 */
     val note: String
 ) {
-    LINE("line", "线性极简", ".ui.IconDefault", R.mipmap.ic_icon_line, "白底线框，最轻"),
-    FLAT("flat", "扁平", ".ui.IconFlat", R.mipmap.ic_icon_flat, "纯色块，无描边无阴影"),
-    GRADIENT("gradient", "渐变", ".ui.IconGradient", R.mipmap.ic_icon_gradient, "双色渐变加顶部反光"),
-    GLASS("glass", "液体玻璃", ".ui.IconGlass", R.mipmap.ic_icon_glass, "彩色模糊底加磨砂玻璃"),
-    DARK_GLASS("darkglass", "暗色玻璃", ".ui.IconDarkGlass", R.mipmap.ic_icon_darkglass, "深色底加冷光玻璃"),
-    SOFT("soft", "新拟物", ".ui.IconSoft", R.mipmap.ic_icon_soft, "同色系柔光加软阴影"),
-    DRAWER("drawer", "档案抽屉", ".ui.IconDrawer", R.mipmap.ic_icon_drawer, "拉出式抽屉，最厚实");
+    LINE("line", "线性极简", ".ui.IconDefault", R.drawable.art_icon_line, "白底线框，最轻"),
+    FLAT("flat", "扁平", ".ui.IconFlat", R.drawable.art_icon_flat, "纯色块，无描边无阴影"),
+    GRADIENT("gradient", "渐变", ".ui.IconGradient", R.drawable.art_icon_gradient, "双色渐变加顶部反光"),
+    GLASS("glass", "液体玻璃", ".ui.IconGlass", R.drawable.art_icon_glass, "彩色模糊底加磨砂玻璃"),
+    DARK_GLASS("darkglass", "暗色玻璃", ".ui.IconDarkGlass", R.drawable.art_icon_darkglass, "深色底加冷光玻璃"),
+    SOFT("soft", "新拟物", ".ui.IconSoft", R.drawable.art_icon_soft, "同色系柔光加软阴影"),
+    DRAWER("drawer", "档案抽屉", ".ui.IconDrawer", R.drawable.art_icon_drawer, "拉出式抽屉，最厚实");
 
     companion object {
         /** 认不出的 id 一律回落到默认（[LINE]）。 */
