@@ -262,7 +262,7 @@ private fun AboutHomePage(
                 Modifier
                     .size(84.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .background(cardColor(MaterialTheme.colorScheme.surfaceContainerHigh))
                     // 彩蛋：连点 7 次解锁「开发者模式」（每次点击都有缩放 + 喵声反馈）
                     .graphicsLayer {
                         scaleX = catScale

@@ -221,12 +221,26 @@ internal fun AppearanceSettingsPage(
             listOf(
                 switchSpec(
                     title = L("预见式返回动画"),
-                    subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）"),
-                    subtitleMaxLines = 3,
+                    subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）。关掉后背景的图片 / 视频会换一套更干净的渲染"),
+                    subtitleMaxLines = 4,
                     icon = Icons.Filled.ArrowBack,
                     checked = remember(revision, localRev) { AppCore.prefs.predictiveBack }
                 ) { on ->
                     AppCore.prefs.predictiveBack = on
+                    // 「视频背景」只在关掉预见式返回动画时可用（视频模式下页面必须透明，动画开着就不好看）。
+                    // 打开动画时给出视频的，自动退回图片：视频文件留着，关掉动画还能切回来。
+                    if (on && AppCore.prefs.backdropKind == BackdropKind.VIDEO.id) {
+                        AppCore.prefs.backdropKind = BackdropKind.IMAGE.id
+                        BackdropFiles.syncPref(ctx, BackdropKind.IMAGE)
+                        toast(
+                            ctx,
+                            if (BackdropFiles.current(ctx, BackdropKind.IMAGE) != null)
+                                L("视频背景已切回图片（视频文件留着，关掉预见式返回动画还能切回来）")
+                            else L("视频背景已停用：先选一张图片，或者关掉预见式返回动画继续用视频")
+                        )
+                    }
+                    // 渲染方式（逐页画图 ↔ 透明页面）也跟着这个开关变，得让最外层那份背景立刻重新读一遍
+                    onThemeChanged()
                     localRev++
                 }
             )
@@ -763,7 +777,7 @@ internal fun BrowserSettingsPage(
     if (showAdd) {
         AlertDialog(
             onDismissRequest = { showAdd = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
             title = { Text(L("新增搜索引擎"), fontSize = 20.sp) },
             text = {
@@ -814,7 +828,7 @@ internal fun BrowserSettingsPage(
     if (clearWhat.isNotBlank()) {
         AlertDialog(
             onDismissRequest = { clearWhat = "" },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
             title = {
                 Text(if (clearWhat == "cookies") L("清空 cookie") else L("清空缓存"), fontSize = 20.sp)
@@ -953,13 +967,13 @@ internal fun BackgroundSettingsPage(
 
 /**
  * 「背景」子页：选一张图片或一段视频垫在最底下，上面盖一层**主题背景色**的遮罩，
- * 遮罩的不透明度可调（100% = 回到原来那种纯色底）。
+ * 遮罩的不透明度可调（100% = 回到原来那种纯色底）；卡片和底栏也能各自调不透明度。
  *
- * 三个口径别搞错：
- *  · 遮罩**只由页面那一层**铺（[PageSurface] → [BackdropPageSurface]）：盒子层（Scaffold /
- *    [PredictiveBackBox]）在有背景时一律留空 —— 盒子是嵌套的，每层都铺一遍的话
- *    0.88 的遮罩叠三层已经接近全不透明，滑块就白调了。
- *  · 视频全 App 只有一份（[BackdropLayer]），钉在屏幕最底层；图片是**每页各画一份**。
+ * 三个口径别搞错（完整规则见 `ui/Backdrop.kt` 文件头）：
+ *  · 遮罩全 App **只有一层**，铺在最外层画布上（[BackdropLayer]）：盒子层（Scaffold /
+ *    [PredictiveBackBox]）在有背景时一律留空、页面层只在「图片 + 预见式返回动画开着」时才画。
+ *  · 「视频」只在**关掉预见式返回动画**时可选：视频模式下页面必须是透明的。关掉动画时图片
+ *    也走同一套（透明页面），两者观感一样；动画开着时图片才是每页各画一份。
  *  · 文件会被**复制**进 App 私有目录（`files/backdrop/`），原文件删了 / 授权过期都不影响。
  */
 @Composable
@@ -967,8 +981,6 @@ internal fun WallpaperSettingsPage(
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
-    /** 开发者模式开关变化时通知设置栈（「背景类型」里有没有「视频」跟着它变）。 */
-    onDevModeChanged: () -> Unit = {},
     onBack: () -> Unit
 ) {
     // 本页自己的计数器：改完偏好顺手 +1，保证这一页一定重组（调用点的 lambda 会被 memoize）
@@ -982,15 +994,19 @@ internal fun WallpaperSettingsPage(
     val scale = remember(rev) { BackdropScale.of(AppCore.prefs.backdropScale) }
     val subPages = remember(rev) { AppCore.prefs.backdropSubpages }
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
-    // 视频背景是**开发者模式**里的东西（默认只给图片）：视频模式下页面必须是透明的，
-    // 于是拖动时没有「上一页预览」、转场也只能让旧页直接收掉 —— 这些取舍不该默认摊给所有人。
-    // 已经设成视频的（比如从备份恢复来的）照样显示两个选项，免得卡住没法切回去。
-    val devMode = remember(rev) { AppCore.prefs.devModeUnlocked }
-    val kinds = if (devMode || kind == BackdropKind.VIDEO) BackdropKind.entries else listOf(BackdropKind.IMAGE)
+    // 「视频」只在**关掉预见式返回动画**时可选：视频模式下页面必须是透明的，于是没有「上一页预览」、
+    // 转场也只能让旧页直接收掉。关掉动画时图片也走同一套（透明页），两者观感一样、都正常；
+    // 动画开着的时候透明页面就很难看，所以干脆不给视频。
+    // 已经设成视频的（从备份恢复来的）照样列出来，免得卡住没法切回去。
+    val predictive = remember(rev) { AppCore.prefs.predictiveBack }
+    val kinds = if (!predictive || kind == BackdropKind.VIDEO) BackdropKind.entries
+    else listOf(BackdropKind.IMAGE)
 
     // 滑块拖的时候只动本页预览：每一帧都写盘 + 让整棵树重组会卡，松手（onValueChangeFinished）才落盘
     var tint by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropTint.toFloat()) }
     var blur by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBlur.toFloat()) }
+    var cardA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropCardAlpha.toFloat()) }
+    var barA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBarAlpha.toFloat()) }
 
     fun commit() {
         localRev++
@@ -1077,7 +1093,7 @@ internal fun WallpaperSettingsPage(
                 dropdownSpec(
                     title = L("背景类型"),
                     subtitle = if (kinds.size > 1) L("图片和视频各留一份，来回切不用重选")
-                    else L("用一张静态图片做背景"),
+                    else L("视频要关掉「预见式返回动画」才能选，见下方说明"),
                     icon = Icons.Filled.PlayArrow,
                     options = kinds.map { L(it.label) },
                     selectedIndex = kinds.indexOf(kind).coerceAtLeast(0)
@@ -1168,6 +1184,47 @@ internal fun WallpaperSettingsPage(
                 ) { on ->
                     AppCore.prefs.backdropSubpages = on
                     commit()
+                }.copy(visible = enabled),
+                RowSpec(
+                    title = L("卡片不透明度"),
+                    subtitle = L("%s%%（100%% = 原来的不透明卡片）").format(cardA.roundToInt()),
+                    visible = enabled,
+                    content = {
+                        Slider(
+                            value = cardA,
+                            onValueChange = { cardA = it },
+                            valueRange = 0f..100f,
+                            onValueChangeFinished = {
+                                AppCore.prefs.backdropCardAlpha = cardA.roundToInt()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                RowSpec(
+                    title = L("底栏不透明度"),
+                    subtitle = L("%s%%（100%% = 原来的不透明底栏）").format(barA.roundToInt()),
+                    visible = enabled,
+                    content = {
+                        Slider(
+                            value = barA,
+                            onValueChange = { barA = it },
+                            valueRange = 0f..100f,
+                            onValueChangeFinished = {
+                                AppCore.prefs.backdropBarAlpha = barA.roundToInt()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                switchSpec(
+                    title = L("按钮与弹窗也跟着变透明"),
+                    subtitle = L("关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明"),
+                    subtitleMaxLines = 3,
+                    checked = AppCore.prefs.backdropChromeTint
+                ) { on ->
+                    AppCore.prefs.backdropChromeTint = on
+                    commit()
                 }.copy(visible = enabled)
             )
         )
@@ -1200,13 +1257,22 @@ internal fun WallpaperSettingsPage(
                     subtitleColor = Sem.bad,
                     visible = enabled && kind == BackdropKind.VIDEO && lateNoFrame
                 ),
-                // 视频是开发者模式里的东西：说明白这层门在哪儿、以及为什么默认不给
+                // 视频现在挂在「预见式返回动画关掉」后面：说明白这层门在哪儿、以及为什么
                 RowSpec(
-                    title = L("视频背景（开发者模式）"),
-                    subtitle = L("视频模式下页面是透明的，所以拖动时看不到上一页预览、转场时旧页直接收掉；打开关于页里的开发者模式后，这里才会出现「视频」这个类型"),
+                    title = L("视频要先关掉预见式返回动画"),
+                    subtitle = L("视频模式下页面是透明的：拖动返回时看不到上一页预览、转场时旧页直接收掉。关掉「预见式返回动画」（设置 → 外观与语言 → 交互）后，这里才会出现「视频」这个类型；关着的时候图片也用同一套渲染。"),
+                    subtitleMaxLines = 4,
+                    subtitleColor = Sem.warn,
+                    visible = predictive && kind != BackdropKind.VIDEO
+                ),
+                // 只有从备份恢复来的数据才会是「视频 + 预见式返回动画开着」这个组合：
+                // 不强行改类型（有的用户只有这一段视频），但要说清楚它现在是难看的那一套
+                RowSpec(
+                    title = L("视频 + 预见式返回动画开着"),
+                    subtitle = L("这套组合下页面是透明的：转场时两页会互相透字。建议把类型换成图片，或者去「外观与语言 → 交互」关掉预见式返回动画。"),
                     subtitleMaxLines = 3,
                     subtitleColor = Sem.warn,
-                    visible = !devMode
+                    visible = predictive && kind == BackdropKind.VIDEO
                 )
             )
         )
@@ -1224,15 +1290,5 @@ internal fun WallpaperSettingsPage(
             }
         }
 
-        // 开发者模式又被关掉、而当前类型还是视频 —— 打个招呼再退回图片，
-        // 免得用户以为「视频设置丢了」（其实重新打开开发者模式就还在）
-        if (!devMode && kind == BackdropKind.VIDEO) {
-            LaunchedEffect(rev) {
-                AppCore.prefs.backdropKind = BackdropKind.IMAGE.id
-                BackdropFiles.syncPref(ctx, BackdropKind.IMAGE)
-                toast(ctx, L("开发者模式已关闭，背景改回图片；视频文件会留着，重新打开开发者模式就能切回来"))
-                commit()
-            }
-        }
     }
 }

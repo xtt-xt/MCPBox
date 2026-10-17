@@ -104,7 +104,7 @@ fun PacksSection(
     confirmDeleteProfile?.let { target ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDeleteProfile = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             title = { Text(L("删除会话"), fontSize = 20.sp) },
             text = {
@@ -328,7 +328,7 @@ fun PacksSection(
     confirmDelete?.let { pack ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             title = { Text(L("删除工具包"), fontSize = 20.sp) },
             text = {
@@ -377,7 +377,7 @@ private fun PackNameDialog(
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
         ) {

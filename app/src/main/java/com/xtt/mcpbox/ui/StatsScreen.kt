@@ -340,7 +340,7 @@ private fun StatCard(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = cardColor(MaterialTheme.colorScheme.surfaceContainer),
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 15.dp)) {

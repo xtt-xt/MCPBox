@@ -354,11 +354,13 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
         bottomStart = bottomRadius, bottomEnd = bottomRadius
     )
     val bg by animateColorAsState(
-        targetValue = if (pressEd(pressed, clickable)) {
-            MaterialTheme.colorScheme.surfaceContainerHighest
-        } else {
-            MaterialTheme.colorScheme.surfaceContainer
-        },
+        targetValue = cardColor(
+            if (pressEd(pressed, clickable)) {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            }
+        ),
         animationSpec = tween(160), label = "rowBg"
     )
     Column(Modifier.fillMaxWidth()) {
@@ -499,10 +501,10 @@ fun AppSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
             checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            uncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHighest),
             uncheckedBorderColor = Color.Transparent,
             disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            disabledUncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh)
         )
     )
 }
@@ -614,7 +616,7 @@ fun PillDropdown(
     )
     Box {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHighest),
             shape = RoundedCornerShape(50),
             modifier = Modifier.clip(RoundedCornerShape(50)).clickable { setOpen(true) }
         ) {
@@ -638,7 +640,7 @@ fun PillDropdown(
         DropdownMenu(
             expanded = open,
             onDismissRequest = { setOpen(false) },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(20.dp),
             offset = DpOffset(0.dp, 4.dp)
         ) {
@@ -695,7 +697,7 @@ fun ChoiceDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -768,7 +770,7 @@ fun RoundIconButton(
     onClick: () -> Unit
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = CircleShape,
         modifier = Modifier
             .size(size.dp)
@@ -798,7 +800,7 @@ fun PillButton(
 ) {
     // 禁用态：实心胶囊退成灰底 + 灰字，描边胶囊只是整体变灰
     val tint = if (enabled) color else MaterialTheme.colorScheme.onSurfaceVariant
-    val fill = if (enabled) color else MaterialTheme.colorScheme.surfaceContainerHighest
+    val fill = if (enabled) color else chromeColor(MaterialTheme.colorScheme.surfaceContainerHighest)
     Surface(
         color = if (outlined || !enabled) Color.Transparent else fill,
         shape = RoundedCornerShape(50),
@@ -867,7 +869,7 @@ fun CardBox(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = color,
+        color = cardColor(color),
         shape = RoundedCornerShape(CardCorner)
     ) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), content = content)
@@ -945,7 +947,7 @@ fun BottomPillNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit) 
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(barColor(MaterialTheme.colorScheme.surfaceContainerLow))
     ) {
         Box(
             Modifier
@@ -978,7 +980,7 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
         val iconBg by animateColorAsState(
             targetValue = when {
                 active -> MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-                pressed -> MaterialTheme.colorScheme.surfaceContainerHigh
+                pressed -> barColor(MaterialTheme.colorScheme.surfaceContainerHigh)
                 else -> Color.Transparent
             },
             animationSpec = tween(150), label = "navIconBg"
@@ -1070,7 +1072,7 @@ fun VSpace(dp: Int) {
 @Composable
 fun CodeBlock(text: String) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cardColor(MaterialTheme.colorScheme.surfaceContainerLow),
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1138,7 +1140,9 @@ fun PressCardBox(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val bg by animateColorAsState(
-        targetValue = if (pressed && enabled) MaterialTheme.colorScheme.surfaceContainerHighest else color,
+        targetValue = cardColor(
+            if (pressed && enabled) MaterialTheme.colorScheme.surfaceContainerHighest else color
+        ),
         animationSpec = tween(160), label = "cardBg"
     )
     Surface(
@@ -1179,7 +1183,7 @@ fun SelectionBar(
     Column(
         Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .background(barColor(MaterialTheme.colorScheme.surfaceContainerLow))
     ) {
         Box(
             Modifier
@@ -1228,10 +1232,10 @@ fun SelectionBar(
  * 所以：**每个页面分支自己带底**（这个 + [pageSlide] 里去掉淡出，两件一起才是干净的）。
  *
  * 自定义背景（[LocalBackdrop]）开着时这里分三种情况：
- *  · **图片模式**：铺「图 + 遮罩」。图不透明 → 转场时两页不会互相透字；
+ *  · **图片 + 预见式返回动画开着**：铺「图 + 遮罩」。图不透明 → 转场时两页不会互相透字；
  *    遮罩是幂等的（先画的会被后画的不透明图盖掉），嵌套的页面栈也不会叠深。
- *  · **视频模式**：什么都不铺 —— 视频和遮罩都在最外层的 [BackdropLayer] 上，
- *    页面上再铺一层遮罩就会和它叠起来（那正是「视频的遮罩看着很奇怪」的原因）。
+ *  · **其它情况**（视频 / 关掉预见式返回动画的图片）：什么都不铺 —— 图 / 视频和遮罩都在最外层的
+ *    [BackdropLayer] 上，页面上再铺一层遮罩就会和它叠起来（那正是「视频的遮罩看着很奇怪」的原因）。
  *  · **这一页不该显示背景**（子页 + 「子页也显示背景」关掉）：铺不透明底色盖住。
  *
  * @param sub 这一页是不是**子页**（工具管理 / 记忆库 / 设置子页…），受「子页也显示背景」控制。
@@ -1305,11 +1309,16 @@ fun pageSlide(entering: Boolean, commitDrag: Float = 0f, noOverlap: Boolean = fa
     return enter togetherWith exit
 }
 
-/** 当前是不是「视频背景」——页面是透明的，转场 / 拖动都要走不重叠的那套（见 [pageSlide] / [PredictiveBackBox]）。 */
+/**
+ * 页面是不是**透明**的 —— 转场 / 拖动都要走不重叠的那套（见 [pageSlide] / [PredictiveBackBox]）。
+ *
+ * 两种情况：视频（一页一个解码器太重，只能全局一份），以及**关掉预见式返回动画**时的图片
+ * （和视频完全同一套渲染）。只有「图片 + 预见式返回动画开着」时页面才自己画图（见 [BackdropState.perPageImage]）。
+ */
 @Composable
 fun rememberTransparentPages(): Boolean {
     val bd = LocalBackdrop.current
-    return bd.active && bd.kind == BackdropKind.VIDEO
+    return bd.active && !bd.perPageImage
 }
 
 /**
@@ -1350,9 +1359,9 @@ fun PredictiveBackBox(
     // 底色：有自定义背景时留空（页面自己那一层铺遮罩，只铺一次 —— 盒子是嵌套的，
     // 这里再铺一遍会和页面那层叠起来，滑块调出来的透明度就不准了）
     val bg = backdropBoxColor(LocalBackdrop.current)
-    // 视频背景时页面是透明的，铺预览层会在被拖动的那一页**下面**透出上一页的文字
+    // 页面透明时（视频 / 关掉预见式返回动画），铺预览层会在被拖动的那一页**下面**透出上一页的文字
     // （用户看到的「切换页面时下面闪一下的文字」）→ 这种模式下干脆不铺预览，
-    // 拖出来的那片区域显示最底下的视频。
+    // 拖出来的那片区域显示最底下的背景。
     val showBehind = !rememberTransparentPages()
 
     // 兜底：不再跟手（回到根页 / 开关关掉）时位移一定归零

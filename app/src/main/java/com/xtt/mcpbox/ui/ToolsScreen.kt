@@ -489,7 +489,7 @@ private fun ToolDetailPage(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("删除工具"), fontSize = 20.sp) },
@@ -545,7 +545,7 @@ private fun ToolMetaDialog(
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
         ) {

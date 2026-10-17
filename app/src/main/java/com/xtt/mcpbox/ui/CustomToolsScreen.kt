@@ -262,7 +262,7 @@ private fun EditToolDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text(if (isNew) L("新建自定义工具") else L("编辑 %s").format(tool.name), fontSize = 19.sp) },

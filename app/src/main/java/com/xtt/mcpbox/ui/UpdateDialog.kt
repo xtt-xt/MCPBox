@@ -74,7 +74,7 @@ fun UpdateAvailableDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         title = {

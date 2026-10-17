@@ -69,14 +69,23 @@ import kotlin.math.min
  *     · 页面栈是**嵌套**的，每层各铺一遍遮罩会相加（0.88 叠三层≈全不透明，滑块白调）；
  *     · 底栏是 Scaffold 的 padding 区、不归任何页面管，底栏动画（180ms）和页面转场（300ms）
  *       对不齐的那几帧会露出没打遮罩的亮带。
- *  ② **图片模式**：页面各画一份「图 + 遮罩」（[BackdropPageSurface]）——图是不透明的，
- *     所以转场时两页不会互相透字，遮罩在这里画是**幂等**的（先画的会被后画的图盖掉）。
- *     同一张 bitmap 全 App 共一份。
- *  ③ **视频模式**：页面**全透明**（视频没法每页复制一份：一页一个解码器又重又不同步），
- *     视频与遮罩都在最外层。代价是页面不再自带不透明底色 → 两页重叠就会互相透出文字，
- *     所以这种模式下：转场走「退出的那一页直接收掉」（`pageSlide(noOverlap = true)`），
- *     拖动时不铺预览层（`PredictiveBackBox` 的 `showBehind`）—— 一律**不让两页同时可见**。
- *  ④ 页面盖不到的地方（底栏那一条、手势条）也必须是「背景 + 遮罩」—— 所以最外层画布铺满整窗。
+ *  ② **「逐页画图」还是「页面透明」由「预见式返回动画」决定**（见 [BackdropState.perPageImage]）：
+ *     · **动画开着** + 图片：页面各画一份「图 + 遮罩」（[BackdropPageSurface]）——图是不透明的，
+ *       所以转场 / 拖动预览时两页不会互相透字；遮罩在这里画是**幂等**的（先画的会被后画的图盖掉）。
+ *       同一张 bitmap 全 App 共一份。只有这种模式才有「拖动时下面露出上一页」的预览。
+ *     · **动画关掉**（图片、视频都走这套）：页面**全透明**，图 / 视频与遮罩都在最外层画布上。
+ *       代价是页面不再自带不透明底色 → 两页重叠就会互相透出文字，所以：转场走
+ *       「退出的那一页直接收掉」（`pageSlide(noOverlap = true)`），拖动不铺预览层 ——
+ *       一律**不让两页同时可见**。
+ *     · **视频**（不管动画开没开，都只有这一套可以走）：视频没法每页复制一份（一页一个解码器
+ *       又重又不同步）→ 页面必须是透明的。所以「视频」这个类型只在**预见式返回动画关掉**时可选：
+ *       那种情况下它和图片的行为完全一致，观感是正常的；动画开着的时候透明页面会难看到没法用。
+ *  ③ 页面盖不到的地方（底栏那一条、手势条）也必须是「背景 + 遮罩」—— 所以最外层画布铺满整窗，
+ *     并且底下垫一层**不透明**主题底色（「完整显示」留边 / 图还没解码完时不透出窗口的深色底）。
+ *  ④ 位图缓存必须能被**同步**读到（[BackdropImages.peek]）：新页面第一帧如果还拿不到 bitmap，
+ *     就会先露出主题底色 —— 深色主题下就是「返回时背景黑一下」（预见式返回是硬切，没有淡入遮）。
+ *
+ * 卡片 / 底栏的半透明由 [cardColor] / [barColor] 两个助手统一处理（默认 100% = 原样）。
  *
  * 遮罩色永远取 `MaterialTheme.colorScheme.background` —— 跟随主题 / 深浅色自动变。
  */
@@ -323,9 +332,20 @@ private object BackdropImages {
     private var key: String? = null
     private var bitmap: ImageBitmap? = null
 
+    private fun keyOf(file: File): String = "${file.path}@${file.lastModified()}"
+
+    /**
+     * 已经解好的那份（没有就 null）。**同步、不读盘**，可以放心在组合里调。
+     *
+     * 为什么需要它：新页面第一帧如果拿不到 bitmap，[BackdropPageSurface] 只能先露出主题底色，
+     * 深色主题下就是「返回时背景黑一下」。图片模式下预见式返回是**硬切**（没有淡入遮），
+     * 所以必须让新页面的第一帧就有图 —— [produceState] 的初值用这个。
+     */
+    fun peek(file: File): ImageBitmap? = bitmap?.takeIf { key == keyOf(file) }
+
     /** 记得在 IO 线程调（第一次会真的解码）。 */
     fun load(file: File): ImageBitmap? {
-        val k = "${file.path}@${file.lastModified()}"
+        val k = keyOf(file)
         if (k != key) {
             bitmap = decodeScaled(file, 2048)
             key = k
@@ -347,10 +367,28 @@ data class BackdropState(
     val blur: Float = 0f,
     val scale: BackdropScale = BackdropScale.CROP,
     /** 子页面要不要也透出背景。 */
-    val subPages: Boolean = true
+    val subPages: Boolean = true,
+    /** 卡片不透明度 0f~1f（1 = 原来的不透明卡片）。 */
+    val cardAlpha: Float = 1f,
+    /** 底栏不透明度 0f~1f（1 = 原来的不透明底栏）。 */
+    val barAlpha: Float = 1f,
+    /** 按钮 / 下拉 / 弹窗要不要也跟着卡片一起变透明。 */
+    val chromeTint: Boolean = false,
+    /** 「预见式返回动画」开着没有（决定页面是逐页画图还是全透明）。 */
+    val predictiveBack: Boolean = true
 ) {
     /** 这一页要不要透出背景（[sub] = 这一页是不是子页）。 */
     fun showsOn(sub: Boolean): Boolean = active && (!sub || subPages)
+
+    /**
+     * 页面要不要**自己**画一份「图 + 遮罩」。
+     *
+     * 只有「图片 + 预见式返回动画开着」这一种情况是 true：那时拖动会露上一页预览、转场两页重叠，
+     * 每页自带一张不透明的图才不会互相透字。其它情况（关掉动画的图片 / 视频）页面全透明，
+     * 图和遮罩都只在最外层画一层 —— 和视频那套完全一致。
+     */
+    val perPageImage: Boolean
+        get() = active && kind == BackdropKind.IMAGE && predictiveBack
 
     companion object {
         val Off = BackdropState()
@@ -377,7 +415,11 @@ fun rememberBackdropState(revision: Int): BackdropState {
             tintAlpha = p.backdropTint / 100f,
             blur = p.backdropBlur.toFloat(),
             scale = BackdropScale.of(p.backdropScale),
-            subPages = p.backdropSubpages
+            subPages = p.backdropSubpages,
+            cardAlpha = p.backdropCardAlpha / 100f,
+            barAlpha = p.backdropBarAlpha / 100f,
+            chromeTint = p.backdropChromeTint,
+            predictiveBack = p.predictiveBack
         )
     }
 }
@@ -405,6 +447,42 @@ object BackdropRuntime {
 fun backdropBoxColor(bd: BackdropState): Color =
     if (bd.active) Color.Transparent else MaterialTheme.colorScheme.background
 
+/* ------------------------------------------------- 卡片 / 底栏的半透明 */
+
+/**
+ * 卡片的底色：背景开着时按「卡片不透明度」变半透明（默认 100% = 原样）。
+ *
+ * 一起改的还有按下态（`surfaceContainerHighest`）—— 两处都走这个助手，
+ * 按下去才不会突然变成不透明的一整块。`alpha` 是叠在**原来的 alpha**上（不是覆盖）。
+ */
+@Composable
+fun cardColor(color: Color): Color {
+    val bd = LocalBackdrop.current
+    if (!bd.active || bd.cardAlpha >= 1f) return color
+    return color.copy(alpha = color.alpha * bd.cardAlpha)
+}
+
+/** 底栏（含选择栏）的底色，按「底栏不透明度」变半透明。 */
+@Composable
+fun barColor(color: Color): Color {
+    val bd = LocalBackdrop.current
+    if (!bd.active || bd.barAlpha >= 1f) return color
+    return color.copy(alpha = color.alpha * bd.barAlpha)
+}
+
+/**
+ * 按钮 / 下拉 / 弹窗这些「零碎」的底色。
+ *
+ * 只有打开「按钮与弹窗也跟着变透明」时才跟着卡片一起变；默认原样 ——
+ * 弹窗一透明就透出后面的页面，很难看清。
+ */
+@Composable
+fun chromeColor(color: Color): Color {
+    val bd = LocalBackdrop.current
+    if (!bd.active || !bd.chromeTint || bd.cardAlpha >= 1f) return color
+    return color.copy(alpha = color.alpha * bd.cardAlpha)
+}
+
 /** 遮罩：主题背景色 + 用户调的不透明度。全 App 只铺这一层（在最外层画布上）。 */
 @Composable
 private fun BackdropMask(alpha: Float) {
@@ -429,6 +507,13 @@ private fun BackdropMask(alpha: Float) {
 fun BackdropLayer(state: BackdropState) {
     if (!state.active) return
     Box(Modifier.fillMaxSize()) {
+        // 垫一层不透明主题底色：「完整显示」留边、图还没解码完、视频首帧之前，
+        // 透出来的都该是主题色，而不是窗口背景（values/colors.xml 里的 #0D1117 深色底）。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        )
         if (state.kind == BackdropKind.VIDEO) {
             VideoBackdrop(state)
         } else {
@@ -441,15 +526,15 @@ fun BackdropLayer(state: BackdropState) {
 /**
  * 页面那一层要铺的东西。
  *
- *  · **图片模式**：画「图 + 遮罩」。图是不透明的，所以转场时后面的那一页会被它整块盖住
- *    （不会两层字叠在一起）；同一张 bitmap 全 App 共用一份，画两三次也不心疼。
+ *  · **图片 + 预见式返回动画开着**（[BackdropState.perPageImage]）：画「图 + 遮罩」。图是不透明的，
+ *    所以转场时后面的那一页会被它整块盖住（不会两层字叠在一起）；同一张 bitmap 全 App 共用一份。
  *    遮罩在这里画是**幂等**的：图不透明，先画的遮罩被后画的图盖掉，最后的观感仍是「一层遮罩」。
- *  · **视频模式**：**什么都不画** —— 视频和遮罩都在最外层画布上，这里透明就好。
- *    （视频没法每页复制一份：一页一个解码器不仅重，画面还会不同步。）
+ *  · **其它情况**（关掉动画的图片 / 视频）：**什么都不画** —— 图 / 视频和遮罩都在最外层画布上，
+ *    页面透明就好。（视频没法每页复制一份：一页一个解码器不仅重，画面还会不同步。）
  */
 @Composable
 fun BackdropPageSurface(state: BackdropState) {
-    if (state.kind != BackdropKind.IMAGE) return
+    if (!state.perPageImage) return
     Box(Modifier.fillMaxSize()) {
         // 先垫一层**不透明**的主题底色：图片还没解码完、或者选的是「完整显示」留了边的时候，
         // 这一层负责把后面的东西盖住（不然那几帧又会透出下一页的文字）。
@@ -467,8 +552,10 @@ fun BackdropPageSurface(state: BackdropState) {
 @Composable
 private fun BackdropImage(file: File?, scale: BackdropScale, blurDp: Float) {
     if (file == null) return
-    val bmp by produceState<ImageBitmap?>(null, file.path, file.lastModified()) {
-        value = withContext(Dispatchers.IO) { BackdropImages.load(file) }
+    // 初值走 [BackdropImages.peek]：已经解好过的那张图**第一帧就能画上** ——
+    // 用 null 当初值的话，新建的页面会先露一帧主题底色（深色主题＝「返回时黑一下」）。
+    val bmp by produceState<ImageBitmap?>(BackdropImages.peek(file), file.path, file.lastModified()) {
+        if (value == null) value = withContext(Dispatchers.IO) { BackdropImages.load(file) }
     }
     val image = bmp ?: return
     val blurMod = if (blurDp > 0.5f && Build.VERSION.SDK_INT >= 31) Modifier.blur(blurDp.dp) else Modifier

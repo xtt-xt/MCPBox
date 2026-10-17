@@ -145,14 +145,30 @@ fun SettingsScreen(
         handleBack = page.isNotEmpty(),
         follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
         behind = {
-            SettingsHomePage(
-                scroll = homeScroll,
-                scrollTopTick = scrollTopTick,
-                toolCount = status.toolCount,
-                entityCount = AppCore.memory.graph.entities.size,
-                relationCount = AppCore.memory.graph.relations.size,
-                onPage = onPage
-            )
+            // 拖动时下面露出来的那一页。正常是设置首页；「背景」页挂在「外观与语言」下面
+            // （appearance/wallpaper），露出来的就该是外观页 —— 不然松手后从「设置首页」跳到
+            // 「外观与语言」，看着像闪了一下。
+            if (page == "appearance/wallpaper") {
+                AppearanceSettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onThemeChanged = onThemeChanged,
+                    onLangChanged = onLangChanged,
+                    onOpenSeed = {},
+                    onOpenLangPack = {},
+                    onOpenWallpaper = {},
+                    onBack = {}
+                )
+            } else {
+                SettingsHomePage(
+                    scroll = homeScroll,
+                    scrollTopTick = scrollTopTick,
+                    toolCount = status.toolCount,
+                    entityCount = AppCore.memory.graph.entities.size,
+                    relationCount = AppCore.memory.graph.relations.size,
+                    onPage = onPage
+                )
+            }
         }
     ) {
     // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
@@ -187,7 +203,7 @@ fun SettingsScreen(
                     onLangChanged = onLangChanged,
                     onOpenSeed = { showSeed = true },
                     onOpenLangPack = { langInfo = ""; showLang = true },
-                    onOpenWallpaper = { onPage("wallpaper") },
+                    onOpenWallpaper = { onPage("appearance/wallpaper") },
                     onBack = back
                 )
                 "network" -> NetworkSettingsPage(
@@ -269,14 +285,13 @@ fun SettingsScreen(
                     onOpenReset = { showReset = true },
                     onBack = back
                 )
-                "wallpaper" -> WallpaperSettingsPage(
+                // 挂在「外观与语言」下面（`appearance/…`）：返回才会回到外观页、转场方向也才对。
+                "appearance/wallpaper" -> WallpaperSettingsPage(
                     ctx = ctx,
                     revision = revision,
                     // 背景参数存的是 Prefs，但要**整棵树重新取一遍**才生效：
                     // revision 让设置栈重组，onThemeChanged（主题版本号）让最外层那一份背景重新读。
                     onChanged = { onChanged(); onThemeChanged() },
-                    // 开发者模式一开一关，「背景类型」里有没有「视频」要跟着变（Prefs 不是可观察状态）
-                    onDevModeChanged = onChanged,
                     onBack = back
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
@@ -298,7 +313,7 @@ fun SettingsScreen(
         var portText by remember { mutableStateOf(AppCore.config.port.toString()) }
         AlertDialog(
             onDismissRequest = { showPort = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("监听端口"), fontSize = 20.sp) },
@@ -361,7 +376,7 @@ fun SettingsScreen(
         }
         AlertDialog(
             onDismissRequest = { showLang = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("语言包"), fontSize = 20.sp) },
@@ -495,7 +510,7 @@ fun SettingsScreen(
         val cur = android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, bri))
         AlertDialog(
             onDismissRequest = { showSeed = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("种子颜色"), fontSize = 20.sp) },
@@ -572,7 +587,7 @@ fun SettingsScreen(
     if (showPassword) {
         AlertDialog(
             onDismissRequest = { showPassword = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("网页访问密码"), fontSize = 20.sp) },
@@ -614,7 +629,7 @@ fun SettingsScreen(
     if (showReset) {
         AlertDialog(
             onDismissRequest = { showReset = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("重置全部设置？"), fontSize = 20.sp) },

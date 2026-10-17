@@ -65,6 +65,12 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_BACKDROP_SCALE = "backdrop_scale"
         /** 子页面（工具管理 / 记忆库 / 设置子页…）要不要也透出背景。 */
         const val KEY_BACKDROP_SUBPAGES = "backdrop_subpages"
+        /** 卡片不透明度 0~100（100 = 原来的不透明卡片，0 = 全透明）。 */
+        const val KEY_BACKDROP_CARD_ALPHA = "backdrop_card_alpha"
+        /** 底栏不透明度 0~100（100 = 原来的不透明底栏）。 */
+        const val KEY_BACKDROP_BAR_ALPHA = "backdrop_bar_alpha"
+        /** 按钮 / 下拉 / 弹窗要不要跟着卡片一起变透明。 */
+        const val KEY_BACKDROP_CHROME_TINT = "backdrop_chrome_tint"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -319,6 +325,21 @@ class Prefs(context: Context) : SettingsSource {
     var backdropSubpages: Boolean
         get() = getBoolean(KEY_BACKDROP_SUBPAGES, true)
         set(value) = putBoolean(KEY_BACKDROP_SUBPAGES, value)
+
+    /** 卡片不透明度 0~100（0 = 完全透明，100 = 原来的不透明卡片）。 */
+    var backdropCardAlpha: Int
+        get() = getInt(KEY_BACKDROP_CARD_ALPHA, 100).coerceIn(0, 100)
+        set(value) = putInt(KEY_BACKDROP_CARD_ALPHA, value.coerceIn(0, 100))
+
+    /** 底栏不透明度 0~100（含底栏、选择栏）。 */
+    var backdropBarAlpha: Int
+        get() = getInt(KEY_BACKDROP_BAR_ALPHA, 100).coerceIn(0, 100)
+        set(value) = putInt(KEY_BACKDROP_BAR_ALPHA, value.coerceIn(0, 100))
+
+    /** 按钮 / 下拉 / 弹窗会不会跟着卡片一起变透明（默认关：只动卡片和底栏）。 */
+    var backdropChromeTint: Boolean
+        get() = getBoolean(KEY_BACKDROP_CHROME_TINT, false)
+        set(value) = putBoolean(KEY_BACKDROP_CHROME_TINT, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

@@ -161,7 +161,7 @@ fun MemoryScreen(
     if (askReplace) {
         AlertDialog(
             onDismissRequest = { askReplace = false; pendingImport = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("覆盖整个记忆库？"), fontSize = 20.sp) },
@@ -621,7 +621,7 @@ private fun MemoryDetailPage(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             title = { Text(L("删除实体"), fontSize = 20.sp) },
             text = {
@@ -651,7 +651,7 @@ private fun MemoryDetailPage(
     deleteObs?.let { obs ->
         AlertDialog(
             onDismissRequest = { deleteObs = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             title = { Text(L("删除这条观察"), fontSize = 19.sp) },
             text = {
@@ -675,7 +675,7 @@ private fun MemoryDetailPage(
     deleteRel?.let { rel ->
         AlertDialog(
             onDismissRequest = { deleteRel = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             title = { Text(L("删除这条关系"), fontSize = 19.sp) },
             text = {
@@ -745,7 +745,7 @@ private fun MemoryDetailPage(
                         Modifier
                             .fillMaxWidth()
                             .clip(shape)
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .background(cardColor(MaterialTheme.colorScheme.surfaceContainer))
                             .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -863,7 +863,7 @@ private fun TextInputDialog(
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         androidx.compose.material3.Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
         ) {

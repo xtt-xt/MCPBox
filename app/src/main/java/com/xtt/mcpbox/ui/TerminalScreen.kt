@@ -118,7 +118,7 @@ fun TerminalScreen(
 
         // 输出区（内部滚动，占满剩余空间）
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = cardColor(MaterialTheme.colorScheme.surfaceContainerLow),
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier
                 .fillMaxWidth()

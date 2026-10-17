@@ -439,7 +439,7 @@ private fun AddRootDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -499,7 +499,7 @@ internal fun AddRuleDialog(onDismiss: () -> Unit, onAdd: (String, String, PermAc
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -580,7 +580,7 @@ internal fun AddCommandRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,

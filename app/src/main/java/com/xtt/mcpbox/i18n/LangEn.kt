@@ -2357,9 +2357,20 @@ object LangEn {
     "视频没有画面" to "The video shows no picture",
     "文件在、播放器也没报错，但一帧都没渲染出来；退出重进 App 一般就好，也可以换一段视频" to "The file is there and the player reported no error, but not a single frame was rendered; restarting the app usually fixes it, or pick another video",
     "用一张静态图片做背景" to "Use a still image as the backdrop",
-    "视频背景（开发者模式）" to "Video backdrop (developer mode)",
-    "开发者模式已关闭，背景改回图片；视频文件会留着，重新打开开发者模式就能切回来" to "Developer mode is off, so the backdrop went back to an image; the video file is kept and will come back when developer mode is on again",
-    "视频模式下页面是透明的，所以拖动时看不到上一页预览、转场时旧页直接收掉；打开关于页里的开发者模式后，这里才会出现「视频」这个类型" to "In video mode the pages are transparent, so dragging shows no preview of the previous page and the old page is dropped instantly during transitions; turn on developer mode (in the About page) and the video option shows up here",
+    "视频要关掉「预见式返回动画」才能选，见下方说明" to "Video is only available with predictive back off - see the note below",
+    "视频要先关掉预见式返回动画" to "Turn off predictive back first to use video",
+    "视频模式下页面是透明的：拖动返回时看不到上一页预览、转场时旧页直接收掉。关掉「预见式返回动画」（设置 → 外观与语言 → 交互）后，这里才会出现「视频」这个类型；关着的时候图片也用同一套渲染。" to "In video mode the pages are transparent: dragging back shows no preview of the previous page, and the old page is dropped instantly during transitions. Turn off \"Predictive back\" (Settings → Appearance & language → Interaction) and the video type shows up here; with it off, images use the same rendering.",
+    "视频 + 预见式返回动画开着" to "Video + predictive back is on",
+    "这套组合下页面是透明的：转场时两页会互相透字。建议把类型换成图片，或者去「外观与语言 → 交互」关掉预见式返回动画。" to "With this combination the pages are transparent, so both pages bleed through each other during transitions. Switch the type to image, or turn off predictive back under Appearance & language → Interaction.",
+    "视频背景已切回图片（视频文件留着，关掉预见式返回动画还能切回来）" to "Video backdrop switched back to an image (the video file is kept; turn predictive back off again to switch back)",
+    "视频背景已停用：先选一张图片，或者关掉预见式返回动画继续用视频" to "Video backdrop disabled: choose an image first, or turn predictive back off to keep using the video",
+    "卡片不透明度" to "Card opacity",
+    "%s%%（100%% = 原来的不透明卡片）" to "%s%% (100%% = the usual opaque cards)",
+    "底栏不透明度" to "Bottom bar opacity",
+    "%s%%（100%% = 原来的不透明底栏）" to "%s%% (100%% = the usual opaque bottom bar)",
+    "按钮与弹窗也跟着变透明" to "Buttons and dialogs fade too",
+    "关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明" to "When off, only cards and the bottom bar change; when on, pill buttons, dropdown menus and dialogs also use the card opacity",
+    "手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）。关掉后背景的图片 / 视频会换一套更干净的渲染" to "Drag from the screen edge to move the page with your finger; release to go back or snap back (Android 13+). With it off, image / video backdrops use a cleaner rendering path",
 
     )
 }

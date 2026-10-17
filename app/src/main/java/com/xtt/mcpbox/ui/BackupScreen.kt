@@ -608,7 +608,7 @@ private fun BackupHomePage(
     if (showPick) {
         AlertDialog(
             onDismissRequest = { showPick = false },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             titleContentColor = MaterialTheme.colorScheme.onSurface,
             title = { Text(L("从哪里恢复？"), fontSize = 20.sp) },
@@ -728,7 +728,7 @@ private fun ExportModeDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -947,7 +947,7 @@ private fun ModePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
         shape = RoundedCornerShape(28.dp),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         title = { Text(L("怎么恢复这几部分？"), fontSize = 20.sp) },
