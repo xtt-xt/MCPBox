@@ -137,6 +137,9 @@ fun SettingsScreen(
     // 设置首页的滚动位置**提到这一层**：预见式返回的预览层要和真页面共用同一份，
     // 否则拖动时露出来的那一页永远停在最顶部（预览层是第二个实例，状态从零开始）
     val homeScroll = rememberScrollState()
+    // 同理：「背景」页的上一级是「外观与语言」，拖动时露出来的外观页也得停在当前位置，
+    // 不能每次从顶部开始（用户会以为「返回到了上一个页面的顶部」）
+    val appearanceScroll = rememberScrollState()
 
     // 子页里按系统返回 → 回上一级（顶层不接，交给系统退出应用）。
     // 开了「预见式返回动画」时手指从边缘拖着走、松手才决定回不回；拖动时下面露出来的就是设置首页。
@@ -157,7 +160,8 @@ fun SettingsScreen(
                     onOpenSeed = {},
                     onOpenLangPack = {},
                     onOpenWallpaper = {},
-                    onBack = {}
+                    onBack = {},
+                    scroll = appearanceScroll
                 )
             } else {
                 SettingsHomePage(
@@ -204,7 +208,8 @@ fun SettingsScreen(
                     onOpenSeed = { showSeed = true },
                     onOpenLangPack = { langInfo = ""; showLang = true },
                     onOpenWallpaper = { onPage("appearance/wallpaper") },
-                    onBack = back
+                    onBack = back,
+                    scroll = appearanceScroll
                 )
                 "network" -> NetworkSettingsPage(
                     status = status,

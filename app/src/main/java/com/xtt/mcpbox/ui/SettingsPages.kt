@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,18 +82,26 @@ import kotlin.math.roundToInt
  * 这样设置首页永远一屏扫得完，加功能只是多一行，不会退化成长列表。
  */
 
-/** 子页的统一骨架：自己的大标题 + 返回按钮 + 可滚动内容。 */
+/**
+ * 子页的统一骨架：自己的大标题 + 返回按钮 + 可滚动内容。
+ *
+ * [scroll] 一般不用传（自己 remember 一份就行）。**例外**：预见式返回的预览层
+ * （`PredictiveBackBox` 的 `behind`）是这一页的**第二个实例**，它得和真页面共用同一份滚动状态，
+ * 否则拖动时露出来的永远是页面顶部。这种页面由外面把 ScrollState 提出来传进来
+ * （见设置栈的 `appearanceScroll`）。
+ */
 @Composable
 internal fun SettingsPageShell(
     title: String,
     subtitle: String? = null,
     onBack: () -> Unit,
+    scroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .navigationBarsPadding()
             .padding(bottom = 24.dp)
     ) {
@@ -115,7 +124,9 @@ internal fun AppearanceSettingsPage(
     onOpenSeed: () -> Unit,
     onOpenLangPack: () -> Unit,
     onOpenWallpaper: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /** 滚动位置由外面持有：预览层要和真页面共用同一份（见 [SettingsPageShell]）。 */
+    scroll: ScrollState = rememberScrollState()
 ) {
     val sdkOk = android.os.Build.VERSION.SDK_INT >= 31
     // 读一下 revision：它是对外声明的「设置变了」，让本页在开关改动后真的重组
@@ -125,7 +136,7 @@ internal fun AppearanceSettingsPage(
     // 靠这个本页计数器把自己重组一次
     var localRev by remember { mutableStateOf(0) }
 
-    SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack) {
+    SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack, scroll) {
         GroupLabel(L("主题"))
         CardGroup(
             listOf(
@@ -501,7 +512,9 @@ internal fun ShellSettingsPage(
     revision: Int,
     onChanged: () -> Unit,
     onOpenRules: (String) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /** 滚动位置由外面持有：预览层要和真页面共用同一份（见 [SettingsPageShell]）。 */
+    scroll: ScrollState = rememberScrollState()
 ) {
     val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
     var shellTimeoutState by remember(revision) {
@@ -511,7 +524,7 @@ internal fun ShellSettingsPage(
         )
     }
 
-    SettingsPageShell(L("终端与命令"), L("命令后端、规则与默认超时"), onBack) {
+    SettingsPageShell(L("终端与命令"), L("命令后端、规则与默认超时"), onBack, scroll) {
         GroupLabel(L("命令执行"))
         CardGroup(
             listOf(
@@ -1025,16 +1038,6 @@ internal fun WallpaperSettingsPage(
         value = file?.let { BackdropFiles.poster(it, kind) }
     }
 
-    // 视频「在播但没画面」的判定：等两秒半再看有没有渲染过第一帧
-    var lateNoFrame by remember(rev, kind) { mutableStateOf(false) }
-    LaunchedEffect(rev, kind, enabled, file?.path) {
-        lateNoFrame = false
-        if (enabled && kind == BackdropKind.VIDEO && file != null) {
-            kotlinx.coroutines.delay(2500)
-            lateNoFrame = BackdropRuntime.videoError == null && !BackdropRuntime.videoRendered
-        }
-    }
-
     SettingsPageShell(L("背景"), L("自定义背景图或视频，上面盖一层可调透明度的遮罩"), onBack) {
 
         GroupLabel(L("预览"))
@@ -1226,54 +1229,6 @@ internal fun WallpaperSettingsPage(
                     AppCore.prefs.backdropChromeTint = on
                     commit()
                 }.copy(visible = enabled)
-            )
-        )
-
-        GroupLabel(L("说明"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("视频背景更耗电"),
-                    subtitle = L("背景视频只在 App 在前台时播放，切出去自动暂停；想省电可以换成图片"),
-                    subtitleMaxLines = 3,
-                    subtitleColor = Sem.warn,
-                    visible = enabled && kind == BackdropKind.VIDEO
-                ),
-                // 视频真的放不出来时给个明确提示（不然屏幕上就是一片纯色，看不出是哪儿的问题）
-                RowSpec(
-                    title = L("这个视频放不出来"),
-                    subtitle = L("解码失败：%s。换一段视频，或者先换成图片").format(
-                        BackdropRuntime.videoError ?: ""
-                    ),
-                    subtitleMaxLines = 3,
-                    subtitleColor = Sem.bad,
-                    visible = enabled && kind == BackdropKind.VIDEO && BackdropRuntime.videoError != null
-                ),
-                // 在播、也没报错，但一帧都没出来（历史上踩过：视图挂上的时机不巧，要重启 App 才有画面）
-                RowSpec(
-                    title = L("视频没有画面"),
-                    subtitle = L("文件在、播放器也没报错，但一帧都没渲染出来；退出重进 App 一般就好，也可以换一段视频"),
-                    subtitleMaxLines = 3,
-                    subtitleColor = Sem.bad,
-                    visible = enabled && kind == BackdropKind.VIDEO && lateNoFrame
-                ),
-                // 视频现在挂在「预见式返回动画关掉」后面：说明白这层门在哪儿、以及为什么
-                RowSpec(
-                    title = L("视频要先关掉预见式返回动画"),
-                    subtitle = L("视频模式下页面是透明的：拖动返回时看不到上一页预览、转场时旧页直接收掉。关掉「预见式返回动画」（设置 → 外观与语言 → 交互）后，这里才会出现「视频」这个类型；关着的时候图片也用同一套渲染。"),
-                    subtitleMaxLines = 4,
-                    subtitleColor = Sem.warn,
-                    visible = predictive && kind != BackdropKind.VIDEO
-                ),
-                // 只有从备份恢复来的数据才会是「视频 + 预见式返回动画开着」这个组合：
-                // 不强行改类型（有的用户只有这一段视频），但要说清楚它现在是难看的那一套
-                RowSpec(
-                    title = L("视频 + 预见式返回动画开着"),
-                    subtitle = L("这套组合下页面是透明的：转场时两页会互相透字。建议把类型换成图片，或者去「外观与语言 → 交互」关掉预见式返回动画。"),
-                    subtitleMaxLines = 3,
-                    subtitleColor = Sem.warn,
-                    visible = predictive && kind == BackdropKind.VIDEO
-                )
             )
         )
 
