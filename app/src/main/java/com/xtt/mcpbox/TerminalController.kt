@@ -71,8 +71,8 @@ class TerminalController(private val appContext: Context) {
         _backendId.value = launcher.id
         _backendLabel.value = L(launcher.label)
         val workdir = cwd?.takeIf { it.isNotBlank() }
-            ?: AppCore.config.terminalCwd.takeIf { it.isNotBlank() }
-            ?: appWorkdir()
+            ?: AppCore.config.terminalCwd.takeIf { it.isNotBlank() && usableCwd(it, launcher.id) }
+            ?: appWorkdir(launcher.id)
         session?.kill()
         val s = ShellSession(
             launcher = launcher,
@@ -97,9 +97,20 @@ class TerminalController(private val appContext: Context) {
         return if (ok) L("已连接：%s").format(L(launcher.label)) else L("启动失败：%s").format(s.startError ?: L("未知原因"))
     }
 
-    private fun appWorkdir(): String = runCatching {
-        java.io.File(appContext.filesDir, "shell").apply { mkdirs() }.absolutePath
-    }.getOrDefault("/sdcard")
+    /**
+     * 这个目录能不能给这个后端用。
+     *
+     * Shizuku 是 shell(uid 2000) 身份，进不去应用私有目录（chdir 失败，系统却报
+     * `Cannot run program "/system/bin/setsid" …` 那种误导信息）—— 所以配置里存着
+     * 私有目录时（老版本默认值），一律换成 `/data/local/tmp`。
+     */
+    private fun usableCwd(dir: String, backendId: String): Boolean {
+        if (backendId != "shizuku") return true
+        return !dir.contains("/${appContext.packageName}")
+    }
+
+    private fun appWorkdir(backendId: String): String =
+        ShizukuHelper.defaultCwd(appContext, backendId)
 
     fun send(command: String) {
         val s = session

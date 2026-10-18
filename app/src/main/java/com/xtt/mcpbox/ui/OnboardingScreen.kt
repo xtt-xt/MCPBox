@@ -356,7 +356,8 @@ private suspend fun runRestore(
 ): String = withContext(Dispatchers.IO) {
     parts.map { rp ->
         // 设置这一块没有「合并」的概念，一律整份覆盖（跟备份页一致）
-        val mode = if (merge && rp.part != Backup.Part.SETTINGS) Backup.Mode.MERGE
+        // 设置与背景都是整份还原，没有「合并」这一说
+        val mode = if (merge && rp.part != Backup.Part.SETTINGS && rp.part != Backup.Part.BACKDROP) Backup.Mode.MERGE
         else Backup.Mode.REPLACE
         runCatching {
             Backup.apply(
@@ -367,7 +368,8 @@ private suspend fun runRestore(
                 settings = AppCore.prefs,
                 memory = AppCore.memory,
                 customTools = AppCore.customTools,
-                stats = AppCore.stats
+                stats = AppCore.stats,
+                backdropDir = java.io.File(AppCore.app.filesDir, "backdrop")
             )
         }.fold(
             onSuccess = { L("%s：%s").format(partName(rp.part), it) },
@@ -734,6 +736,7 @@ private fun partName(part: Backup.Part): String = when (part) {
     Backup.Part.SETTINGS -> L("设置")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
     Backup.Part.STATS -> L("统计")
+    Backup.Part.BACKDROP -> L("自定义背景")
 }
 
 private fun partDesc(part: Backup.Part, text: String): String = when (part) {
@@ -741,6 +744,7 @@ private fun partDesc(part: Backup.Part, text: String): String = when (part) {
     Backup.Part.SETTINGS -> if (Backup.settingsHasToken(text)) L("含访问令牌") else L("不含访问令牌")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
     Backup.Part.STATS -> L("请求次数与运行时长")
+    Backup.Part.BACKDROP -> L("背景选项与背景文件")
 }
 
 @Composable

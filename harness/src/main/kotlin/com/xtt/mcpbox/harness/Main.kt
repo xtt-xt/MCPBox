@@ -1641,6 +1641,113 @@ fun main() {
         )
         check("嗅探：随便一段文字认不出（返回 null）", Backup.sniff("随便一段文字") == null)
 
+        // —— zip 结构：整体导出 = 每个部分一个子文件夹；单部分导出 = 平铺在根目录
+        val nestedNames = unzipText(
+            Backup.zip(
+                parts = mapOf(
+                    Backup.Part.MEMORY to memDump,
+                    Backup.Part.BACKDROP to "{\"_type\":\"${Backup.TYPE_BACKDROP}\",\"values\":{}}"
+                ),
+                includeToken = false,
+                blobs = mapOf("image_1.png" to byteArrayOf(7, 7, 7))
+            )
+        ).keys
+        check(
+            "zip 结构：整体导出时每部分一个子文件夹",
+            nestedNames.contains("memory/memory.json") &&
+                nestedNames.contains("backdrop/backdrop.json") &&
+                nestedNames.contains("manifest.json"),
+            "$nestedNames"
+        )
+        check(
+            "zip 结构：整体导出的背景附件在 backdrop/files/ 下",
+            nestedNames.contains("backdrop/files/image_1.png"),
+            "$nestedNames"
+        )
+        val flatNames = unzipText(
+            Backup.zip(
+                parts = mapOf(Backup.Part.MEMORY to memDump),
+                includeToken = false,
+                nested = false
+            )
+        ).keys
+        check(
+            "zip 结构：单部分导出平铺在根目录",
+            flatNames.contains("memory.json") && flatNames.all { !it.contains("/") },
+            "$flatNames"
+        )
+        // 老版本的 zip（全平铺 + backdrop/<附件>）也要能读
+        val legacyZip = zipBytes(
+            mapOf(
+                "manifest.json" to """{"_type":"${Backup.TYPE_MANIFEST}","version":1}""",
+                "memory.json" to memDump,
+                "backdrop/image_9.png" to "x"
+            )
+        )
+        val legacyBundle = Backup.readZip(legacyZip)
+        check("zip 结构：老版本平铺包仍能解出记忆", legacyBundle.parts.containsKey(Backup.Part.MEMORY))
+        check(
+            "zip 结构：老版本 backdrop/ 附件仍按二进制读",
+            legacyBundle.blobs.containsKey("image_9.png") &&
+                !legacyBundle.parts.containsKey(Backup.Part.BACKDROP),
+            "${legacyBundle.blobs.keys} / ${legacyBundle.parts.keys}"
+        )
+
+        // —— 自定义背景：单独一部分，可选带图片 / 视频副本（zip 里 backdrop/ 子文件夹）
+        val bgSettings = MemorySettings().apply {
+            putBoolean("backdrop_enabled", true)
+            putString("backdrop_kind", "image")
+            putInt("backdrop_tint", 60)
+            putString("backdrop_scale", "fit")
+        }
+        val bgDump = Backup.exportBackdrop(bgSettings, listOf("image_1.png" to 1234L))
+        check("背景导出：带 _type 标记", bgDump.contains(Backup.TYPE_BACKDROP))
+        check("背景导出：能嗅探出类型", Backup.sniff(bgDump) == Backup.Part.BACKDROP)
+        check("背景导出：选项写进去了", bgDump.contains("\"backdrop_tint\"") && bgDump.contains("60"))
+        check("背景导出：文件清单写进去了", bgDump.contains("image_1.png"))
+
+        // 带附件打包 → 解出来附件还在
+        val bgZip = Backup.zip(
+            parts = mapOf(Backup.Part.BACKDROP to bgDump),
+            includeToken = false,
+            blobs = mapOf("image_1.png" to byteArrayOf(1, 2, 3, 4))
+        )
+        val bgBundle = Backup.readZip(bgZip)
+        check("背景 zip：解出背景部分", bgBundle.parts[Backup.Part.BACKDROP] == bgDump)
+        check(
+            "背景 zip：blob 原样回来",
+            bgBundle.blobs["image_1.png"]?.toList() == listOf<Byte>(1, 2, 3, 4),
+            "${bgBundle.blobs.keys}"
+        )
+        check("背景 zip：blob 不会被当成文本解", bgBundle.parts.keys == setOf(Backup.Part.BACKDROP))
+
+        // 恢复：写回选项 + 落文件 + 把 backdrop_file 对准当前类型
+        val bgDir = File(root, "backdrop-restore").apply { mkdirs() }
+        File(bgDir, "image_old.png").writeText("old")
+        val bgTarget = MemorySettings().apply { putString("backdrop_kind", "image") }
+        Backup.apply(
+            Backup.Part.BACKDROP, bgDump, Backup.Mode.REPLACE, restoreToken = false,
+            settings = bgTarget, memory = memX, customTools = toolsX,
+            backdropDir = bgDir, blobs = mapOf("image_new.png" to byteArrayOf(9, 9))
+        )
+        check("背景恢复：选项写回", bgTarget.getInt("backdrop_tint", 0) == 60)
+        check("背景恢复：旧文件被清掉（和备份那一刻一致）", !File(bgDir, "image_old.png").exists())
+        check("背景恢复：新文件落了盘", File(bgDir, "image_new.png").exists())
+        check(
+            "背景恢复：backdrop_file 指向当前类型那份",
+            bgTarget.getString("backdrop_file", "") == "image_new.png",
+            "${bgTarget.getString("backdrop_file", "")}"
+        )
+
+        // 不带文件时不动现有文件（只对齐选项）
+        File(bgDir, "image_keep.png").writeText("keep")
+        Backup.apply(
+            Backup.Part.BACKDROP, bgDump, Backup.Mode.REPLACE, restoreToken = false,
+            settings = bgTarget, memory = memX, customTools = toolsX,
+            backdropDir = bgDir, blobs = emptyMap()
+        )
+        check("背景恢复（无文件）：保留现有背景文件", File(bgDir, "image_keep.png").exists())
+
         // 老记忆文件（没有 _type）也要认：兼容 1.1.0-55 的备份
         val legacyMemory = """{"entities":[{"name":"老实体","type":"旧","folder":"projects","observations":[]}],"relations":[]}"""
         check("嗅探：老格式记忆文件仍然认得出", Backup.sniff(legacyMemory) == Backup.Part.MEMORY)

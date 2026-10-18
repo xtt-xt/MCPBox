@@ -36,10 +36,28 @@ class ShizukuLauncher(private val context: Context) : CommandLauncher {
     }
 
     override fun launch(command: String, cwd: String?, env: Map<String, String>): Process =
-        startOnShell(arrayOf("/system/bin/sh", "-c", command), cwd, env)
+        startOnShell(arrayOf("/system/bin/sh", "-c", command), safeCwd(cwd), env)
 
     override fun launchInteractive(cwd: String?, env: Map<String, String>): Process =
-        startOnShell(arrayOf("/system/bin/sh"), cwd, env)
+        startOnShell(arrayOf("/system/bin/sh"), safeCwd(cwd), env)
+
+    /**
+     * **cwd 必须落在 shell 身份进得去的地方**。
+     *
+     * 踩过的坑：终端默认工作目录是 `files/shell`（应用私有目录，0700、属主是 App 自己）。
+     * Shizuku 侧是 shell(uid 2000) 身份，`ProcessBuilder` 先 chdir 到那里就失败，
+     * 系统报的却是一句极具误导性的
+     * `Cannot run program "/system/bin/setsid" (in directory "/data/data/com.xtt.mcpbox/files/shell"):
+     * error=2, No such file or directory`（看着像缺 setsid，实际是这个目录进不去）。
+     * 所以：应用私有目录一律换成 shell 能写的 `/data/local/tmp`；其它路径原样传。
+     */
+    private fun safeCwd(cwd: String?): String? {
+        if (cwd.isNullOrBlank()) return null
+        val dataDir = context.applicationInfo.dataDir // /data/user/0/<pkg>
+        val priv = listOf(dataDir, "/data/data/${context.packageName}")
+        if (priv.any { cwd == it || cwd.startsWith("$it/") }) return "/data/local/tmp"
+        return cwd
+    }
 
     /**
      * Shizuku 13 把 `Shizuku.newProcess` 收成了 private，官方做法是通过
@@ -158,4 +176,14 @@ object ShizukuHelper {
     fun defaultCwd(context: Context): String =
         runCatching { File(context.filesDir, "shell").apply { mkdirs() }.absolutePath }
             .getOrDefault("/data/local/tmp")
+
+    /**
+     * 某个后端可用的默认工作目录。
+     *
+     * Shizuku 是 shell(uid 2000) 身份，**进不去**应用私有目录（chdir 直接失败，
+     * 报出来的却是 `Cannot run program "/system/bin/setsid" …` 这种误导信息）。
+     * 所以它默认落到 `/data/local/tmp`；root 和 App 自己用私有目录没问题。
+     */
+    fun defaultCwd(context: Context, backendId: String): String =
+        if (backendId == "shizuku") "/data/local/tmp" else defaultCwd(context)
 }

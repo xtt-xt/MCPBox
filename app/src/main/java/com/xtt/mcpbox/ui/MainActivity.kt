@@ -26,6 +26,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -362,6 +363,16 @@ fun AppRoot(
     // 而且返回键得每个页面自己接（漏一个就没反应）。
     val inSubPage = (tab == 4 && settingsPage.isNotEmpty()) || (tab == 2 && permPage.isNotEmpty())
 
+    // 输入法弹出来的时候底栏也得收起来。
+    //
+    // 踩过的坑：底栏是 Scaffold 的 bottomBar，内容区拿到的 bottom padding = 底栏高度；
+    // 页面里又加了 `imePadding()`。窗口是 edge-to-edge、不随 IME 缩放，于是两段 padding
+    // 相加 —— 输入框离键盘之间就多出一条「原本属于底栏」的空隙（终端页最明显）。
+    // 现在 IME 一起来就把底栏收掉（动画和进子页一样），内容区 bottom padding 归零，
+    // 只剩 IME 那一层，输入框正好贴着键盘。
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    val imeVisible = WindowInsets.isImeVisible
+
     // 视频背景时页面是透明的（视频在最底层）→ tab 切换也不能让两页重叠（见 pageSlide 的 noOverlap）。
     // 必须在组合作用域里读一次：transitionSpec 那个 lambda 不是 @Composable。
     val tabHardCut = rememberTransparentPages()
@@ -382,7 +393,7 @@ fun AppRoot(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             AnimatedVisibility(
-                visible = !inSubPage,
+                visible = !inSubPage && !imeVisible,
                 enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
                 exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
             ) {

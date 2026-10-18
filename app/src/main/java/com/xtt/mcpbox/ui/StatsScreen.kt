@@ -86,25 +86,8 @@ fun StatsSettingsPage(onBack: () -> Unit) {
         GroupLabel(L("累计"))
         NumberGrid(snap)
 
-        Spacer(Modifier.height(12.dp))
-        CardColumn {
-            CardBox {
-                Text(
-                    if (snap.serverRunning)
-                        L("服务器正在运行（本次已跑 %s）").format(shortDuration(now - snap.serverRunningSince))
-                    else L("服务器当前没有在运行"),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 12.5.sp
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    L("统计只记在本机，重置设置也不会清掉；备份时勾上「统计」就能一起带走。"),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
-                )
-            }
-        }
+        // 这一页只放数据：底部那段「服务器正在运行 / 统计只记在本机…」的说明已去掉，
+        // 免得每次进来都得先划过去
         Spacer(Modifier.height(16.dp))
     }
 }

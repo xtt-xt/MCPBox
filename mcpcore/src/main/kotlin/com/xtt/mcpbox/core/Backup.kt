@@ -41,13 +41,24 @@ object Backup {
     const val TYPE_TOOLS = "mcpbox.custom-tools"
     /** 统计（请求热力图 / 运行时长 / 启动次数）。类型常量的正主在 [StatsStore]。 */
     const val TYPE_STATS = StatsStore.TYPE
+    /** 自定义背景：外观与语言 → 背景 里的全部选项 +（可选）背景图片 / 视频的副本。 */
+    const val TYPE_BACKDROP = "mcpbox.backdrop"
 
     /** 备份/恢复的粒度。 */
     enum class Part(val id: String, val file: String) {
         MEMORY("memory", "memory.json"),
         SETTINGS("settings", "settings.json"),
         CUSTOM_TOOLS("custom_tools", "custom-tools.json"),
-        STATS("stats", "stats.json");
+        STATS("stats", "stats.json"),
+
+        /**
+         * 自定义背景。
+         *
+         * 它是「设置」里的一小块，但**单独成一部分**：因为要连带背景文件（图片 / 视频）的
+         * 二进制副本一起打包 —— 设置那一段是纯 JSON，塞不下（也不可能 base64 一个几百 MB 的视频）。
+         * zip 里这些文件固定放在 `backdrop/` 子文件夹下。
+         */
+        BACKDROP("backdrop", "backdrop.json");
 
         companion object {
             fun of(id: String): Part? = entries.firstOrNull { it.id == id }
@@ -85,6 +96,7 @@ object Backup {
             TYPE_SETTINGS -> return Part.SETTINGS
             TYPE_TOOLS -> return Part.CUSTOM_TOOLS
             TYPE_STATS -> return Part.STATS
+            TYPE_BACKDROP -> return Part.BACKDROP
             else -> {}
         }
         return when {
@@ -93,6 +105,9 @@ object Backup {
             obj["tools"] is JsonArray -> Part.CUSTOM_TOOLS
             // 统计：按「有 requests 表 + 有 appLaunches」认（老文件没有 _type 也认得出来）
             obj["requests"] is JsonObject && obj.containsKey("appLaunches") -> Part.STATS
+            // 背景：靠 backdrop_* 键认（老文件没有 _type 也认得出来）
+            obj["values"] is JsonObject &&
+                (obj["values"] as JsonObject).keys.any { it.startsWith("backdrop_") } -> Part.BACKDROP
             else -> null
         }
     }
@@ -148,6 +163,55 @@ object Backup {
         }
     }
 
+    // ---------------------------------------------------------------- 背景
+
+    /** 「外观与语言 → 背景」里的全部偏好键（导出 / 恢复都只碰这些）。 */
+    val BACKDROP_KEYS = listOf(
+        "backdrop_enabled",
+        "backdrop_kind",
+        "backdrop_file",
+        "backdrop_tint",
+        "backdrop_blur",
+        "backdrop_scale",
+        "backdrop_subpages",
+        "backdrop_card_alpha",
+        "backdrop_bar_alpha",
+        "backdrop_chrome_tint"
+    )
+
+    /**
+     * 背景部分：选项 +（可选）文件清单。
+     *
+     * 文件本体不进 JSON（视频可能几百 MB），而是作为 zip 里的 `backdrop/<文件名>` 条目单独放；
+     * 这里只记名字和大小，UI 用来显示「带了哪些文件」。
+     *
+     * @param files 要一起打包的背景文件（空 = 只备份选项，恢复后需要重新选图 / 视频）
+     */
+    fun exportBackdrop(settings: SettingsSource, files: List<Pair<String, Long>>): String {
+        val all = settings.all()
+        val values = buildJsonObject {
+            BACKDROP_KEYS.forEach { k -> if (all.containsKey(k)) putValue(this, k, all[k]) }
+        }
+        val types = buildJsonObject { BACKDROP_KEYS.forEach { k -> put(k, typeName(all[k])) } }
+        return J.encodeToString(
+            JsonObject.serializer(),
+            buildJsonObject {
+                put("_type", TYPE_BACKDROP)
+                put("version", 1)
+                put("app", ServerMeta.fullVersion)
+                put("exportedAt", System.currentTimeMillis())
+                put("values", values)
+                put("types", types)
+                put("files", JsonArray(files.map { (name, size) ->
+                    buildJsonObject {
+                        put("name", name)
+                        put("size", size)
+                    }
+                }))
+            }
+        )
+    }
+
     /** 这一段设置里有没有带令牌。 */
     fun settingsHasToken(text: String): Boolean {
         val obj = runCatching { JCompact.parseToJsonElement(text).jsonObject }.getOrNull() ?: return false
@@ -155,33 +219,54 @@ object Backup {
         return (obj["values"] as? JsonObject)?.containsKey(TOKEN_KEY) == true
     }
 
-    /** 打包成 zip：manifest + 各个部分的文件。 */
+    /**
+     * 打包成 zip：manifest + 各个部分的文件 +（可选）背景文件的二进制副本。
+     *
+     * **两种结构（[nested]）**：
+     *  · `nested = true`（导出**整体** zip）：每个部分一个**子文件夹** ——
+     *    `memory/memory.json`、`settings/settings.json`、`backdrop/backdrop.json` …
+     *  · `nested = false`（导出**单部分**）：manifest 加这一部分的文件，平铺在根目录 ——
+     *    单部分本来就只有一个文件，再套一层目录反而要多点一次
+     * 两种结构都是压缩包（以前单部分是裸 `.json`，装不下背景的图片 / 视频）。
+     *
+     * 背景的二进制副本固定放 `backdrop/files/<名字>`（`image_…` / `video_…`）——
+     * 和其它部分是同一个思路：一个部分一个目录，附件在它自己的 `files/` 里。
+     *
+     * @param blobs 附加文件，键 = 背景文件在 `files/backdrop/` 里的名字
+     */
     fun zip(
         parts: Map<Part, String>,
         includeToken: Boolean,
-        exportedAt: Long = System.currentTimeMillis()
+        exportedAt: Long = System.currentTimeMillis(),
+        blobs: Map<String, ByteArray> = emptyMap(),
+        nested: Boolean = true
     ): ByteArray {
         val manifest = J.encodeToString(
             JsonObject.serializer(),
             buildJsonObject {
                 put("_type", TYPE_MANIFEST)
-                put("version", 1)
+                put("version", 2)
                 put("app", ServerMeta.fullVersion)
                 put("exportedAt", exportedAt)
                 put("tokenIncluded", includeToken)
+                put("nested", nested)
                 put("parts", JsonArray(parts.keys.map { JsonPrimitive(it.id) }))
             }
         )
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { zos ->
-            zos.putNextEntry(ZipEntry("manifest.json"))
-            zos.write(manifest.toByteArray())
-            zos.closeEntry()
-            parts.forEach { (part, text) ->
-                zos.putNextEntry(ZipEntry(part.file))
-                zos.write(text.toByteArray())
+            fun putEntry(name: String, bytes: ByteArray) {
+                zos.putNextEntry(ZipEntry(name))
+                zos.write(bytes)
                 zos.closeEntry()
             }
+            putEntry("manifest.json", manifest.toByteArray())
+            parts.forEach { (part, text) ->
+                val path = if (nested) "${part.id}/${part.file}" else part.file
+                putEntry(path, text.toByteArray())
+            }
+            // 背景附件：一个部分一个目录（backdrop/files/…）
+            blobs.forEach { (name, bytes) -> putEntry("backdrop/files/$name", bytes) }
         }
         return out.toByteArray()
     }
@@ -191,18 +276,33 @@ object Backup {
         val parts: Map<Part, String>,
         val tokenIncluded: Boolean,
         val exportedAt: Long,
-        val app: String?
+        val app: String?,
+        /** zip 里 `backdrop/` 下的文件（键 = 文件名）。 */
+        val blobs: Map<String, ByteArray> = emptyMap()
     )
 
-    /** 读 zip。不是合法备份包就抛异常（让 UI 提示用户）。 */
+    /**
+     * 读 zip。不是合法备份包就抛异常（让 UI 提示用户）。
+     *
+     * 三种结构都能读（判断只看「文件名」和「在不在 backdrop/ 下」，不看目录层级）：
+     *  · 新·整体：`<part.id>/<file>` + `backdrop/files/<附件>`
+     *  · 新·单部分：`<file>` + `backdrop/files/<附件>`
+     *  · 老版本：`<file>`（全平铺）+ `backdrop/<附件>`
+     */
     fun readZip(bytes: ByteArray): Bundle {
         val files = LinkedHashMap<String, String>()
+        val blobs = LinkedHashMap<String, ByteArray>()
         ZipInputStream(bytes.inputStream()).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
                 if (entry.isDirectory) continue
                 val name = entry.name.substringAfterLast('/')
-                files[name] = zis.readBytes().toString(Charsets.UTF_8)
+                val data = zis.readBytes()
+                // 背景附件是二进制（图片 / 视频），别当文本读。
+                // `.json` 一律当文本 —— `backdrop/backdrop.json` 是背景那一部分的正文，
+                // 不能和附件混在一起（以前按 startsWith("backdrop/") 判断，会把它也当附件吞掉）。
+                val isBlob = entry.name.startsWith("backdrop/") && !name.endsWith(".json")
+                if (isBlob) blobs[name] = data else files[name] = data.toString(Charsets.UTF_8)
             }
         }
         if (files.isEmpty()) throw ToolFailure(L("这个 zip 里没有文件"))
@@ -225,7 +325,7 @@ object Backup {
             ?: false
         val exportedAt = manifest?.get("exportedAt")?.jsonPrimitive?.longOrNull ?: 0L
         val app = manifest?.get("app")?.jsonPrimitive?.contentOrNull
-        return Bundle(parts, tokenIncluded, exportedAt, app)
+        return Bundle(parts, tokenIncluded, exportedAt, app, blobs)
     }
 
     // ---------------------------------------------------------------- 恢复
@@ -245,7 +345,11 @@ object Backup {
         settings: SettingsSource,
         memory: MemoryStore,
         customTools: CustomToolStore,
-        stats: StatsStore = StatsStore()
+        stats: StatsStore = StatsStore(),
+        /** 背景文件要落到的目录（`files/backdrop/`）；恢复背景时必填。 */
+        backdropDir: java.io.File? = null,
+        /** zip 里 `backdrop/` 下的文件（键 = 文件名）。 */
+        blobs: Map<String, ByteArray> = emptyMap()
     ): String = when (part) {
         Part.MEMORY -> {
             val r = memory.importJson(text, merge = mode == Mode.MERGE)
@@ -260,6 +364,59 @@ object Backup {
         Part.STATS -> stats.importJson(text, merge = mode == Mode.MERGE)
 
         Part.SETTINGS -> restoreSettings(text, mode, restoreToken, settings)
+
+        Part.BACKDROP -> restoreBackdrop(text, settings, backdropDir, blobs)
+    }
+
+    /**
+     * 恢复自定义背景：先把选项写回偏好，再（有文件的话）把副本落进 `files/backdrop/`。
+     *
+     * 口径：
+     *  · 选项**只覆盖备份里有的那几个键**（不动别的设置）；
+     *  · 有文件副本时先清空 `files/backdrop/` 再写入 —— 和「恢复成备份那一刻的样子」一致；
+     *    没带文件时**保留**现有背景文件（只是把选项对齐，图 / 视频还在）；
+     *  · 最后按 `backdrop_kind` 把 `backdrop_file` 指到对应类型的那份，避免「切了类型什么都不显示」。
+     */
+    private fun restoreBackdrop(
+        text: String,
+        settings: SettingsSource,
+        dir: java.io.File?,
+        blobs: Map<String, ByteArray>
+    ): String {
+        val obj = runCatching { JCompact.parseToJsonElement(text).jsonObject }.getOrElse {
+            throw ToolFailure(L("不是合法的背景备份：%s").format(it.message))
+        }
+        val values = obj["values"] as? JsonObject
+            ?: throw ToolFailure(L("背景备份里没有 values 字段"))
+        val types = obj["types"] as? JsonObject
+        val before = settings.all()
+        values.forEach { (k, v) -> settings.putRaw(k, coerce(k, v, types, before[k])) }
+
+        var written = 0
+        if (blobs.isNotEmpty() && dir != null) {
+            dir.mkdirs()
+            dir.listFiles()?.forEach { it.delete() }
+            blobs.forEach { (name, bytes) ->
+                runCatching {
+                    java.io.File(dir, name).writeBytes(bytes)
+                    written++
+                }
+            }
+        }
+
+        // 把 backdrop_file 对准当前类型那份（文件名带 image_/video_ 前缀）
+        val kind = settings.getString("backdrop_kind", "image") ?: "image"
+        val pick = dir?.listFiles()
+            ?.filter { it.isFile && it.name.startsWith("${kind}_") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.firstOrNull()
+        if (pick != null) settings.putString("backdrop_file", pick.name)
+
+        return if (written > 0) {
+            L("已恢复背景（含 %s 个文件）").format(written)
+        } else {
+            L("已恢复背景设置（没带文件，原来的图片 / 视频还在）")
+        }
     }
 
     private fun restoreSettings(

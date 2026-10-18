@@ -6,6 +6,8 @@ package com.xtt.mcpbox.ui
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.annotation.DrawableRes
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -988,6 +990,176 @@ internal fun BackgroundSettingsPage(
                 onOpenReset()
             }
         }
+    }
+}
+
+/* ------------------------------------------------------------ 语言包 */
+
+/**
+ * 「语言包」子页（原来是「外观与语言」里的一个弹窗）。
+ *
+ * 语言包就是一个 JSON：`"中文原文": "译文"`。这一页负责看当前状态、导入 / 导出、
+ * 删除已导入的包 —— 做成子页的理由很实际：内容一多，弹窗里滚动起来很难受，
+ * 而且导入完想看一眼「现在用的是哪个」还得重新点开。
+ */
+@Composable
+internal fun LanguagePackPage(
+    ctx: Context,
+    revision: Int,
+    onLangChanged: () -> Unit,
+    onBack: () -> Unit
+) {
+    var localRev by remember { mutableStateOf(0) }
+    val rev = revision + localRev
+    var info by remember { mutableStateOf("") }
+
+    val cur = remember(rev) { com.xtt.mcpbox.i18n.Lang.current }
+    val builtinCount = remember(rev) { com.xtt.mcpbox.i18n.Lang.entriesOf(com.xtt.mcpbox.i18n.Lang.EN).size }
+    val packs = remember(rev) { com.xtt.mcpbox.i18n.Lang.packLanguages() }
+
+    fun writeOut(name: String, text: String) {
+        val dir = android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOWNLOADS
+        )
+        val file = java.io.File(dir, name)
+        runCatching {
+            if (!dir.exists()) dir.mkdirs()
+            file.writeText(text)
+        }.fold(
+            onSuccess = { info = L("已导出到 %s").format(file.absolutePath) },
+            onFailure = { info = L("导出失败：%s").format(it.message) }
+        )
+    }
+
+    val importLang = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = runCatching {
+            ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+        if (text.isNullOrBlank()) {
+            info = L("读不到文件内容")
+        } else {
+            com.xtt.mcpbox.i18n.Lang.importPack(ctx, text).fold(
+                onSuccess = { (id, count) ->
+                    AppCore.prefs.appLang = id
+                    com.xtt.mcpbox.i18n.Lang.init(ctx, id, com.xtt.mcpbox.i18n.Lang.systemIsEnglish)
+                    info = L("已导入语言包 %s（%s 条译文）").format(id, count)
+                    localRev++
+                    onLangChanged()
+                },
+                onFailure = { info = L("导入失败：%s").format(it.message) }
+            )
+        }
+    }
+
+    SettingsPageShell(L("语言包"), L("导入、导出与删除界面译文"), onBack) {
+        GroupLabel(L("当前"))
+        CardColumn {
+            CardBox {
+                KeyValue(L("界面语言"), com.xtt.mcpbox.i18n.Lang.packDisplayName(cur))
+                KeyValue(L("内置英文词条"), L("%s 条").format(builtinCount))
+                KeyValue(
+                    L("已导入语言包"),
+                    if (packs.isEmpty()) L("无") else packs.joinToString("、") {
+                        com.xtt.mcpbox.i18n.Lang.packDisplayName(it)
+                    }
+                )
+            }
+        }
+        if (info.isNotBlank()) {
+            Spacer(Modifier.height(7.dp))
+            CardColumn {
+                CardBox {
+                    Text(info, color = MaterialTheme.colorScheme.primary, fontSize = 12.5.sp)
+                }
+            }
+        }
+
+        GroupLabel(L("语言包"))
+        CardGroup(
+            rows = buildList {
+                packs.forEach { id ->
+                    add(
+                        RowSpec(
+                            title = com.xtt.mcpbox.i18n.Lang.packDisplayName(id),
+                            subtitle = L("%s · %s 条译文").format(id, com.xtt.mcpbox.i18n.Lang.entryCount(id)),
+                            icon = Icons.Filled.Info,
+                            trailing = {
+                                RoundIconButton(Icons.Filled.Delete, L("删除"), tint = Sem.bad, size = 40) {
+                                    com.xtt.mcpbox.i18n.Lang.deletePack(ctx, id)
+                                    if (AppCore.prefs.appLang == id) {
+                                        AppCore.prefs.appLang = "system"
+                                        com.xtt.mcpbox.i18n.Lang.init(
+                                            ctx, "system", com.xtt.mcpbox.i18n.Lang.systemIsEnglish
+                                        )
+                                    }
+                                    info = L("已删除")
+                                    localRev++
+                                    onLangChanged()
+                                }
+                            }
+                        )
+                    )
+                }
+                add(
+                    RowSpec(
+                        title = L("从文件导入"),
+                        subtitle = L("选一个语言包 JSON，导入后立刻切成那个语言"),
+                        icon = Icons.Filled.Add,
+                        onClick = { importLang.launch(arrayOf("application/json", "*/*")) }
+                    )
+                )
+                add(
+                    RowSpec(
+                        title = L("导出模板"),
+                        subtitle = L("英文模板，照着把译文填进去就是新语言包"),
+                        icon = Icons.Filled.Share,
+                        onClick = { writeOut("mcpbox-lang-template.json", com.xtt.mcpbox.i18n.Lang.exportTemplate(ctx, "en")) }
+                    )
+                )
+                add(
+                    RowSpec(
+                        title = L("导出当前语言包"),
+                        subtitle = L("把现在生效的这套译文导出成 JSON"),
+                        icon = Icons.Filled.Share,
+                        onClick = { writeOut("mcpbox-lang-$cur.json", com.xtt.mcpbox.i18n.Lang.exportPack(ctx, cur)) }
+                    )
+                )
+                if (packs.isNotEmpty()) {
+                    add(
+                        RowSpec(
+                            title = L("删除所有导入的语言包"),
+                            subtitle = L("删完回到中文；内置英文不受影响"),
+                            icon = Icons.Filled.Delete,
+                            subtitleColor = Sem.bad,
+                            onClick = {
+                                packs.forEach { com.xtt.mcpbox.i18n.Lang.deletePack(ctx, it) }
+                                AppCore.prefs.appLang = "system"
+                                com.xtt.mcpbox.i18n.Lang.init(
+                                    ctx, "system", com.xtt.mcpbox.i18n.Lang.systemIsEnglish
+                                )
+                                info = L("已删除")
+                                localRev++
+                                onLangChanged()
+                            }
+                        )
+                    )
+                }
+            }
+        )
+
+        GroupLabel(L("说明"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("语言包长什么样"),
+                    subtitle = L("一个 JSON：\"中文原文\" 对应 \"译文\"。导出模板照着填，缺的条目会自动回退中文。"),
+                    subtitleMaxLines = 3
+                )
+            )
+        )
     }
 }
 

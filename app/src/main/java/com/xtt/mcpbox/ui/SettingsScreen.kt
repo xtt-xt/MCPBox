@@ -104,31 +104,6 @@ fun SettingsScreen(
     var showPassword by remember { mutableStateOf(false) }
     var passwordText by remember { mutableStateOf("") }
     var showSeed by remember { mutableStateOf(false) }
-    var showLang by remember { mutableStateOf(false) }
-    var langInfo by remember { mutableStateOf("") }
-    val importLang = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val text = runCatching {
-                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-            }.getOrNull()
-            if (text.isNullOrBlank()) {
-                toast(ctx, L("读不到文件内容"))
-            } else {
-                com.xtt.mcpbox.i18n.Lang.importPack(ctx, text).fold(
-                    onSuccess = { (id, count) ->
-                        AppCore.prefs.appLang = id
-                        com.xtt.mcpbox.i18n.Lang.init(ctx, id, com.xtt.mcpbox.i18n.Lang.systemIsEnglish)
-                        langInfo = L("已导入语言包 %s（%s 条译文）").format(id, count)
-                        onLangChanged()
-                    },
-                    onFailure = { langInfo = L("导入失败：%s").format(it.message) }
-                )
-            }
-        }
-    }
-
     val back = { onPage(parentPage(page)) }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
@@ -215,7 +190,7 @@ fun SettingsScreen(
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
                     onOpenSeed = { showSeed = true },
-                    onOpenLangPack = { langInfo = ""; showLang = true },
+                    onOpenLangPack = { onPage("appearance/langpack") },
                     onOpenWallpaper = { onPage("appearance/wallpaper") },
                     onOpenIcon = { onPage("appearance/icon") },
                     onBack = back,
@@ -302,6 +277,12 @@ fun SettingsScreen(
                     onBack = back
                 )
                 // 挂在「外观与语言」下面（`appearance/…`）：返回才会回到外观页、转场方向也才对。
+                "appearance/langpack" -> LanguagePackPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onLangChanged = { onLangChanged(); onChanged() },
+                    onBack = back
+                )
                 "appearance/icon" -> IconSettingsPage(
                     ctx = ctx,
                     revision = revision,
@@ -375,150 +356,6 @@ fun SettingsScreen(
             dismissButton = {
                 TextButton(onClick = { showPort = false }) {
                     Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
-
-    if (showLang) {
-        val cur = com.xtt.mcpbox.i18n.Lang.current
-        val builtinCount = com.xtt.mcpbox.i18n.Lang.entriesOf(com.xtt.mcpbox.i18n.Lang.EN).size
-        fun writeOut(name: String, text: String) {
-            val dir = android.os.Environment.getExternalStoragePublicDirectory(
-                android.os.Environment.DIRECTORY_DOWNLOADS
-            )
-            val file = java.io.File(dir, name)
-            runCatching {
-                if (!dir.exists()) dir.mkdirs()
-                file.writeText(text)
-            }.fold(
-                onSuccess = { langInfo = L("已导出到 %s").format(file.absolutePath) },
-                onFailure = { langInfo = L("导出失败：%s").format(it.message) }
-            )
-        }
-        AlertDialog(
-            onDismissRequest = { showLang = false },
-            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(28.dp),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { Text(L("语言包"), fontSize = 20.sp) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        L("当前语言：%s\n内置英文词条：%s 条\n已导入语言包：").format(
-                            com.xtt.mcpbox.i18n.Lang.packDisplayName(cur),
-                            builtinCount
-                        ) + com.xtt.mcpbox.i18n.Lang.packLanguages().joinToString("、").ifBlank { L("无") },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.5.sp,
-                        lineHeight = 18.sp
-                    )
-                    if (langInfo.isNotBlank()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(langInfo, color = MaterialTheme.colorScheme.primary, fontSize = 12.5.sp)
-                    }
-                    // 已导入的语言包：可以逐个删掉
-                    val packs = com.xtt.mcpbox.i18n.Lang.packLanguages()
-                    if (packs.isNotEmpty()) {
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            L("已导入的语言包"),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.sp
-                        )
-                        packs.forEach { id ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        com.xtt.mcpbox.i18n.Lang.packDisplayName(id),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 13.sp
-                                    )
-                                    Text(
-                                        L("%s · %s 条译文").format(
-                                            id, com.xtt.mcpbox.i18n.Lang.entryCount(id)
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 11.sp
-                                    )
-                                }
-                                TextButton(onClick = {
-                                    com.xtt.mcpbox.i18n.Lang.deletePack(ctx, id)
-                                    if (AppCore.prefs.appLang == id) {
-                                        AppCore.prefs.appLang = "system"
-                                        com.xtt.mcpbox.i18n.Lang.init(
-                                            ctx, "system", com.xtt.mcpbox.i18n.Lang.systemIsEnglish
-                                        )
-                                    }
-                                    langInfo = L("已删除")
-                                    onLangChanged()
-                                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(14.dp))
-                    PillButton(
-                        L("导出模板"),
-                        Modifier.fillMaxWidth(),
-                        outlined = true,
-                        color = MaterialTheme.colorScheme.primary
-                    ) {
-                        writeOut(
-                            "mcpbox-lang-template.json",
-                            com.xtt.mcpbox.i18n.Lang.exportTemplate(ctx, "en")
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    PillButton(
-                        L("导出当前语言包"),
-                        Modifier.fillMaxWidth(),
-                        outlined = true,
-                        color = MaterialTheme.colorScheme.primary
-                    ) {
-                        writeOut("mcpbox-lang-$cur.json", com.xtt.mcpbox.i18n.Lang.exportPack(ctx, cur))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    PillButton(
-                        L("从文件导入"),
-                        Modifier.fillMaxWidth(),
-                        outlined = true,
-                        color = MaterialTheme.colorScheme.primary
-                    ) { importLang.launch(arrayOf("application/json", "*/*")) }
-                    if (com.xtt.mcpbox.i18n.Lang.packLanguages().isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        PillButton(
-                            L("删除导入的语言包"),
-                            Modifier.fillMaxWidth(),
-                            outlined = true,
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            com.xtt.mcpbox.i18n.Lang.packLanguages().forEach {
-                                com.xtt.mcpbox.i18n.Lang.deletePack(ctx, it)
-                            }
-                            AppCore.prefs.appLang = "system"
-                            com.xtt.mcpbox.i18n.Lang.init(ctx, "system", com.xtt.mcpbox.i18n.Lang.systemIsEnglish)
-                            langInfo = L("已删除")
-                            onLangChanged()
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        L("语言包就是一个 JSON：\"中文原文\" 对应 \"译文\"。导出模板照着填即可。"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.5.sp,
-                        lineHeight = 17.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showLang = false }) {
-                    Text(L("关闭"), color = MaterialTheme.colorScheme.primary)
                 }
             }
         )

@@ -84,7 +84,8 @@ import kotlinx.coroutines.withContext
  * 三个页面：
  *  - 首页：两张卡（备份 / 恢复备份）+ 当前内容 + 说明
  *  - 备份页：用**开关**挑要备份的部分，底栏自带 全选 / 全不选 / 导出；
- *            点导出先选方式（文件导出 = 每个部分一个 json，zip 导出 = 打包成一个 zip），
+ *            点导出先选方式（分开导出 = 每个部分各自一个压缩包，整体导出 = 一个 zip、
+ *            每部分一个子文件夹），
  *            选完方式再选一个文件夹，文件直接落进去（SAF，不用手打文件名）
  *  - 恢复页：选完备份文件后的整页界面 —— 详情卡 + 统计 + 每部分一个开关，底栏同样是
  *            全选 / 全不选 / 恢复所选项
@@ -108,6 +109,9 @@ fun BackupScreen(
     var pickSettings by rememberSaveable { mutableStateOf(true) }
     var pickTools by rememberSaveable { mutableStateOf(true) }
     var pickStats by rememberSaveable { mutableStateOf(true) }
+    // 自定义背景：单独一部分（要连带图片 / 视频副本）；副本本身可以再单独关掉
+    var pickBackdrop by rememberSaveable { mutableStateOf(false) }
+    var pickBackdropFiles by rememberSaveable { mutableStateOf(true) }
     var includeToken by rememberSaveable { mutableStateOf(true) }
     var showMode by remember { mutableStateOf(false) }
     var pendingMode by remember { mutableStateOf("") }
@@ -124,6 +128,7 @@ fun BackupScreen(
     val chosen = buildList {
         if (pickMemory) add(Backup.Part.MEMORY)
         if (pickSettings) add(Backup.Part.SETTINGS)
+        if (pickBackdrop) add(Backup.Part.BACKDROP)
         if (pickTools) add(Backup.Part.CUSTOM_TOOLS)
         if (pickStats) add(Backup.Part.STATS)
     }
@@ -134,7 +139,14 @@ fun BackupScreen(
         Backup.Part.SETTINGS -> Backup.exportSettings(AppCore.prefs, includeToken)
         Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
         Backup.Part.STATS -> AppCore.stats.exportJson()
+        Backup.Part.BACKDROP -> Backup.exportBackdrop(AppCore.prefs, backdropFiles().map { it.name to it.length() })
     }
+
+    /** 背景文件副本（只有勾了「包含背景文件」才有）。 */
+    fun blobsOf(part: Backup.Part): Map<String, ByteArray> =
+        if (part == Backup.Part.BACKDROP && pickBackdropFiles) {
+            backdropFiles().associate { it.name to it.readBytes() }
+        } else emptyMap()
 
     /** 已经在首页了就往外退，否则回首页。底栏和页面切换同时进行，不用等。 */
     fun backHome() {
@@ -144,7 +156,9 @@ fun BackupScreen(
     fun loadZip(bytes: ByteArray) {
         runCatching { Backup.readZip(bytes) }.fold(
             onSuccess = { bundle ->
-                restoreItems = bundle.parts.map { (part, text) -> RestoreItem.ready(part, text) }
+                restoreItems = bundle.parts.map { (part, text) ->
+                    RestoreItem.ready(part, text, bundle.blobs)
+                }
                 restoreMeta = RestoreMeta(bundle.exportedAt, bundle.app, bundle.tokenIncluded)
                 result = null
                 page = RESTORE
@@ -156,12 +170,20 @@ fun BackupScreen(
     fun loadFiles(uris: List<Uri>) {
         scope.launch {
             val loaded = withContext(Dispatchers.IO) {
-                uris.mapNotNull { u ->
-                    val text = runCatching {
-                        ctx.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() }
-                    }.getOrNull()
-                    val part = text?.let { Backup.sniff(it) }
-                    if (text == null || part == null) null else RestoreItem.ready(part, text)
+                uris.flatMap { u ->
+                    val bytes = runCatching {
+                        ctx.contentResolver.openInputStream(u)?.use { it.readBytes() }
+                    }.getOrNull() ?: return@flatMap emptyList()
+                    // 单部分导出的是压缩包（PK 魔数）：按 zip 解，背景还能带上文件副本
+                    if (bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
+                        runCatching { Backup.readZip(bytes) }.getOrNull()
+                            ?.parts?.map { (part, text) -> RestoreItem.ready(part, text, emptyMap()) }
+                            .orEmpty()
+                    } else {
+                        val text = bytes.toString(Charsets.UTF_8)
+                        val part = Backup.sniff(text)
+                        if (part == null) emptyList() else listOf(RestoreItem.ready(part, text))
+                    }
                 }
             }
             if (loaded.isEmpty()) {
@@ -187,7 +209,9 @@ fun BackupScreen(
                     settings = AppCore.prefs,
                     memory = AppCore.memory,
                     customTools = AppCore.customTools,
-                    stats = AppCore.stats
+                    stats = AppCore.stats,
+                    backdropDir = java.io.File(AppCore.app.filesDir, "backdrop"),
+                    blobs = item.blobs
                 )
             }.fold(
                 onSuccess = { L("%s：%s").format(partLabel(item.part), it) },
@@ -204,10 +228,14 @@ fun BackupScreen(
             if (touchedSettings)
                 "\n" + L("外观 / 语言的改动已经生效；端口或监听目录变了的话，记得去「后台与运行」重启一次服务器。")
             else ""
-        // 设置可能被整份换掉：核心配置、权限、自定义工具都得重读
+        // 设置可能被整份换掉：核心配置、权限、**工具包 / 工具开关**、自定义工具都得重读
+        // （这几样都存在同一份偏好里，光写盘不行 —— 内存里的还是旧的，界面看着就像没恢复）
         AppCore.config.reload()
         AppCore.permissions.load()
         AppCore.customTools.load()
+        AppCore.packs.load()
+        AppCore.toolMeta.load()
+        AppCore.profiles.load()
         AppCore.log.enabled = AppCore.config.logEnabled
         // 主题 / 语言 / 彩蛋语言开关都可能在备份里，重建整棵树才对得上
         onThemeChanged()
@@ -260,6 +288,7 @@ fun BackupScreen(
 
         val parts = chosen.associateWith { textOf(it) }
         val withToken = includeToken && pickSettings
+        val stamps = stamp()
         scope.launch {
             val done = withContext(Dispatchers.IO) {
                 runCatching {
@@ -270,16 +299,28 @@ fun BackupScreen(
                         )
                     }
                     if (mode == "zip") {
-                        val bytes = Backup.zip(parts = parts, includeToken = withToken)
+                        // 整体导出：一个 zip，每个部分一个子文件夹（memory/…、settings/…），
+                        // 背景附件在 backdrop/files/ 下
+                        val blobs = chosen.flatMap { blobsOf(it).entries }.associate { it.key to it.value }
+                        val bytes = Backup.zip(parts = parts, includeToken = withToken, blobs = blobs)
                         writeIntoFolder(
                             resolver, uri, "application/zip",
-                            "mcpbox-backup-${stamp()}.zip", bytes
+                            "mcpbox-backup-$stamps.zip", bytes
                         )
                     } else {
+                        // 单部分导出：每个部分**各自一个压缩包**（里面是 manifest + 这一部分的文件，
+                        // 背景还会带上 backdrop/ 里的图片 / 视频）—— 以前是裸 .json，带不了二进制
                         parts.forEach { (part, text) ->
+                            val bytes = Backup.zip(
+                                parts = mapOf(part to text),
+                                includeToken = withToken,
+                                blobs = blobsOf(part),
+                                // 单部分：文件平铺在 zip 根目录（只有一个部分，不再套一层子文件夹）
+                                nested = false
+                            )
                             writeIntoFolder(
-                                resolver, uri, "application/json",
-                                "${baseOf(part.file)}-${stamp()}.json", text.toByteArray()
+                                resolver, uri, "application/zip",
+                                "mcpbox-${baseOf(part.file)}-$stamps.zip", bytes
                             )
                         }
                     }
@@ -290,7 +331,7 @@ fun BackupScreen(
                 ctx,
                 if (ok) {
                     if (mode == "zip") L("已导出 %s 个部分").format(parts.size)
-                    else L("已导出 %s 个文件").format(parts.size)
+                    else L("已导出 %s 个压缩包").format(parts.size)
                 } else {
                     L("导出失败")
                 }
@@ -361,6 +402,10 @@ fun BackupScreen(
                             onPickTools = { pickTools = it },
                             pickStats = pickStats,
                             onPickStats = { pickStats = it },
+                            pickBackdrop = pickBackdrop,
+                            onPickBackdrop = { pickBackdrop = it },
+                            pickBackdropFiles = pickBackdropFiles,
+                            onPickBackdropFiles = { pickBackdropFiles = it },
                             includeToken = includeToken,
                             onIncludeToken = { includeToken = it },
                             onBack = { backHome() }
@@ -415,6 +460,8 @@ fun BackupScreen(
                         pickSettings = true
                         pickTools = true
                         pickStats = true
+                        pickBackdrop = true
+                        pickBackdropFiles = true
                         includeToken = true
                     },
                     onSelectNone = {
@@ -422,6 +469,8 @@ fun BackupScreen(
                         pickSettings = false
                         pickTools = false
                         pickStats = false
+                        pickBackdrop = false
+                        pickBackdropFiles = false
                         includeToken = false
                     },
                     onAction = { showMode = true }
@@ -473,6 +522,8 @@ private const val RESTORE = "restore"
 private data class RestoreItem(
     val part: Backup.Part,
     val text: String,
+    /** 背景文件副本（zip 里 backdrop/ 下的那些）；其它部分为空。 */
+    val blobs: Map<String, ByteArray> = emptyMap(),
     val selected: Boolean = true,
     /** 合并 / 覆盖；设置这一部分永远走覆盖，不参与询问。 */
     val merge: Boolean = true,
@@ -486,11 +537,14 @@ private data class RestoreItem(
          * 设置的默认模式是**覆盖**（跟「把备份整份还原回去」的直觉一致），
          * 记忆库和自定义工具默认合并，至于要不要问用户，交给恢复页判断。
          */
-        fun ready(part: Backup.Part, text: String): RestoreItem = RestoreItem(
-            part = part,
-            text = text,
-            merge = part != Backup.Part.SETTINGS
-        )
+        fun ready(part: Backup.Part, text: String, blobs: Map<String, ByteArray> = emptyMap()): RestoreItem =
+            RestoreItem(
+                part = part,
+                text = text,
+                blobs = blobs,
+                // 设置与背景都是「整份还原成备份那一刻」，不问合并 / 覆盖
+                merge = part != Backup.Part.SETTINGS && part != Backup.Part.BACKDROP
+            )
     }
 }
 
@@ -547,7 +601,7 @@ private fun BackupHomePage(
                 ),
                 RowSpec(
                     title = L("恢复备份"),
-                    subtitle = L("从 zip 备份或单独的文件恢复，可挑部分、可逐项选合并还是覆盖"),
+                    subtitle = L("从整体 zip 或单部分的压缩包恢复，可挑部分、可逐项选合并还是覆盖"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     onClick = { showPick = true }
@@ -566,7 +620,7 @@ private fun BackupHomePage(
                 ),
                 RowSpec(
                     title = L("设置"),
-                    subtitle = L("端口、权限、外观、超时等全部配置项"),
+                    subtitle = L("端口、权限、外观、超时等全部配置项，含工具包与各个开关的状态"),
                     icon = Icons.Filled.Lock,
                     trailing = { OutlineTag(L("%s 项").format(settingCount), MaterialTheme.colorScheme.primary) }
                 ),
@@ -614,7 +668,7 @@ private fun BackupHomePage(
             title = { Text(L("从哪里恢复？"), fontSize = 20.sp) },
             text = {
                 Text(
-                    L("zip 备份里可能装着多部分内容，导入后可以先挑要恢复哪些；单独的文件可以一次选多个。"),
+                    L("整体 zip 里可能装着多部分内容，导入后可以先挑要恢复哪些；单部分的压缩包可以一次选多个。"),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     lineHeight = 18.sp
@@ -624,13 +678,13 @@ private fun BackupHomePage(
                 TextButton(onClick = {
                     showPick = false
                     onPickZip()
-                }) { Text(L("选 zip 备份"), color = MaterialTheme.colorScheme.primary) }
+                }) { Text(L("选整体 zip"), color = MaterialTheme.colorScheme.primary) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showPick = false
                     onPickFiles()
-                }) { Text(L("选单独文件"), color = MaterialTheme.colorScheme.primary) }
+                }) { Text(L("选单部分压缩包"), color = MaterialTheme.colorScheme.primary) }
             }
         )
     }
@@ -649,6 +703,10 @@ private fun BackupCreatePage(
     onPickTools: (Boolean) -> Unit,
     pickStats: Boolean,
     onPickStats: (Boolean) -> Unit,
+    pickBackdrop: Boolean,
+    onPickBackdrop: (Boolean) -> Unit,
+    pickBackdropFiles: Boolean,
+    onPickBackdropFiles: (Boolean) -> Unit,
     includeToken: Boolean,
     onIncludeToken: (Boolean) -> Unit,
     onBack: () -> Unit
@@ -713,13 +771,32 @@ private fun BackupCreatePage(
                     icon = Icons.Filled.DateRange,
                     onClick = { onPickStats(!pickStats) },
                     trailing = { AppSwitch(pickStats, onPickStats) }
+                ),
+                RowSpec(
+                    title = L("自定义背景"),
+                    subtitle = L("外观与语言 → 背景 里的全部选项（类型、遮罩、模糊、填充、卡片与底栏透明度…）"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Star,
+                    onClick = { onPickBackdrop(!pickBackdrop) },
+                    trailing = { AppSwitch(pickBackdrop, onPickBackdrop) }
+                ),
+                // 背景文件的副本是「自定义背景」的附属项：不勾就只备份选项，
+                // 恢复后背景还在（现有图片 / 视频不动），要换电脑用就得勾上
+                RowSpec(
+                    title = L("包含背景文件"),
+                    subtitle = L("把当前图片 / 视频的副本一起打包，导入后立刻就是备份那一刻的样子；视频可能很大"),
+                    subtitleMaxLines = 2,
+                    visible = pickBackdrop,
+                    indent = true,
+                    onClick = { onPickBackdropFiles(!pickBackdropFiles) },
+                    trailing = { AppSwitch(pickBackdropFiles, onPickBackdropFiles) }
                 )
             )
         )
     }
 }
 
-/** 导出方式：分开的 json 还是打包成 zip。 */
+/** 导出方式：每个部分各自一个压缩包，还是打包成一个整体 zip。 */
 @Composable
 private fun ExportModeDialog(
     count: Int,
@@ -753,14 +830,14 @@ private fun ExportModeDialog(
                 Spacer(Modifier.height(14.dp))
 
                 ModeChoiceRow(
-                    title = L("文件导出"),
-                    desc = L("每个部分一个 json，直接放进你选的文件夹"),
+                    title = L("分开导出"),
+                    desc = L("每个部分各自一个压缩包（里面是这一部分的文件），直接放进你选的文件夹"),
                     onClick = { onPick("files") }
                 )
                 Spacer(Modifier.height(4.dp))
                 ModeChoiceRow(
-                    title = L("zip 导出"),
-                    desc = L("打包成一个 zip，里面是 manifest.json 加各个部分"),
+                    title = L("整体导出"),
+                    desc = L("打包成一个 zip：每个部分一个子文件夹（memory/、settings/…），背景图片 / 视频在 backdrop/files/ 里"),
                     onClick = { onPick("zip") }
                 )
 
@@ -961,7 +1038,8 @@ private fun ModePickerDialog(
                 )
                 Spacer(Modifier.height(10.dp))
                 items.forEach { item ->
-                    if (item.part == Backup.Part.SETTINGS) return@forEach
+                    // 设置与背景都是整份还原，不参与合并 / 覆盖的选择
+                    if (item.part == Backup.Part.SETTINGS || item.part == Backup.Part.BACKDROP) return@forEach
                     if (!targetNotEmpty(item.part)) return@forEach
                     Row(
                         Modifier
@@ -1013,6 +1091,7 @@ private fun partLabel(part: Backup.Part): String = when (part) {
     Backup.Part.SETTINGS -> L("设置")
     Backup.Part.CUSTOM_TOOLS -> L("自定义工具")
     Backup.Part.STATS -> L("统计")
+    Backup.Part.BACKDROP -> L("自定义背景")
 }
 
 private fun partIcon(part: Backup.Part) = when (part) {
@@ -1020,6 +1099,7 @@ private fun partIcon(part: Backup.Part) = when (part) {
     Backup.Part.SETTINGS -> Icons.Filled.Lock
     Backup.Part.CUSTOM_TOOLS -> Icons.Filled.Build
     Backup.Part.STATS -> Icons.Filled.DateRange
+    Backup.Part.BACKDROP -> Icons.Filled.Star
 }
 
 /**
@@ -1045,6 +1125,9 @@ private fun restoreSummary(item: RestoreItem): String = when (item.part) {
 
     // 统计：显示备份文件里的规模（不是当前 App 的），方便判断要不要恢复
     Backup.Part.STATS -> statsSummary(item.text)
+
+    // 背景：说明带了哪些文件、有没有副本
+    Backup.Part.BACKDROP -> backdropSummary(item)
 }
 
 /** 备份里的统计有多大：多少天记录、总请求多少次。 */
@@ -1056,6 +1139,29 @@ private fun statsSummary(text: String): String = runCatching {
     )
 }.getOrElse { L("请求热力图、运行时长与启动次数") }
 
+/** 背景部分的说明：从备份 JSON 里读「带了哪些文件」。 */
+private fun backdropSummary(item: RestoreItem): String = runCatching {
+    val o = org.json.JSONObject(item.text)
+    val files = o.optJSONArray("files") ?: org.json.JSONArray()
+    val names = (0 until files.length()).map {
+        files.optJSONObject(it)?.optString("name").orEmpty()
+    }.filter { it.isNotBlank() }
+    val kind = o.optJSONObject("values")?.optString("kind").orEmpty()
+    val parts = ArrayList<String>()
+    if (kind.isNotBlank()) parts += L(if (kind == "video") "视频背景" else "图片背景")
+    parts += if (names.isEmpty()) L("只有设置，没带文件")
+    else L("带 %s 个文件").format(names.size) + "（" + names.joinToString("、") + "）"
+    parts.joinToString(" · ")
+}.getOrElse { L("背景选项 + 背景文件副本") }
+
+/** `files/backdrop/` 里的背景文件（图片 / 视频各最多一份）。 */
+private fun backdropFiles(): List<java.io.File> =
+    java.io.File(AppCore.app.filesDir, "backdrop")
+        .listFiles()
+        ?.filter { it.isFile && !it.name.endsWith(".part") && it.length() > 0 }
+        ?.sortedByDescending { it.lastModified() }
+        ?: emptyList()
+
 /** 这一部分现在有没有内容（空的就不用问合并还是覆盖）。 */
 private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
     Backup.Part.MEMORY ->
@@ -1063,6 +1169,7 @@ private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
 
     Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.tools.isNotEmpty()
     Backup.Part.SETTINGS -> true
+    Backup.Part.BACKDROP -> AppCore.prefs.backdropEnabled
     Backup.Part.STATS -> AppCore.stats.snapshot().let {
         it.requestsTotal > 0L || it.appLaunches > 0L || it.serverMillis > 0L
     }

@@ -143,8 +143,8 @@ fun TerminalScreen(
 
         Spacer(Modifier.height(10.dp))
 
-        // 输入
-        Column(Modifier.padding(horizontal = 14.dp)) {
+        // 输入。底部留 8dp：贴着屏幕最底下太挤（尤其是开着 IME 的时候），往上抬一点点
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp)) {
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },
