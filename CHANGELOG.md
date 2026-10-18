@@ -22,6 +22,54 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## v1.2.3 · 2026-10-18
+
+<details open>
+<summary><b>中文</b></summary>
+
+### 新增
+
+- **自定义背景**：可设置图片或视频背景，支持遮罩透明度、模糊、填充方式，并可分别调整卡片和底栏的透明度
+- **应用图标可切换**：线性极简、扁平、渐变、液体玻璃、暗色玻璃、新拟物、档案抽屉
+- **语言包改为独立子页**：导入、导出、删除都在一页内
+
+### 改进
+
+- 备份导出统一为压缩包；整体导出时每个部分单独存放在一个子文件夹
+- 恢复「设置」时会一并带回工具包与工具开关状态
+- 终端输入框上移一点，不再紧贴底部
+- 统计页去掉底部说明文字
+
+### 修复
+
+- Shizuku 后端终端无法启动
+- 唤起输入法时，输入框与键盘之间多出一条空隙
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### New
+
+- **Custom background**: image or video backdrop with overlay opacity, blur, fill mode, plus separate card / bottom-bar opacity
+- **Switchable app icon**: Line, Flat, Gradient, Liquid glass, Dark glass, Neumorphic, File drawer
+- **Language packs moved to their own page**: import, export and delete in one place
+
+### Improvements
+
+- Backup exports are now archives; a single zip puts each part in its own subfolder
+- Restoring settings now also restores tool packs and tool switches
+- Terminal input sits a bit higher off the bottom edge
+- Removed the note at the bottom of the stats page
+
+### Fixes
+
+- Terminal failed to start on the Shizuku backend
+- Extra gap between the input box and the keyboard when the IME appears
+
+</details>
+
 ## v1.2.2-143 · 2026-10-18
 
 **终端修好 Shizuku / 输入法空隙 / 备份支持自定义背景 / 语言包改成子页**
