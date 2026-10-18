@@ -82,6 +82,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppCore.init(application)
+        // 图标自愈：老版本切图标可能把进程杀在半路，留下「一个 LAUNCHER 组件都没开」的状态
+        // （桌面图标变系统默认图、点了进不去）。每次启动按偏好对齐一遍，组件开关带 DONT_KILL_APP。
+        AppIcon.ensureConsistent(this)
         // 统计：打开一次 App 记一次（一个进程只记一次，转屏 / 切回任务不算新的）
         AppCore.stats.noteAppLaunch()
         setContent {

@@ -71,28 +71,98 @@ enum class AppIcon(
         /**
          * 真正去改组件开关：目标那个 ENABLED、其余 DISABLED。
          *
-         * 用 `DONT_KILL_APP`：桌面上那个图标要等系统把 launcher 的数据刷一遍才换过来，
-         * 但 App 本身不用被杀（杀进程等于把正在跑的 MCP 服务一起带走）。
+         * **顺序很关键（踩过坑）**：必须先 ENABLE 目标、再 DISABLE 别的。
+         * 之前是「按枚举顺序逐个设」，`setComponentEnabledSetting` **不带 DONT_KILL_APP 时
+         * 第一个 DISABLE 就会把进程杀掉**，后面的 ENABLE 根本没机会执行 ——
+         * 结果是「一个 LAUNCHER 组件都不剩」：桌面图标变成系统默认图、点了也进不去 App，
+         * 看着就是「切换没效果 / 图标坏了」。所以现在：
+         *   ① 所有设置都带 `DONT_KILL_APP`，任何时刻都至少有一个可用入口；
+         *   ② 先开目标、再关其余；
+         *   ③ 最后要重启的话，由我们自己排一个「重新拉起」的闹钟再退出进程（[restartApp]）。
          */
         fun apply(ctx: Context, target: AppIcon, restart: Boolean = true) {
             val pm = ctx.packageManager
-            // restart = true 时**不**带 DONT_KILL_APP：系统会把进程杀掉，桌面图标立刻换新的，
-            // 服务几秒后自恢复（和装了一次 App 一样）。设置页切换前会先弹窗讲清楚。
-            val flags = if (restart) 0 else PackageManager.DONT_KILL_APP
-            entries.forEach { icon ->
-                val state = if (icon == target) {
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                } else {
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                }
+            fun set(icon: AppIcon, enabled: Boolean) {
                 runCatching {
                     pm.setComponentEnabledSetting(
                         ComponentName(ctx, ctx.packageName + icon.alias),
-                        state,
-                        flags
+                        if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
                     )
                 }
             }
+            set(target, true)
+            entries.filter { it != target }.forEach { set(it, false) }
+            if (restart) restartApp(ctx, target)
+        }
+
+        /**
+         * 自愈：确保「恰好有一个」LAUNCHER 组件是开着的。
+         *
+         * 老版本切图标时可能把进程杀在半路，留下一个都没开的状态（桌面图标成了系统默认图、
+         * 点进去也没反应）。这里每次启动都按偏好对齐一遍；组件开关本身用 `DONT_KILL_APP`，
+         * 不会影响正在跑的服务。
+         */
+        fun ensureConsistent(ctx: Context) {
+            val pm = ctx.packageManager
+            val want = current()
+            // 先确认目标开着，再确认其余都关着
+            val enabled = entries.filter { icon ->
+                runCatching {
+                    pm.getComponentEnabledSetting(ComponentName(ctx, ctx.packageName + icon.alias))
+                }.getOrDefault(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT) !=
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            if (enabled.size == 1 && enabled.first() == want) return
+            fun set(icon: AppIcon, on: Boolean) {
+                runCatching {
+                    pm.setComponentEnabledSetting(
+                        ComponentName(ctx, ctx.packageName + icon.alias),
+                        if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                        else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+            }
+            set(want, true)
+            entries.filter { it != want }.forEach { set(it, false) }
+        }
+
+        /**
+         * 重启自己：先排一个 0.6 秒后「重新打开 App」的闹钟，再退出进程。
+         *
+         * 为什么不用 `setComponentEnabledSetting` 的「不带 DONT_KILL_APP」去让系统杀：
+         * 那样是**同步**杀的，控制流回不来，也没法保证图标状态已经写完。
+         * 这里组件状态早就落好了，退出只是为了让启动器立刻刷新图标缓存。
+         * 闹钟万一被系统拦掉也没关系 —— 桌面上的新图标此时已经能正常点了。
+         */
+        private fun restartApp(ctx: Context, target: AppIcon) {
+            runCatching {
+                val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                    .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                    .setComponent(ComponentName(ctx, ctx.packageName + target.alias))
+                    .addFlags(
+                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                            android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    )
+                val pi = android.app.PendingIntent.getActivity(
+                    ctx, 0, intent,
+                    android.app.PendingIntent.FLAG_IMMUTABLE or
+                        android.app.PendingIntent.FLAG_CANCEL_CURRENT
+                )
+                val am = ctx.getSystemService(android.app.AlarmManager::class.java)
+                // 用 setAndAllowWhileIdle（不需要精确闹钟权限），几秒内会拉起
+                am.setAndAllowWhileIdle(
+                    android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    android.os.SystemClock.elapsedRealtime() + 600L,
+                    pi
+                )
+            }
+            // 让 toast 先显示出来，再退出
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, 400L)
         }
     }
 }
