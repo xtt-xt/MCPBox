@@ -17,10 +17,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,21 +38,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -97,7 +104,15 @@ object OnboardingState {
 }
 
 /** 引导一共几步。 */
-private const val STEPS = 5
+private const val STEPS = 6
+
+/** 各步的下标。用常量而不是裸数字：插一步时不用去猜哪个 `2` 指的是什么。 */
+private const val STEP_WELCOME = 0
+private const val STEP_LANG = 1
+private const val STEP_TERMS = 2
+private const val STEP_PERM = 3
+private const val STEP_RESTORE = 4
+private const val STEP_DONE = 5
 
 /** 连点保护：两次「下一步」至少隔这么久，手快点两下不会跳两步。 */
 private const val ADVANCE_GAP_MS = 400L
@@ -106,13 +121,17 @@ private const val ADVANCE_GAP_MS = 400L
 private val StepIcons: List<ImageVector> = listOf(
     Icons.Filled.Home,
     Icons.Filled.Star,
-    Icons.Filled.Lock,
-    Icons.Filled.Refresh,
-    Icons.Filled.Done
+    Icons.Filled.Info,       // 2 条款
+    Icons.Filled.Lock,       // 3 权限
+    Icons.Filled.Refresh,    // 4 恢复备份
+    Icons.Filled.Done        // 5 就绪
 )
 
 /**
- * 初始引导：欢迎 → 语言 → 权限 → 恢复备份 → 开始使用。
+ * 初始引导：欢迎 → 语言 → 条款 → 权限 → 恢复备份 → 开始使用。
+ *
+ * 语言放在条款前面：条款正文按语言整份取（中文 / 英文），
+ * 先让用户选好语言，读到的才是他看得懂的那一份。
  *
  * 版式统一是「上面图标 / 中间选项 / 下面按钮」：
  *  - 顶部：大图标 + 标题 + 一句说明；
@@ -148,6 +167,13 @@ fun OnboardingScreen(
     // 否则恢复结果那几行字会当场被刷掉
     var langDirty by remember { mutableStateOf(false) }
     var lastAdvance by remember { mutableStateOf(SystemClock.uptimeMillis()) }
+    // 条款页：滚到底没有、勾选框勾了没有。
+    // 放在 key(langRev) 外面 —— 换语言会整块重建，但已经读到的进度不该丢。
+    val termsScroll = rememberScrollState()
+    var termsAgreed by remember { mutableStateOf(false) }
+    val termsAtEnd by remember {
+        derivedStateOf { termsScroll.maxValue > 0 && termsScroll.value >= termsScroll.maxValue - 8 }
+    }
 
     // 恢复页的状态放在这一层：底栏那个「恢复」按钮要用到
     var parts by remember { mutableStateOf<List<RestorePart>>(emptyList()) }
@@ -164,6 +190,11 @@ fun OnboardingScreen(
 
     fun finish() {
         AppCore.prefs.onboardDone = true
+        // 记「同意过哪个版本」，不是一个布尔值：条款升到 v2 时能据此要求重新确认
+        if (termsAgreed && AppCore.prefs.legalAgreedVersion != Legal.VERSION) {
+            AppCore.prefs.legalAgreedVersion = Legal.VERSION
+            AppCore.prefs.legalAgreedAt = System.currentTimeMillis()
+        }
         OnboardingState.step = 0
         OnboardingState.visible = false
         onFinish()
@@ -180,7 +211,7 @@ fun OnboardingScreen(
     // 系统返回 = 回上一步；第一步没得退（免得一进来就退出整个引导）
     BackHandler { if (step > 0) goTo(step - 1, "系统返回") }
 
-    // 第 3 步的权限状态靠系统设置改，回到 App 要能立刻看见，所以轻量轮询
+    // 权限那一步的状态靠系统设置改，回到 App 要能立刻看见，所以轻量轮询
     LaunchedEffect(Unit) {
         while (true) {
             rev++
@@ -217,15 +248,15 @@ fun OnboardingScreen(
 
     // 这一点算不算「全部完成」
     val stepDone = when (step) {
-        2 -> permsAllOk
-        3 -> restored
+        STEP_PERM -> permsAllOk
+        STEP_RESTORE -> restored
         else -> true
     }
     // 恢复页：选好文件、还没恢复 → 主按钮就是「恢复」
-    val readyToRestore = step == 3 && parts.isNotEmpty() && !restored
+    val readyToRestore = step == STEP_RESTORE && parts.isNotEmpty() && !restored
 
     val buttonLabel = when {
-        step == STEPS - 1 -> L("开始使用")
+        step == STEP_DONE -> L("开始使用")
         readyToRestore -> L("恢复")
         stepDone -> L("下一步")
         else -> L("跳过")
@@ -259,7 +290,17 @@ fun OnboardingScreen(
             ) { current ->
                 Column(Modifier.fillMaxSize()) {
                     StepHeader(current)
-                    Column(
+                    if (current == STEP_TERMS) {
+                        // 条款页自己管滚动：外层再套一层 verticalScroll 会变成嵌套滚动，
+                        // 「滚到底没有」就测不准了
+                        TermsStep(
+                            ctx = ctx,
+                            scroll = termsScroll,
+                            atEnd = termsAtEnd,
+                            agreed = termsAgreed,
+                            onAgree = { termsAgreed = it }
+                        )
+                    } else Column(
                         Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -267,13 +308,13 @@ fun OnboardingScreen(
                             .padding(bottom = 10.dp)
                     ) {
                         when (current) {
-                            0 -> WelcomeStep()
-                            1 -> LanguageStep(ctx) {
+                            STEP_WELCOME -> WelcomeStep()
+                            STEP_LANG -> LanguageStep(ctx) {
                                 langRev++
                                 onLangChanged()
                             }
-                            2 -> PermissionStep(ctx, rev, requestPermission) { rev++ }
-                            3 -> RestoreStep(
+                            STEP_PERM -> PermissionStep(ctx, rev, requestPermission) { rev++ }
+                            STEP_RESTORE -> RestoreStep(
                                 parts = parts,
                                 merge = merge,
                                 restoring = restoring,
@@ -301,10 +342,11 @@ fun OnboardingScreen(
             BottomBar(
                 label = buttonLabel,
                 outlined = buttonOutlined,
-                enabled = !restoring && !approvalShowing,
+                enabled = !restoring && !approvalShowing &&
+                    (step != STEP_TERMS || termsAgreed),
                 onClick = {
                     when {
-                        step == STEPS - 1 -> finish()
+                        step == STEP_DONE -> finish()
                         readyToRestore -> doRestore()
                         else -> advance()
                     }
@@ -378,22 +420,74 @@ private suspend fun runRestore(
     }.joinToString("\n")
 }
 
+/* ------------------------------------------------------------------ 3 条款 */
+
+/**
+ * 条款页：正文整块可滚动，滚到底才允许勾选，勾了底栏才会亮。
+ *
+ * 三件事都必要：
+ *  - 滚到底才解锁 → 至少真的把内容划过去了一趟；
+ *  - 单独勾选 → 不是一个「下一步」按钮顺手带过去的默认同意；
+ *  - 记版本号 → 条款改版后能要求重新确认（见 [Legal.VERSION]）。
+ */
+@Composable
+private fun ColumnScope.TermsStep(
+    ctx: Context,
+    scroll: ScrollState,
+    atEnd: Boolean,
+    agreed: Boolean,
+    onAgree: (Boolean) -> Unit
+) {
+    LegalScrollCard(
+        ctx = ctx,
+        scroll = scroll,
+        modifier = Modifier
+            .weight(1f)
+            .padding(horizontal = 20.dp)
+    )
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(enabled = atEnd) { onAgree(!agreed) }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = agreed,
+            onCheckedChange = if (atEnd) ({ onAgree(it) }) else null,
+            enabled = atEnd
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (atEnd) L("我已阅读并同意《用户协议》与《免责声明》") else L("请滚动阅读到最后"),
+            color = if (atEnd) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 13.5.sp,
+            lineHeight = 19.sp
+        )
+    }
+}
+
 /* ------------------------------------------------------------------ 通用零件 */
 
 @Composable
 private fun StepHeader(step: Int) {
     val title = when (step) {
-        0 -> L("欢迎使用 MCP 文件盒")
-        1 -> L("选择语言")
-        2 -> L("授予权限")
-        3 -> L("恢复备份")
+        STEP_WELCOME -> L("欢迎使用 MCP 文件盒")
+        STEP_LANG -> L("选择语言")
+        STEP_TERMS -> L("阅读并同意条款")
+        STEP_PERM -> L("授予权限")
+        STEP_RESTORE -> L("恢复备份")
         else -> L("准备就绪")
     }
     val subtitle = when (step) {
-        0 -> L("把手机变成 AI 能读写的文件服务器")
-        1 -> L("之后可以在「设置 → 外观与语言」里改")
-        2 -> L("授权后 AI 才能正常读写文件")
-        3 -> L("有备份的话可以现在恢复")
+        STEP_WELCOME -> L("把手机变成 AI 能读写的文件服务器")
+        STEP_LANG -> L("之后可以在「设置 → 外观与语言」里改")
+        STEP_TERMS -> L("以下条款是本应用的使用约定")
+        STEP_PERM -> L("授权后 AI 才能正常读写文件")
+        STEP_RESTORE -> L("有备份的话可以现在恢复")
         else -> L("下面这些之后都能改")
     }
     Column(

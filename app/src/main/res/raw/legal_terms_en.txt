@@ -1,0 +1,65 @@
+# MCP File Box Terms of Use
+Version v1 | Effective date: October 20, 2026
+
+## 1. Acceptance and Scope
+1.1 These terms are an agreement between you and the developer of MCP File Box ("the App") regarding your use of the App and its documentation.
+1.2 By installing, opening or otherwise using the App, you are deemed to have read and accepted all of these terms and the Disclaimer. If you do not agree, stop using the App and uninstall it.
+1.3 These terms apply only to builds released through official channels. Builds that are modified, repackaged or redistributed by third parties are not covered by any commitment in these terms.
+
+## 2. What the App Does
+2.1 The App is an MCP protocol server running locally on an Android device. It lets AI clients on the same device read and write files, run commands and access web pages.
+2.2 The App runs entirely on your device. There is no cloud account, no developer-operated server, and no data is stored on your behalf elsewhere.
+2.3 The App is released as open source under GPL-3.0. The source code is public and you may review, build and modify it yourself.
+
+## 3. Your Authorization and Confirmations
+3.1 System permissions the App needs (file access, overlays, notifications, battery optimization, Root, Shizuku, etc.) must be granted by you, and you may revoke them in system settings at any time.
+3.2 For sensitive operations such as writing, deleting or running commands, the App shows an approval prompt. Tapping "Allow" authorizes that single operation; tapping "Always allow" grants long-term authorization for that kind of operation and creates a corresponding rule.
+3.3 Decisions you make in approval prompts, and the results of the operations they authorize, are your own responsibility.
+3.4 After being authorized, an AI client may perform many operations in sequence. Their consequences are likewise your responsibility; check each request before approving it.
+
+## 4. Acceptable Use
+4.1 Your use of the App must comply with the laws and regulations applicable to you.
+4.2 You must not use the App to: access devices or data without authorization; infringe others' privacy, intellectual property or other lawful rights; create or spread illegal content; interfere with or damage networks and information systems; or engage in other unlawful or unethical conduct.
+4.3 Use the App only on devices you own or are authorized to use. Exposing the service port to untrusted networks, or sharing your access token with others, is at your own risk.
+
+## 5. Privacy and Data
+5.1 The App does not collect or upload your file contents, directory structure, device identifiers, usage records or any other personal information.
+5.2 The App contains no telemetry, crash reporting, advertising or tracking components.
+5.3 Settings, sessions, the memory store and statistics are stored only in the App's private directory on your device. Request statistics are generated and displayed locally and are never sent to any server.
+5.4 If you use "Check for updates", the App queries GitHub for the latest public release information. That request carries no device identifiers or usage data.
+5.5 Web pages you open in the built-in browser, and external addresses the AI visits through the App, are governed by those sites' own data practices, which are outside the App's control.
+5.6 Backups you export are yours to keep safe. They may contain your access token, memory store and settings; do not place them where others can access them.
+
+## 6. Open Source License and Third-Party Components
+6.1 The App is released under GPL-3.0. You may use, copy, modify and distribute it within the terms of that license.
+6.2 The App uses third-party components such as Shizuku, AndroidX and Kotlin, each under its own license.
+6.3 Defects in, changes to, or discontinuation of third-party components do not constitute a breach by the developer.
+
+## 7. Cost, Updates and Availability
+7.1 The App is provided free of charge, and the developer makes no service-level commitment in connection with it.
+7.2 The developer may release new versions, change or remove features, or stop maintaining the App at any time.
+7.3 New versions may change the interface, behavior or these terms; material changes will be announced in the App.
+
+## 8. Disclaimer
+The Disclaimer forms an integral part of these terms and has the same effect as this section.
+
+## 9. Limitation of Liability
+9.1 To the maximum extent permitted by law, the developer is not liable for indirect or incidental losses, loss of data, loss of profit, device damage or third-party claims arising from the use of, or inability to use, the App.
+9.2 If applicable law does not permit the whole of the above exclusion, the developer's liability is limited to the amount you actually paid for the App, which, as free software, is zero.
+
+## 10. Changes, Termination and Interpretation
+10.1 These terms may change with new versions and will be published in the App. Continued use means you accept the changed terms.
+10.2 You may terminate these terms at any time by uninstalling the App.
+10.3 The developer interprets these terms. If clauses conflict, the more specific clause that better matches the actual feature prevails.
+10.4 If any clause is held invalid or unenforceable, the remaining clauses remain in effect.
+
+## 11. Governing Law and Disputes
+11.1 These terms are governed by the laws of the People's Republic of China (excluding the laws of Hong Kong, Macao and Taiwan).
+11.2 Disputes arising from these terms should first be resolved through friendly negotiation; failing that, they shall be submitted to the competent people's court where the developer is located.
+
+## 12. Miscellaneous
+12.1 The Chinese text of these terms prevails; translations are for reference only.
+12.2 These terms take effect on the date of publication.
+12.3 Contact: GitHub Issues (https://github.com/xtt-xt/MCPBox/issues).
+
+— End of document —

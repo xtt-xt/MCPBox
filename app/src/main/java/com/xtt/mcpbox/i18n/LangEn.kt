@@ -2446,6 +2446,16 @@ object LangEn {
     "按钮与弹窗也跟着变透明" to "Buttons and dialogs fade too",
     "关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明" to "When off, only cards and the bottom bar change; when on, pill buttons, dropdown menus and dialogs also use the card opacity",
     "手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）。关掉后背景的图片 / 视频会换一套更干净的渲染" to "Drag from the screen edge to move the page with your finger; release to go back or snap back (Android 13+). With it off, image / video backdrops use a cleaner rendering path",
-
+    // ---- 用户协议 / 免责声明 ----
+    "阅读并同意条款" to "Read and accept",
+    "以下条款是本应用的使用约定" to "These terms govern your use of the app",
+    "我已阅读并同意《用户协议》与《免责声明》" to "I have read and agree to the Terms of Use and the Disclaimer",
+    "请滚动阅读到最后" to "Scroll to the end to continue",
+    "用户协议" to "Terms of Use",
+    "免责声明" to "Disclaimer",
+    "条款" to "Legal",
+    "版本 %s · 同意于 %s" to "Version %s · agreed %s",
+    "版本 %s · 数据、设备、网络与 AI 行为风险" to "Version %s · data, device, network and AI risks",
+    "未同意" to "Not accepted",
     )
 }

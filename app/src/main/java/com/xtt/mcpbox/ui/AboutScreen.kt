@@ -86,6 +86,10 @@ private val CREDITS = listOf(
 private const val ABOUT_PAGE = "about"
 private const val DEV_PAGE = "dev"
 
+/** 关于页里再开的一层：法律文本全文（和开发者页同级）。 */
+private const val TERMS_PAGE = "legal/terms"
+private const val DISCLAIMER_PAGE = "legal/disclaimer"
+
 /**
  * 关于页。
  *
@@ -118,8 +122,8 @@ fun AboutScreen(
     // 开了「预见式返回动画」时，在开发者模式里手指拖着走（下面露出关于页）。
     PredictiveBackBox(
         onBack = { page = ABOUT_PAGE },
-        handleBack = page == DEV_PAGE,
-        follow = page == DEV_PAGE && AppCore.prefs.predictiveBack,
+        handleBack = page != ABOUT_PAGE,
+        follow = page != ABOUT_PAGE && AppCore.prefs.predictiveBack,
         behind = {
             AboutHomePage(
                 scroll = homeScroll,
@@ -128,6 +132,9 @@ fun AboutScreen(
                 onChanged = onChanged,
                 onUpdateFound = onUpdateFound,
                 onOpenDev = { page = DEV_PAGE },
+                onOpenLegal = { doc ->
+                    page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else DISCLAIMER_PAGE
+                },
                 onDevModeChanged = onDevModeChanged,
                 onBack = onBack
             )
@@ -143,7 +150,7 @@ fun AboutScreen(
         targetState = page,
         transitionSpec = {
             pageSlide(
-                entering = pageForward(targetState, initialState) { if (it == DEV_PAGE) 1 else 0 },
+                entering = pageForward(targetState, initialState) { if (it == ABOUT_PAGE) 0 else 1 },
                 commitDrag = commitDrag,
                 noOverlap = noOverlap
             )
@@ -154,7 +161,13 @@ fun AboutScreen(
         // 关于页整页是设置里的子页 → sub = true
         PageSurface(sub = true) {
         pages.SaveableStateProvider(current) {
-            if (current == DEV_PAGE) {
+            if (current == TERMS_PAGE || current == DISCLAIMER_PAGE) {
+                LegalScreen(
+                    ctx = ctx,
+                    doc = if (current == TERMS_PAGE) Legal.Doc.TERMS else Legal.Doc.DISCLAIMER,
+                    onBack = { page = ABOUT_PAGE }
+                )
+            } else if (current == DEV_PAGE) {
                 DevModePage(
                     revision = revision,
                     ctx = ctx,
@@ -190,6 +203,9 @@ fun AboutScreen(
                     onChanged = onChanged,
                     onUpdateFound = onUpdateFound,
                     onOpenDev = { page = DEV_PAGE },
+                    onOpenLegal = { doc ->
+                        page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else DISCLAIMER_PAGE
+                    },
                     onDevModeChanged = onDevModeChanged,
                     onBack = onBack
                 )
@@ -198,6 +214,18 @@ fun AboutScreen(
             }
 }
     }
+}
+
+/**
+ * 关于页「用户协议」那一行右侧的同意日期。
+ *
+ * 没同意过（老版本升级上来的人）显示「未同意」，不是空白 —— 空白会被当成加载中。
+ */
+internal fun agreedText(): String {
+    val at = AppCore.prefs.legalAgreedAt
+    if (at <= 0L) return L("未同意")
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+    return fmt.format(java.util.Date(at))
 }
 
 /* ------------------------------------------------------------------ 关于首页 */
@@ -210,6 +238,8 @@ private fun AboutHomePage(
     onChanged: () -> Unit,
     onUpdateFound: (UpdateChecker.Info) -> Unit,
     onOpenDev: () -> Unit,
+    /** 打开用户协议 / 免责声明全文。 */
+    onOpenLegal: (Legal.Doc) -> Unit = {},
     /** 连点图标解锁开发者模式时通知外面（「背景」子页里有没有「视频」跟着它变）。 */
     onDevModeChanged: () -> Unit = {},
     onBack: () -> Unit
@@ -371,6 +401,27 @@ private fun AboutHomePage(
                     AppCore.prefs.updateCheckDaily = on
                     onChanged()
                 }
+            )
+        )
+
+        // ------------------------------------------------ 条款
+        GroupLabel(L("条款"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("用户协议"),
+                    subtitle = L("版本 %s · 同意于 %s").format(Legal.VERSION, agreedText()),
+                    subtitleMaxLines = 1,
+                    icon = Icons.Filled.Info,
+                    onClick = { onOpenLegal(Legal.Doc.TERMS) }
+                ),
+                RowSpec(
+                    title = L("免责声明"),
+                    subtitle = L("版本 %s · 数据、设备、网络与 AI 行为风险").format(Legal.VERSION),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Info,
+                    onClick = { onOpenLegal(Legal.Doc.DISCLAIMER) }
+                )
             )
         )
 

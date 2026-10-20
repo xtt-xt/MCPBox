@@ -39,6 +39,10 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_FIRST_RUN = "first_run_done"
         /** 初始引导走完没有（走完 / 跳过都算走过）。 */
         const val KEY_ONBOARD_DONE = "onboard_done"
+        /** 同意过的条款版本（v1 / v2…）。条款升版时比对它，要求重新确认。 */
+        const val KEY_LEGAL_AGREED = "legal_agreed_version"
+        /** 同意条款的时间戳（毫秒）。 */
+        const val KEY_LEGAL_AGREED_AT = "legal_agreed_at"
         /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
         const val KEY_PACK_PROFILE = "pack_profile_view"
         /** 「不限时」开关打开前用的秒数（关掉开关时恢复回去）。 */
@@ -225,6 +229,21 @@ class Prefs(context: Context) : SettingsSource {
     var onboardDone: Boolean
         get() = getBoolean(KEY_ONBOARD_DONE, false)
         set(value) = putBoolean(KEY_ONBOARD_DONE, value)
+
+    /**
+     * 同意过哪个版本的《用户协议》与《免责声明》。
+     *
+     * 空串 = 从没同意过。将来条款改版只要把 [com.xtt.mcpbox.ui.Legal.VERSION] 提升，
+     * 老用户这里还是旧版本号，就能名正言顺地要求他重新读一遍。
+     */
+    var legalAgreedVersion: String
+        get() = getString(KEY_LEGAL_AGREED, "") ?: ""
+        set(value) = putString(KEY_LEGAL_AGREED, value)
+
+    /** 同意条款的时间戳（毫秒），0 = 没记过。 */
+    var legalAgreedAt: Long
+        get() = getLong(KEY_LEGAL_AGREED_AT, 0L)
+        set(value) = putLong(KEY_LEGAL_AGREED_AT, value)
 
     /** 这个键到底有没有写过（用来区分「从没写过」和「写成了 false」）。 */
     fun contains(key: String): Boolean = sp.contains(key)

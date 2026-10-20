@@ -39,7 +39,24 @@ Location: **Settings → App → Backup & restore**. Four parts:
 
 ## First-run onboarding
 
-A fresh install walks through five steps: **welcome → language → permissions → restore a backup → get started**.
+A fresh install walks through six steps: **welcome → language → terms → permissions → restore a backup → get started**.
+
+- The **terms** step only lets you tick the box after the text has been scrolled to the end, and
+  "Next" stays disabled until it is ticked. Accepting stores the terms version
+  (`legal_agreed_version`) and the time (`legal_agreed_at`) rather than a boolean, so a future
+  v2 of the terms can ask people to re-confirm; users upgrading from older versions show
+  "not accepted" but are not blocked.
+
+## Terms of use and disclaimer
+
+The text lives in `app/src/main/res/raw/legal_{terms,disclaimer}_{zh,en}.txt` instead of the i18n
+table: each document is provided whole per language (Chinese prevails), so sentence-by-sentence
+translation would only bloat `LangEn.kt`.
+
+- Where to read it: the **terms** step of the onboarding wizard; About → Legal → Terms / Disclaimer.
+- Rendering understands only `# ` and `## ` heading lines; everything else is a paragraph
+  (`LegalBody` in `ui/LegalScreen.kt`).
+- Editing the text means bumping `Legal.VERSION`; otherwise nobody is asked to re-confirm.
 
 - Upgrades are **not** interrupted (it only appears on a fresh install).
 - To see it again: tap the icon on the About page **7 times** to unlock **developer mode**, which can force it to run again.
