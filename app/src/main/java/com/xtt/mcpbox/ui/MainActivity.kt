@@ -23,6 +23,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -140,6 +141,8 @@ class MainActivity : ComponentActivity() {
                                 langRev = langRev
                             )
                         }
+                        // 条款更新提示：盖在 App 之上（底栏也盖住），但让引导先走
+                        if (!OnboardingState.visible) LegalNoticeHost()
                     }
                 }
             }
@@ -257,6 +260,35 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+}
+
+/**
+ * 条款更新提示的宿主：弹窗 + 盖在上面的全文页。
+ *
+ * 「前往查看」→ 全屏页盖住 App（版式和设置子页一样：大标题 + 返回箭头，没有勾选框），
+ * 按返回回到弹窗，弹窗还在，可以直接点「我已知晓」。
+ */
+@Composable
+private fun LegalNoticeHost() {
+    val ctx = LocalContext.current
+    // 启动时判断一次；判断完就不再重复评估（否则「我已知晓」写进 prefs 后
+    // 这个 state 会被冲掉，弹窗自己消失，看不到收起动作）
+    LaunchedEffect(Unit) { LegalNotice.visible = LegalNotice.shouldPrompt() }
+    val shown = LegalNotice.visible
+    if (!shown) return
+    PageSurface(sub = false) {
+        if (LegalNotice.viewing) {
+            LegalScreen(
+                ctx = ctx,
+                doc = LegalNotice.doc,
+                handleBack = true,
+                onBack = { LegalNotice.viewing = false }
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        }
+        if (!LegalNotice.viewing) LegalUpdateDialog()
     }
 }
 

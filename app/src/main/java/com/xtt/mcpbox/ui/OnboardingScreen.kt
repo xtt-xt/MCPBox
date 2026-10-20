@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -113,6 +114,9 @@ private const val STEP_TERMS = 2
 private const val STEP_PERM = 3
 private const val STEP_RESTORE = 4
 private const val STEP_DONE = 5
+
+/** 条款页勾选行的高度：按两行文案（13.5sp / 19sp 行高）预留，避免变行时闪。 */
+private val TERMS_AGREE_ROW_HEIGHT = 58.dp
 
 /** 连点保护：两次「下一步」至少隔这么久，手快点两下不会跳两步。 */
 private const val ADVANCE_GAP_MS = 400L
@@ -445,9 +449,14 @@ private fun ColumnScope.TermsStep(
             .weight(1f)
             .padding(horizontal = 20.dp)
     )
+    // 【高度必须钉死】未读是一行字、读完后是两行字。
+    // 文案一变行数就变 → 卡片高度变 → 可滚动区间 maxValue 变 →
+    // 刚到底又变回「没到底」→ 文案来回切，界面就一直在闪。
+    // 所以这里按两行预留高度，文案怎么变都不影响布局。
     Row(
         Modifier
             .fillMaxWidth()
+            .heightIn(min = TERMS_AGREE_ROW_HEIGHT)
             .padding(horizontal = 20.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = atEnd) { onAgree(!agreed) }
@@ -465,7 +474,8 @@ private fun ColumnScope.TermsStep(
             color = if (atEnd) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.5.sp,
-            lineHeight = 19.sp
+            lineHeight = 19.sp,
+            maxLines = 2
         )
     }
 }

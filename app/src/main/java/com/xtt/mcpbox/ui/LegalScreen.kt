@@ -4,6 +4,7 @@
 package com.xtt.mcpbox.ui
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
@@ -18,15 +19,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.R
 import com.xtt.mcpbox.i18n.L
 import com.xtt.mcpbox.i18n.Lang
@@ -52,6 +59,16 @@ object Legal {
     /** 展示用的发布日期。 */
     const val DATE = "2026-10-20"
 
+    /**
+     * 每个版本的变更说明。弹窗里逐条列给用户看。
+     *
+     * 改协议正文时：升 [VERSION]，并在这里补一条同名条目 ——
+     * 老用户下次启动就会被拦一次，看到「这次改了什么」。
+     */
+    val CHANGELOG: Map<String, List<String>> = mapOf(
+        "v1" to listOf("本应用新增用户协议与免责声明")
+    )
+
     enum class Doc(val titleZh: String, val titleEn: String) {
         TERMS("用户协议", "Terms of Use"),
         DISCLAIMER("免责声明", "Disclaimer")
@@ -74,6 +91,97 @@ object Legal {
 }
 
 /**
+ * 条款更新提示的显隐。
+ *
+ * 放在全局（和 [OnboardingState] 一个路子）而不是塞进 AppRoot：
+ * 「前往查看」要盖住整个 App，弹窗和全屏页谁在上层得有同一份状态。
+ */
+object LegalNotice {
+    /** 弹窗开着没有。 */
+    var visible by mutableStateOf(false)
+
+    /** 正在看全文（全屏页盖住了 App，回来后弹窗还在）。 */
+    var viewing by mutableStateOf(false)
+
+    /** 全屏页打开的是哪一份。 */
+    var doc by mutableStateOf(Legal.Doc.TERMS)
+
+    /**
+     * 启动时该不该弹。
+     *
+     * 判断就一句：记下的版本号是不是当前版本。从没同意过（空串）也走这条路，
+     * 于是「老版本升级上来」和「协议改版」共用一套提示，不用分两处写。
+     */
+    fun shouldPrompt(): Boolean =
+        AppCore.prefs.onboardDone && AppCore.prefs.legalAgreedVersion != Legal.VERSION
+
+    /** 记成「已经知道了」：写版本号 + 时间。 */
+    fun acknowledge() {
+        AppCore.prefs.legalAgreedVersion = Legal.VERSION
+        AppCore.prefs.legalAgreedAt = System.currentTimeMillis()
+        visible = false
+        viewing = false
+    }
+}
+
+/**
+ * 条款更新弹窗：列出本版改了什么，两个出口 ——
+ * 「我已知晓」记为读过，「前往查看」打开全文（回来弹窗还在）。
+ */
+@Composable
+fun LegalUpdateDialog() {
+    val previous = AppCore.prefs.legalAgreedVersion
+    val changes = Legal.CHANGELOG[Legal.VERSION].orEmpty()
+    AlertDialog(
+        onDismissRequest = { /* 只认两个按钮：随手点外面关掉会让提示白弹一次 */ },
+        title = {
+            Text(
+                if (previous.isBlank()) L("请阅读用户协议与免责声明") else L("用户协议已更新"),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Medium
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    L("当前版本 %s").format(Legal.VERSION),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                changes.forEach { line ->
+                    Text(
+                        "· $line",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 14.sp,
+                        lineHeight = 21.sp
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (!previous.isBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        L("你上次同意的是 %s").format(previous),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.5.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                LegalNotice.doc = Legal.Doc.TERMS
+                LegalNotice.viewing = true
+            }) { Text(L("前往查看")) }
+        },
+        dismissButton = {
+            TextButton(onClick = { LegalNotice.acknowledge() }) { Text(L("我已知晓")) }
+        }
+    )
+}
+
+/**
  * 全文页：关于页里点进来读。
  *
  * 这里不复用设置子页的转场，因为它挂在关于页内部的一层 page 上，
@@ -83,9 +191,12 @@ object Legal {
 fun LegalScreen(
     ctx: Context,
     doc: Legal.Doc,
+    /** 盖在 App 上时接管系统返回键（关于页内部的用法由外层栈接，不需要）。 */
+    handleBack: Boolean = false,
     onBack: () -> Unit
 ) {
     val body = remember(doc, Lang.current) { Legal.text(ctx, doc) }
+    if (handleBack) BackHandler { onBack() }
     Column(
         Modifier
             .fillMaxSize()

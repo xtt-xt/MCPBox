@@ -545,13 +545,28 @@ private fun DevModePage(
             listOf(
                 RowSpec(
                     title = L("强制进入初始引导"),
-                    subtitle = L("立刻重走一遍五步引导，并清掉「已经走过」的记录（下次打开也会进）"),
+                    subtitle = L("立刻重走一遍六步引导，并清掉「已经走过」的记录（下次打开也会进）"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     onClick = {
                         AppCore.prefs.onboardDone = false
                         OnboardingState.step = 0
                         OnboardingState.visible = true
+                    }
+                ),
+                // 条款改版后的「请重新确认」只在版本号变化时出现，
+                // 正常情况下只有真正的老用户能碰到 —— 这里手动清掉记录，随时能预览。
+                RowSpec(
+                    title = L("预览条款提示"),
+                    subtitle = L("清掉「已同意」的记录并立刻弹一次条款提示（测试协议改版用）"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        AppCore.prefs.legalAgreedVersion = ""
+                        AppCore.prefs.legalAgreedAt = 0L
+                        LegalNotice.viewing = false
+                        LegalNotice.visible = true
+                        toast(ctx, L("已清掉同意记录，弹出条款提示"))
                     }
                 )
             )

@@ -2457,5 +2457,14 @@ object LangEn {
     "版本 %s · 同意于 %s" to "Version %s · agreed %s",
     "版本 %s · 数据、设备、网络与 AI 行为风险" to "Version %s · data, device, network and AI risks",
     "未同意" to "Not accepted",
+    "前往查看" to "Read it",
+    "我已知晓" to "Got it",
+    "用户协议已更新" to "Terms updated",
+    "请阅读用户协议与免责声明" to "Read the terms and disclaimer",
+    "当前版本 %s" to "Current version %s",
+    "你上次同意的是 %s" to "You last agreed to %s",
+    "预览条款提示" to "Preview terms prompt",
+    "清掉「已同意」的记录并立刻弹一次条款提示（测试协议改版用）" to "Clear the acceptance record and show the terms prompt right away (for testing a revision)",
+    "已清掉同意记录，弹出条款提示" to "Acceptance cleared, terms prompt shown",
     )
 }
