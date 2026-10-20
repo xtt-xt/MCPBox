@@ -8,26 +8,28 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -97,23 +99,31 @@ object Legal {
  * 「前往查看」要盖住整个 App，弹窗和全屏页谁在上层得有同一份状态。
  */
 object LegalNotice {
-    /** 弹窗开着没有。 */
+    /** 提示页开着没有。 */
     var visible by mutableStateOf(false)
 
-    /** 正在看全文（全屏页盖住了 App，回来后弹窗还在）。 */
+    /** 正在看全文（全屏页盖住了提示页，返回后提示页还在）。 */
     var viewing by mutableStateOf(false)
 
     /** 全屏页打开的是哪一份。 */
     var doc by mutableStateOf(Legal.Doc.TERMS)
 
     /**
-     * 启动时该不该弹。
+     * 启动时该不该显示。
      *
      * 判断就一句：记下的版本号是不是当前版本。从没同意过（空串）也走这条路，
      * 于是「老版本升级上来」和「协议改版」共用一套提示，不用分两处写。
+     *
+     * 再加一个「下次进入时预览」（开发者模式）：只影响这一次启动，不碰同意记录。
      */
-    fun shouldPrompt(): Boolean =
-        AppCore.prefs.onboardDone && AppCore.prefs.legalAgreedVersion != Legal.VERSION
+    fun shouldPrompt(): Boolean {
+        if (!AppCore.prefs.onboardDone) return false
+        if (AppCore.prefs.legalPreviewNext) {
+            AppCore.prefs.legalPreviewNext = false
+            return true
+        }
+        return AppCore.prefs.legalAgreedVersion != Legal.VERSION
+    }
 
     /** 记成「已经知道了」：写版本号 + 时间。 */
     fun acknowledge() {
@@ -125,60 +135,117 @@ object LegalNotice {
 }
 
 /**
- * 条款更新弹窗：列出本版改了什么，两个出口 ——
- * 「我已知晓」记为读过，「前往查看」打开全文（回来弹窗还在）。
+ * 条款提示页：版式和设置子页一致（大标题 + 返回箭头），正文列出本版改了什么。
+ *
+ * 两个出口：
+ *  · 「我已知晓」→ 记为已读（写版本号），提示不再出现；
+ *  · 「前往查看」→ 打开全文页，返回后仍停在这一页。
+ *
+ * 返回箭头等同于「我已知晓」：提示只在版本变化后的第一次出现，
+ * 关掉就记账，不回锅（否则每次启动都要拦一次）。
  */
 @Composable
-fun LegalUpdateDialog() {
+fun LegalNoticePage(
+    /** 返回箭头 / 系统返回：记为已读并关掉。 */
+    onAcknowledge: () -> Unit,
+    onView: () -> Unit
+) {
     val previous = AppCore.prefs.legalAgreedVersion
     val changes = Legal.CHANGELOG[Legal.VERSION].orEmpty()
-    AlertDialog(
-        onDismissRequest = { /* 只认两个按钮：随手点外面关掉会让提示白弹一次 */ },
-        title = {
-            Text(
-                if (previous.isBlank()) L("请阅读用户协议与免责声明") else L("用户协议已更新"),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Medium
+    BackHandler { onAcknowledge() }
+    Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
+            PageHeader(
+                title = if (previous.isBlank()) L("请阅读用户协议与免责声明") else L("用户协议已更新"),
+                actions = {
+                    RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onAcknowledge)
+                }
             )
-        },
-        text = {
-            Column {
+            Column(Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) {
                 Text(
                     L("当前版本 %s").format(Legal.VERSION),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
-                Spacer(Modifier.height(10.dp))
-                changes.forEach { line ->
-                    Text(
-                        "· $line",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
                 if (!previous.isBlank()) {
-                    Spacer(Modifier.height(8.dp))
                     Text(
                         L("你上次同意的是 %s").format(previous),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.5.sp
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 3.dp)
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                LegalNotice.doc = Legal.Doc.TERMS
-                LegalNotice.viewing = true
-            }) { Text(L("前往查看")) }
-        },
-        dismissButton = {
-            TextButton(onClick = { LegalNotice.acknowledge() }) { Text(L("我已知晓")) }
+            GroupLabel(L("本版变更"))
+            CardBox(Modifier.padding(horizontal = 18.dp)) {
+                changes.forEach { line ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            "·",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 14.sp,
+                            modifier = Modifier.width(14.dp)
+                        )
+                        Text(
+                            line,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp
+                        )
+                    }
+                }
+                if (changes.isEmpty()) {
+                    Text(
+                        L("这一版只是同步了条款版本号"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.5.sp
+                    )
+                }
+            }
+            GroupLabel(L("全文"))
+            CardGroup(
+                listOf(
+                    RowSpec(
+                        title = L("用户协议"),
+                        subtitle = L("版本 %s").format(Legal.VERSION),
+                        subtitleMaxLines = 1,
+                        icon = Icons.Filled.Info,
+                        onClick = onView
+                    )
+                )
+            )
+            Spacer(Modifier.height(8.dp))
         }
-    )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp)
+        ) {
+            PillButton(
+                L("前往查看"),
+                Modifier.fillMaxWidth(),
+                outlined = true,
+                onClick = onView
+            )
+            Spacer(Modifier.height(8.dp))
+            PillButton(
+                L("我已知晓"),
+                Modifier.fillMaxWidth(),
+                onClick = onAcknowledge
+            )
+        }
+    }
 }
 
 /**

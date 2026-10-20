@@ -43,6 +43,8 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_LEGAL_AGREED = "legal_agreed_version"
         /** 同意条款的时间戳（毫秒）。 */
         const val KEY_LEGAL_AGREED_AT = "legal_agreed_at"
+        /** 开发者模式：下次启动时预览一次条款提示（不影响同意记录）。 */
+        const val KEY_LEGAL_PREVIEW_NEXT = "legal_preview_next"
         /** 权限页「工具包」正在查看哪个会话（纯界面状态，跟 AI 实际用的会话无关）。 */
         const val KEY_PACK_PROFILE = "pack_profile_view"
         /** 「不限时」开关打开前用的秒数（关掉开关时恢复回去）。 */
@@ -239,6 +241,16 @@ class Prefs(context: Context) : SettingsSource {
     var legalAgreedVersion: String
         get() = getString(KEY_LEGAL_AGREED, "") ?: ""
         set(value) = putString(KEY_LEGAL_AGREED, value)
+
+    /**
+     * 开发者模式里的「下次进入时预览条款提示」。
+     *
+     * 只让下一次启动显示一次，用完自己清掉；**不碰** [legalAgreedVersion] ——
+     * 否则预览一次就等于真的确认过一次，反而看不出真实状态。
+     */
+    var legalPreviewNext: Boolean
+        get() = getBoolean(KEY_LEGAL_PREVIEW_NEXT, false)
+        set(value) = putBoolean(KEY_LEGAL_PREVIEW_NEXT, value)
 
     /** 同意条款的时间戳（毫秒），0 = 没记过。 */
     var legalAgreedAt: Long

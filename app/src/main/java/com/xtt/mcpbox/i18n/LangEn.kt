@@ -2463,8 +2463,11 @@ object LangEn {
     "请阅读用户协议与免责声明" to "Read the terms and disclaimer",
     "当前版本 %s" to "Current version %s",
     "你上次同意的是 %s" to "You last agreed to %s",
-    "预览条款提示" to "Preview terms prompt",
-    "清掉「已同意」的记录并立刻弹一次条款提示（测试协议改版用）" to "Clear the acceptance record and show the terms prompt right away (for testing a revision)",
-    "已清掉同意记录，弹出条款提示" to "Acceptance cleared, terms prompt shown",
+    "下次进入时预览条款提示" to "Preview terms prompt on next launch",
+    "下次打开 App 时显示一次条款提示，用来检查改版后的效果（不影响同意记录）" to "Show the terms prompt once on the next launch, to check a revision (the acceptance record is left alone)",
+    "下次打开 App 会显示条款提示" to "The terms prompt will show on the next launch",
+    "本版变更" to "What changed",
+    "全文" to "Full text",
+    "这一版只是同步了条款版本号" to "This version only bumped the terms version",
     )
 }

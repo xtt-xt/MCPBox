@@ -557,16 +557,13 @@ private fun DevModePage(
                 // 条款改版后的「请重新确认」只在版本号变化时出现，
                 // 正常情况下只有真正的老用户能碰到 —— 这里手动清掉记录，随时能预览。
                 RowSpec(
-                    title = L("预览条款提示"),
-                    subtitle = L("清掉「已同意」的记录并立刻弹一次条款提示（测试协议改版用）"),
+                    title = L("下次进入时预览条款提示"),
+                    subtitle = L("下次打开 App 时显示一次条款提示，用来检查改版后的效果（不影响同意记录）"),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Refresh,
                     onClick = {
-                        AppCore.prefs.legalAgreedVersion = ""
-                        AppCore.prefs.legalAgreedAt = 0L
-                        LegalNotice.viewing = false
-                        LegalNotice.visible = true
-                        toast(ctx, L("已清掉同意记录，弹出条款提示"))
+                        AppCore.prefs.legalPreviewNext = true
+                        toast(ctx, L("下次打开 App 会显示条款提示"))
                     }
                 )
             )

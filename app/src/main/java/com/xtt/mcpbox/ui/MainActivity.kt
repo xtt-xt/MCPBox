@@ -264,19 +264,18 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * 条款更新提示的宿主：弹窗 + 盖在上面的全文页。
+ * 条款提示的宿主：提示页 + 盖在上面的全文页。
  *
- * 「前往查看」→ 全屏页盖住 App（版式和设置子页一样：大标题 + 返回箭头，没有勾选框），
- * 按返回回到弹窗，弹窗还在，可以直接点「我已知晓」。
+ * 两者都是设置子页的版式（大标题 + 返回箭头），不是弹窗：
+ * 「前往查看」打开全文，返回回到提示页，再返回（或点「我已知晓」）记为已读。
  */
 @Composable
 private fun LegalNoticeHost() {
     val ctx = LocalContext.current
     // 启动时判断一次；判断完就不再重复评估（否则「我已知晓」写进 prefs 后
-    // 这个 state 会被冲掉，弹窗自己消失，看不到收起动作）
+    // 这个 state 会被冲掉，页面自己消失，看不到收起动作）
     LaunchedEffect(Unit) { LegalNotice.visible = LegalNotice.shouldPrompt() }
-    val shown = LegalNotice.visible
-    if (!shown) return
+    if (!LegalNotice.visible) return
     PageSurface(sub = false) {
         if (LegalNotice.viewing) {
             LegalScreen(
@@ -286,9 +285,14 @@ private fun LegalNoticeHost() {
                 onBack = { LegalNotice.viewing = false }
             )
         } else {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+            LegalNoticePage(
+                onAcknowledge = { LegalNotice.acknowledge() },
+                onView = {
+                    LegalNotice.doc = Legal.Doc.TERMS
+                    LegalNotice.viewing = true
+                }
+            )
         }
-        if (!LegalNotice.viewing) LegalUpdateDialog()
     }
 }
 
