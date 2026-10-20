@@ -57,7 +57,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -171,12 +171,22 @@ fun OnboardingScreen(
     // 否则恢复结果那几行字会当场被刷掉
     var langDirty by remember { mutableStateOf(false) }
     var lastAdvance by remember { mutableStateOf(SystemClock.uptimeMillis()) }
-    // 条款页：滚到底没有、勾选框勾了没有。
+    // 条款页：读到过没有、勾选框勾了没有。
+    //
+    // 【为什么是「一次性置位」而不是实时判断到底】
+    // 一旦滑到底，那一行文案就从「请滚动阅读到最后」变成两行的「我已阅读并同意…」，
+    // 内容高度跟着变，可滚动区间的 maxValue 也就变了 —— 此时用「当前是不是到底」
+    // 实时判断会立刻变回 false，然后又变回 true，界面就开始闪。
+    // 所以这里只往 true 走、永不回头：读到过就算读到过，滑回上面也不撤销。
     // 放在 key(langRev) 外面 —— 换语言会整块重建，但已经读到的进度不该丢。
     val termsScroll = rememberScrollState()
     var termsAgreed by remember { mutableStateOf(false) }
-    val termsAtEnd by remember {
-        derivedStateOf { termsScroll.maxValue > 0 && termsScroll.value >= termsScroll.maxValue - 8 }
+    var termsRead by remember { mutableStateOf(false) }
+    LaunchedEffect(termsScroll) {
+        snapshotFlow { termsScroll.value to termsScroll.maxValue }
+            .collect { (value, max) ->
+                if (!termsRead && max > 0 && value >= max - 8) termsRead = true
+            }
     }
 
     // 恢复页的状态放在这一层：底栏那个「恢复」按钮要用到
@@ -300,7 +310,7 @@ fun OnboardingScreen(
                         TermsStep(
                             ctx = ctx,
                             scroll = termsScroll,
-                            atEnd = termsAtEnd,
+                            read = termsRead,
                             agreed = termsAgreed,
                             onAgree = { termsAgreed = it }
                         )
@@ -438,7 +448,8 @@ private suspend fun runRestore(
 private fun ColumnScope.TermsStep(
     ctx: Context,
     scroll: ScrollState,
-    atEnd: Boolean,
+    /** 读到过没有。一旦为 true 就不再变回去（见调用处的说明）。 */
+    read: Boolean,
     agreed: Boolean,
     onAgree: (Boolean) -> Unit
 ) {
@@ -459,19 +470,19 @@ private fun ColumnScope.TermsStep(
             .heightIn(min = TERMS_AGREE_ROW_HEIGHT)
             .padding(horizontal = 20.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(18.dp))
-            .clickable(enabled = atEnd) { onAgree(!agreed) }
+            .clickable(enabled = read) { onAgree(!agreed) }
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Checkbox(
             checked = agreed,
-            onCheckedChange = if (atEnd) ({ onAgree(it) }) else null,
-            enabled = atEnd
+            onCheckedChange = if (read) ({ onAgree(it) }) else null,
+            enabled = read
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            if (atEnd) L("我已阅读并同意《用户协议》与《免责声明》") else L("请滚动阅读到最后"),
-            color = if (atEnd) MaterialTheme.colorScheme.onSurface
+            if (read) L("我已阅读并同意《用户协议》与《免责声明》") else L("请滚动阅读到最后"),
+            color = if (read) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.5.sp,
             lineHeight = 19.sp,
