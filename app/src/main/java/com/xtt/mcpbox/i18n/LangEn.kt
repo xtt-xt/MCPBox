@@ -2469,5 +2469,7 @@ object LangEn {
     "本版变更" to "What changed",
     "全文" to "Full text",
     "这一版只是同步了条款版本号" to "This version only bumped the terms version",
+    "版本 %s" to "Version %s",
+    "立刻重走一遍六步引导，并清掉「已经走过」的记录（下次打开也会进）" to "Run the six-step onboarding again right away and clear the \"already done\" flag (it will also show on next launch)",
     )
 }
