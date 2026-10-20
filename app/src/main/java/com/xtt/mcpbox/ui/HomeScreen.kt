@@ -333,7 +333,7 @@ private fun healthSpec(
 private fun GuideCard(ctx: Context, status: McpServer.ServerStatus) {
     val token = if (status.tokenEnabled) status.token else null
     val ip = NetUtil.localIpv4() ?: "127.0.0.1"
-    val url = NetUtil.buildUrl("http", ip, status.port.coerceAtLeast(8720), token)
+    val url = NetUtil.buildUrl("http", ip, status.port.coerceAtLeast(1024), token)
     val snippet = """
 {
   "mcpServers": {

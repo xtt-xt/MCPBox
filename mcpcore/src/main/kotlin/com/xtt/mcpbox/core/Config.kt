@@ -36,6 +36,14 @@ object Tokens {
 }
 
 /**
+ * 服务端口的出厂缺省值。App 层启动时按变体注入（正式版 8720，测试变体 8721），
+ * 好让两个包名的 App 在同一台手机上同时开服务。harness 不注入，仍是 8720。
+ */
+object DefaultPort {
+    @Volatile var value: Int = 8720
+}
+
+/**
  * Live configuration of the phone MCP server. Values are volatile so HTTP worker
  * threads always observe the latest state pushed from the UI.
  */
@@ -86,7 +94,7 @@ class Config(private val src: SettingsSource) {
         const val SSE = "sse"
     }
 
-    @Volatile var port: Int = 8720
+    @Volatile var port: Int = DefaultPort.value
     @Volatile var bindAll: Boolean = true
     @Volatile var tokenEnabled: Boolean = true
     @Volatile var token: String = ""
@@ -179,7 +187,7 @@ class Config(private val src: SettingsSource) {
     }
 
     fun reload() {
-        port = src.getInt(Keys.PORT, 8720).coerceIn(1024, 65535)
+        port = src.getInt(Keys.PORT, DefaultPort.value).coerceIn(1024, 65535)
         bindAll = src.getBoolean(Keys.BIND_ALL, true)
         tokenEnabled = src.getBoolean(Keys.TOKEN_ENABLED, true)
         token = src.getString(Keys.TOKEN, null) ?: ""

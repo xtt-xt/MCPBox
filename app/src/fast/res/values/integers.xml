@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (C) 2026 xtt -->
+<resources>
+    <!-- 测试变体的出厂端口：和正式版的 8720 错开，两个可以同时开服务 -->
+    <integer name="default_port">8721</integer>
+</resources>

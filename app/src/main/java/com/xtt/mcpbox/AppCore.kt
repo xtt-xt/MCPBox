@@ -103,6 +103,11 @@ object AppCore {
                 prefs.onboardDone = !prefs.isBlank()
             }
             com.xtt.mcpbox.ui.OnboardingState.visible = !prefs.onboardDone
+            // 每个构建变体自带出厂端口（正式版 8720 / 测试变体 8721），
+            // 这样两个包名的 App 能同时开服务而不抢端口
+            com.xtt.mcpbox.core.DefaultPort.value = runCatching {
+                application.resources.getInteger(R.integer.default_port)
+            }.getOrDefault(8720)
             config = Config(prefs)
             log = EventLog().also { it.enabled = config.logEnabled }
             permissions = PermissionStore(config, prefs)

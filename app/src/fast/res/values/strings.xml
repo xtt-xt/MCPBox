@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (C) 2026 xtt -->
+<resources>
+    <!-- 测试变体：桌面名字要和正式版区分开，避免点错 -->
+    <string name="app_name">MCP 文件盒 测试版</string>
+</resources>

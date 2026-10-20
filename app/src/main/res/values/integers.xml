@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<!-- Copyright (C) 2026 xtt -->
+<resources>
+    <!-- 出厂服务端口。测试变体（src/fast）里覆盖成 8721，好和正式版同时开。 -->
+    <integer name="default_port">8720</integer>
+</resources>

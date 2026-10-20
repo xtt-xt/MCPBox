@@ -48,6 +48,16 @@ android {
         debug {
             isMinifyEnabled = false
         }
+
+        // 日常装机用的变体：Release 签名 + 不跑 R8，装成独立的包名，可以和正式版共存。
+        // 构建比 release 快很多（省掉 R8 那几分钟），代价是 APK 大一些、没有混淆。
+        create("fast") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".fast"
+            versionNameSuffix = "-fast"
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
     }
 
     compileOptions {
