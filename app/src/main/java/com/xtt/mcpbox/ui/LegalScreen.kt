@@ -41,7 +41,7 @@ import com.xtt.mcpbox.i18n.L
 import com.xtt.mcpbox.i18n.Lang
 
 /**
- * 法律文本：用户协议 + 免责声明。
+ * 法律文本：用户协议 + 隐私政策。
  *
  * 正文放在 `res/raw/legal_*_{zh,en}.txt` 里，而不是塞进 [com.xtt.mcpbox.i18n.LangEn]
  * 那张「中文原文 → 译文」的大字典 —— 法律文本整段放进去会把词表撑爆，
@@ -56,10 +56,10 @@ private val LegalCardCorner = 24.dp
 object Legal {
 
     /** 当前条款版本。改了正文就要改它。 */
-    const val VERSION = "v1"
+    const val VERSION = "v2"
 
     /** 展示用的发布日期。 */
-    const val DATE = "2026-10-20"
+    const val DATE = "2026-10-24"
 
     /**
      * 每个版本的变更说明。弹窗里逐条列给用户看。
@@ -68,12 +68,16 @@ object Legal {
      * 老用户下次启动就会被拦一次，看到「这次改了什么」。
      */
     val CHANGELOG: Map<String, List<String>> = mapOf(
-        "v1" to listOf("本应用新增用户协议与免责声明")
+        "v1" to listOf("本应用新增用户协议与免责声明"),
+        "v2" to listOf(
+            "《免责声明》更名为《隐私政策》，正文改写为数据与权限说明",
+            "原免责声明中的风险与责任条款并入《用户协议》"
+        )
     )
 
     enum class Doc(val titleZh: String, val titleEn: String) {
         TERMS("用户协议", "Terms of Use"),
-        DISCLAIMER("免责声明", "Disclaimer")
+        PRIVACY("隐私政策", "Privacy Policy")
     }
 
     fun title(doc: Doc): String =
@@ -84,7 +88,7 @@ object Legal {
         val en = Lang.current == Lang.EN
         val res = when (doc) {
             Doc.TERMS -> if (en) R.raw.legal_terms_en else R.raw.legal_terms_zh
-            Doc.DISCLAIMER -> if (en) R.raw.legal_disclaimer_en else R.raw.legal_disclaimer_zh
+            Doc.PRIVACY -> if (en) R.raw.legal_privacy_en else R.raw.legal_privacy_zh
         }
         return runCatching {
             ctx.resources.openRawResource(res).bufferedReader().use { it.readText() }
@@ -161,7 +165,7 @@ fun LegalNoticePage(
                 .verticalScroll(rememberScrollState())
         ) {
             PageHeader(
-                title = if (previous.isBlank()) L("请阅读用户协议与免责声明") else L("用户协议已更新"),
+                title = if (previous.isBlank()) L("请阅读用户协议与隐私政策") else L("用户协议已更新"),
                 onBack = onAcknowledge
             )
             Column(Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) {
@@ -340,7 +344,7 @@ fun LegalScrollCard(
     modifier: Modifier = Modifier
 ) {
     val terms = remember(Lang.current) { Legal.text(ctx, Legal.Doc.TERMS) }
-    val disclaimer = remember(Lang.current) { Legal.text(ctx, Legal.Doc.DISCLAIMER) }
+    val privacy = remember(Lang.current) { Legal.text(ctx, Legal.Doc.PRIVACY) }
     Column(
         modifier
             .fillMaxWidth()
@@ -361,7 +365,7 @@ fun LegalScrollCard(
                 fontSize = 12.sp
             )
             Spacer(Modifier.height(16.dp))
-            LegalBody(disclaimer)
+            LegalBody(privacy)
         }
     }
 }

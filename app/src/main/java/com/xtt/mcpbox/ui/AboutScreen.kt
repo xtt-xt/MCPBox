@@ -88,7 +88,7 @@ private const val DEV_PAGE = "dev"
 
 /** 关于页里再开的一层：法律文本全文（和开发者页同级）。 */
 private const val TERMS_PAGE = "legal/terms"
-private const val DISCLAIMER_PAGE = "legal/disclaimer"
+private const val PRIVACY_PAGE = "legal/privacy"
 
 /**
  * 关于页。
@@ -133,7 +133,7 @@ fun AboutScreen(
                 onUpdateFound = onUpdateFound,
                 onOpenDev = { page = DEV_PAGE },
                 onOpenLegal = { doc ->
-                    page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else DISCLAIMER_PAGE
+                    page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else PRIVACY_PAGE
                 },
                 onDevModeChanged = onDevModeChanged,
                 onBack = onBack
@@ -161,10 +161,10 @@ fun AboutScreen(
         // 关于页整页是设置里的子页 → sub = true
         PageSurface(sub = true) {
         pages.SaveableStateProvider(current) {
-            if (current == TERMS_PAGE || current == DISCLAIMER_PAGE) {
+            if (current == TERMS_PAGE || current == PRIVACY_PAGE) {
                 LegalScreen(
                     ctx = ctx,
-                    doc = if (current == TERMS_PAGE) Legal.Doc.TERMS else Legal.Doc.DISCLAIMER,
+                    doc = if (current == TERMS_PAGE) Legal.Doc.TERMS else Legal.Doc.PRIVACY,
                     onBack = { page = ABOUT_PAGE }
                 )
             } else if (current == DEV_PAGE) {
@@ -204,7 +204,7 @@ fun AboutScreen(
                     onUpdateFound = onUpdateFound,
                     onOpenDev = { page = DEV_PAGE },
                     onOpenLegal = { doc ->
-                        page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else DISCLAIMER_PAGE
+                        page = if (doc == Legal.Doc.TERMS) TERMS_PAGE else PRIVACY_PAGE
                     },
                     onDevModeChanged = onDevModeChanged,
                     onBack = onBack
@@ -238,7 +238,7 @@ private fun AboutHomePage(
     onChanged: () -> Unit,
     onUpdateFound: (UpdateChecker.Info) -> Unit,
     onOpenDev: () -> Unit,
-    /** 打开用户协议 / 免责声明全文。 */
+    /** 打开用户协议 / 隐私政策全文。 */
     onOpenLegal: (Legal.Doc) -> Unit = {},
     /** 连点图标解锁开发者模式时通知外面（「背景」子页里有没有「视频」跟着它变）。 */
     onDevModeChanged: () -> Unit = {},
@@ -411,11 +411,11 @@ private fun AboutHomePage(
                     onClick = { onOpenLegal(Legal.Doc.TERMS) }
                 ),
                 RowSpec(
-                    title = L("免责声明"),
+                    title = L("隐私政策"),
                     subtitle = L("版本 %s · 数据、设备、网络与 AI 行为风险").format(Legal.VERSION),
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Info,
-                    onClick = { onOpenLegal(Legal.Doc.DISCLAIMER) }
+                    onClick = { onOpenLegal(Legal.Doc.PRIVACY) }
                 )
             )
         )

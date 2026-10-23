@@ -47,16 +47,19 @@ A fresh install walks through six steps: **welcome → language → terms → pe
   v2 of the terms can ask people to re-confirm; users upgrading from older versions show
   "not accepted" but are not blocked.
 
-## Terms of use and disclaimer
+## Terms of use and privacy policy
 
-The text lives in `app/src/main/res/raw/legal_{terms,disclaimer}_{zh,en}.txt` instead of the i18n
+The text lives in `app/src/main/res/raw/legal_{terms,privacy}_{zh,en}.txt` instead of the i18n
 table: each document is provided whole per language (Chinese prevails), so sentence-by-sentence
 translation would only bloat `LangEn.kt`.
 
-- Where to read it: the **terms** step of the onboarding wizard; About → Legal → Terms / Disclaimer.
+- Where to read it: the **terms** step of the onboarding wizard; About → Terms of Use / Privacy Policy.
 - Rendering understands only `# ` and `## ` heading lines; everything else is a paragraph
   (`LegalBody` in `ui/LegalScreen.kt`).
 - Editing the text means bumping `Legal.VERSION`; otherwise nobody is asked to re-confirm.
+- Each document is mirrored to `docs/09-用户协议.md` and `docs/10-隐私政策.md` (linked from the READMEs); update both sides together.
+- Each document is mirrored to `docs/09-用户协议.md` and `docs/10-隐私政策.md` (linked from the READMEs); update both sides together.
+- Each document is mirrored to `docs/09-用户协议.md` and `docs/10-隐私政策.md` (linked from the READMEs); update both sides together.
 
 - Upgrades are **not** interrupted (it only appears on a fresh install).
 - To see it again: tap the icon on the About page **7 times** to unlock **developer mode**, which can force it to run again.

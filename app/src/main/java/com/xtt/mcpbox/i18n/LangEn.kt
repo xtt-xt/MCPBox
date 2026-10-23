@@ -2446,13 +2446,14 @@ object LangEn {
     "按钮与弹窗也跟着变透明" to "Buttons and dialogs fade too",
     "关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明" to "When off, only cards and the bottom bar change; when on, pill buttons, dropdown menus and dialogs also use the card opacity",
     "从屏幕边缘拖动，页面跟手移动，松手返回。需要 Android 13。" to "Drag from the screen edge: the page follows your finger and returns when you let go. Needs Android 13.",
-    // ---- 用户协议 / 免责声明 ----
+    // ---- 用户协议 / 隐私政策 ----
     "阅读并同意条款" to "Read and accept",
     "以下条款是本应用的使用约定" to "These terms govern your use of the app",
-    "我已阅读并同意《用户协议》与《免责声明》" to "I have read and agree to the Terms of Use and the Disclaimer",
+    "我已阅读并同意《用户协议》与《隐私政策》" to "I have read and agree to the Terms of Use and the Privacy Policy",
     "请滚动阅读到最后" to "Scroll to the end to continue",
     "用户协议" to "Terms of Use",
-    "免责声明" to "Disclaimer",
+    "隐私政策" to "Privacy Policy",
+    "请阅读用户协议与隐私政策" to "Read the terms and privacy policy",
     "条款" to "Legal",
     "版本 %s · 同意于 %s" to "Version %s · agreed %s",
     "版本 %s · 数据、设备、网络与 AI 行为风险" to "Version %s · data, device, network and AI risks",
@@ -2460,7 +2461,7 @@ object LangEn {
     "前往查看" to "Read it",
     "我已知晓" to "Got it",
     "用户协议已更新" to "Terms updated",
-    "请阅读用户协议与免责声明" to "Read the terms and disclaimer",
+    
     "当前版本 %s" to "Current version %s",
     "你上次同意的是 %s" to "You last agreed to %s",
     "下次进入时预览条款提示" to "Preview terms prompt on next launch",

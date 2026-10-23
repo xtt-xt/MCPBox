@@ -481,7 +481,7 @@ private fun ColumnScope.TermsStep(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            if (read) L("我已阅读并同意《用户协议》与《免责声明》") else L("请滚动阅读到最后"),
+            if (read) L("我已阅读并同意《用户协议》与《隐私政策》") else L("请滚动阅读到最后"),
             color = if (read) MaterialTheme.colorScheme.onSurface
             else MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 13.5.sp,

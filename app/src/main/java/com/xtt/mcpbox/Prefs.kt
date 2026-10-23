@@ -254,7 +254,7 @@ class Prefs(context: Context) : SettingsSource {
         set(value) = putBoolean(KEY_ONBOARD_DONE, value)
 
     /**
-     * 同意过哪个版本的《用户协议》与《免责声明》。
+     * 同意过哪个版本的《用户协议》与《隐私政策》。
      *
      * 空串 = 从没同意过。将来条款改版只要把 [com.xtt.mcpbox.ui.Legal.VERSION] 提升，
      * 老用户这里还是旧版本号，就能名正言顺地要求他重新读一遍。

@@ -91,6 +91,14 @@ Full docs live in [`docs/en/`](docs/en/) (English) and [`docs/`](docs/) (Chinese
 | [06 Browser & UI automation](docs/en/06-browser-and-ui-automation.md) | The 18 browser tools, per-page login state, floating window, known limits; the 8 UI automation tools |
 | [07 Stats, backup, onboarding](docs/en/07-stats-backup-onboarding.md) | What stats count, backup & restore, first-run wizard, developer mode, localization |
 | [08 Build & release](docs/en/08-build-and-release.md) | Three modules, repository layout, build & test, signing, GitHub Actions, release flow |
+| [09 Terms of Use](docs/en/09-terms.md) | Acceptance, authorization, acceptable use, risk and liability |
+| [10 Privacy Policy](docs/en/10-privacy.md) | Where data lives, permission purposes, network access, token and logs, backups |
+
+## Terms and privacy
+
+Please read the [Terms of Use](docs/en/09-terms.md) and the [Privacy Policy](docs/en/10-privacy.md) (Chinese: [用户协议](docs/09-用户协议.md) / [隐私政策](docs/10-隐私政策.md)) before using the app. Both are also available in the app under About.
+
+In one sentence: files, memory, statistics and tokens stay on your own phone. There is no account, no developer server and no telemetry.
 
 ## License
 
