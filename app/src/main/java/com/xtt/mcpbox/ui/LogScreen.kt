@@ -8,6 +8,7 @@ import android.content.Context
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,19 +55,14 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, scrollTopTick: Int = 0, onChan
         title = L("日志"),
         bottomPadding = 20.dp
     ) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ChoiceChip(L("全部"), filter == null, MaterialTheme.colorScheme.primary) { filter = null }
-            ChoiceChip(L("调用"), filter == LogKind.REQUEST, Sem.info) { filter = LogKind.REQUEST }
-            ChoiceChip(L("审批"), filter == LogKind.APPROVAL, Sem.warn) { filter = LogKind.APPROVAL }
-            ChoiceChip(L("连接"), filter == LogKind.CONNECT, Sem.ok) { filter = LogKind.CONNECT }
-            ChoiceChip(L("错误"), filter == LogKind.ERROR, Sem.bad) { filter = LogKind.ERROR }
-        }
+        // 分类胶囊：选中实心主色、按下收圆角的同一套控件（见 CategoryPillRow）
+        val kinds = listOf(null, LogKind.REQUEST, LogKind.APPROVAL, LogKind.CONNECT, LogKind.ERROR)
+        val kindLabels = listOf(L("全部"), L("调用"), L("审批"), L("连接"), L("错误"))
+        CategoryPillRow(
+            items = kindLabels,
+            selected = kinds.indexOfFirst { it == filter }.coerceAtLeast(0),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+        ) { filter = kinds[it] }
 
         Spacer(Modifier.height(12.dp))
 

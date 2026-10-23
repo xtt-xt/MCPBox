@@ -377,25 +377,17 @@ private fun MemoryListPage(
 
         if (folders.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PillButton(
-                    L("全部"), outlined = folder.isNotBlank(), compact = true,
-                    color = if (folder.isBlank()) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                ) { onFolder("") }
-                folders.forEach { (name, count) ->
-                    PillButton(
-                        "$name $count", outlined = folder != name, compact = true,
-                        color = if (folder == name) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    ) { onFolder(if (folder == name) "" else name) }
-                }
+            // 文件夹筛选：和日志筛选同一套分类胶囊（选中实心主色、按下收圆角）
+            val names = listOf("") + folders.map { it.first }
+            val labels = listOf(L("全部")) + folders.map { "${it.first} ${it.second}" }
+            val selected = names.indexOfFirst { it == folder }.coerceAtLeast(0)
+            CategoryPillRow(
+                items = labels,
+                selected = selected,
+                contentPadding = PaddingValues(horizontal = 14.dp)
+            ) { index ->
+                // 再点一次已选中的文件夹 = 取消筛选
+                onFolder(if (index == selected && index > 0) "" else names[index])
             }
         }
 

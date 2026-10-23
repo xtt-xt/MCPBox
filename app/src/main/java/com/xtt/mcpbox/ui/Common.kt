@@ -36,6 +36,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.indication
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -95,6 +96,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Shape
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -114,6 +116,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.RectangleShape
 
 /* ------------------------------------------------------------------ 小工具 */
 
@@ -347,7 +350,9 @@ fun PageScaffold(
         // 顶上那条矮栏：滚过大标题之后出现。
         // 写法就是最普通的那种 —— 一整条铺满（铺到屏幕最顶）、内部再避开状态栏，
         // 末尾一条发丝线。不透明时是实色；半透明 / 有模糊时才走 haze。
-        if (appear > 0.001f) {
+        // 作为「露出来的上一页」渲染时不画矮栏：它自己的滚动位置可能早就过了阈值，
+        // 画出来就会在拖动过程中凭空多出一条 —— 用户要的是「直接没有」。
+        if (!LocalPredictiveBehind.current && appear > 0.001f) {
             Column(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -676,6 +681,82 @@ private fun pressEd(pressed: Boolean, clickable: Boolean) = pressed && clickable
 private fun presEd(pressed: Boolean, clickable: Boolean) = pressed && clickable
 
 /** 单张独立卡片（不参与分组圆角）。 */
+/* ------------------------------------------------------------ 分类胶囊 */
+
+/**
+ * 一排横向滑动的分类胶囊（日志筛选、记忆库文件夹这类「单选用」）。
+ *
+ * 三种状态：
+ *  · 选中 —— 主色实心、全圆；
+ *  · 未选中 —— surfaceContainer 底；
+ *  · 按下 —— 圆角收成 10dp（选中 / 未选中都收），未选中的底色再亮一档。
+ *
+ * 放不下就横向滑，右边露半个，暗示还能滑。
+ */
+@Composable
+fun CategoryPillRow(
+    items: List<String>,
+    selected: Int,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 16.dp),
+    onSelect: (Int) -> Unit
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(contentPadding),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items.forEachIndexed { index, label ->
+            CategoryPill(label, selected == index) { onSelect(index) }
+        }
+    }
+}
+
+/** 单个分类胶囊。选中态见 [CategoryPillRow]。 */
+@Composable
+fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // 按下收圆角、松手弹回全圆：这是这套控件唯一的变化点
+    val radius by animateDpAsState(
+        targetValue = if (pressed) 10.dp else 26.dp,
+        animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing),
+        label = "pillCorner"
+    )
+    val shape = RoundedCornerShape(radius)
+    val bg = when {
+        // 选中按下：主色提亮一点，不要变成另一种颜色
+        selected && pressed -> lerp(scheme.primary, Color.White, 0.12f)
+        selected -> scheme.primary
+        pressed -> scheme.surfaceContainerHigh
+        else -> scheme.surfaceContainer
+    }
+    Box(
+        Modifier
+            .clip(shape)
+            .background(bg)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,      // 圆角自己会动，不再叠水波纹
+                onClick = onClick
+            )
+            .padding(horizontal = 18.dp, vertical = 11.dp)
+    ) {
+        Text(
+            text,
+            color = if (selected) scheme.onPrimary else scheme.onSurfaceVariant,
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
 @Composable
 fun CardRow(
     title: String,
@@ -1557,6 +1638,14 @@ val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
 val LocalPredictiveDrag = compositionLocalOf<() -> Float> { { 0f } }
 
 /**
+ * 这一页是不是正在充当「预见式返回时**露出来的上一页**」。
+ *
+ * 拖动时下面那页是第二个实例（见 [PredictiveBackBox] 的 `behind`），它有自己的滚动位置，
+ * 可能已经超过顶栏出现的阈值 —— 那就会凭空多出一条矮栏。这种页面**不画顶部矮栏**。
+ */
+val LocalPredictiveBehind = compositionLocalOf { false }
+
+/**
  * 页面栈的通用转场（各页的 `transitionSpec` 都调它，别各写一份）。
  *
  *  · 往里进：新页从右侧滑入 1/3 屏宽 + 淡入，旧页往左滑 1/6 + 淡出
@@ -1681,7 +1770,10 @@ fun PredictiveBackBox(
             // **提交后也要继续垫着**（commitDrag > 0）：这段时间真页面正在重新组合，
             // 撤早了中间会空一下 —— 看起来就是「返回的时候底下没有背景」。
             if (behind != null && showBehind && (drag.value > 0f || commitDrag > 0f)) {
-                Box(Modifier.fillMaxSize().background(bg)) { behind() }
+                Box(Modifier.fillMaxSize().background(bg)) {
+                    // 预览层的页面不画顶部矮栏（见 [LocalPredictiveBehind]）
+                    CompositionLocalProvider(LocalPredictiveBehind provides true) { behind() }
+                }
             }
             // 被拖动 / 退出的这一层：**必须自己铺底色**（页面自己的 [PageSurface] 也算），
             // 页面自己的根 Column 大多没有背景（设置子页、工具列表都是），不铺的话
