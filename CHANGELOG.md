@@ -22,11 +22,14 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
-## v1.3.0 · 2026-10-24 —— 未发布
+## v1.3.0 · 2026-10-24
+
+<details open>
+<summary><b>中文</b></summary>
 
 ### 新增
 
-- **用户协议与免责声明**：初始引导增加「条款」一步，正文需要滚动到最后才能勾选同意；关于页可以随时查看全文
+- **用户协议与隐私政策**：初始引导增加「条款」一步，正文需要滚动到最后才能勾选同意；关于页可以随时查看全文
 - **命令规则编辑**：点整行进编辑页，可改匹配内容、匹配方式、动作与备注
 - **命令规则排序**：长按右侧手柄拖动调整顺序
 - **规则停用**：可以临时停用一条规则，不参与匹配但保留位置
@@ -36,12 +39,38 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ### 改进
 
-- **标题栏**：返回按钮移到左侧，大标题随页面滚动收成顶部一条矮栏（半透明 + 模糊）
-- **热力图色阶**：改为分位数分档（无 + 5 级），自动合并空档，单日极值不再把其他日子压暗
+- **标题栏**：返回按钮移到左侧，大标题随页面滚动收成顶部一条矮栏
+- **热力图色阶**：改为分位数分档，自动合并空档，单日极值不再把其他日子压暗
 - **命令规则匹配**：新增「包含」匹配方式
 - **底栏布局**：底栏改为浮在内容上方的覆盖式，不再占布局高度；滚动到末尾时内容会留出底栏的空位
 - **底栏透明度**：不再依赖自定义背景，单独设置且与背景开关无关
 - **底栏选中**：选中胶囊从图标中间向两边展开，取消时缩回中间
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### New
+
+- **Terms of Use and Privacy Policy**: onboarding gains a terms step whose text must be scrolled to the end before you can agree; both documents are always readable from the About page
+- **Command rule editing**: tap a row to open its own page and change the match target, match mode, action and note
+- **Command rule ordering**: long-press the handle on the right to drag a rule into place
+- **Rule disabling**: temporarily disable a rule so it is skipped when matching but keeps its position
+- **Colour from backdrop**: dynamic colour can seed from your custom backdrop instead of the wallpaper, and recomputes when the backdrop changes
+- **Bar style**: separate opacity and blur for the top and bottom bars, under Settings → Appearance → Bar style
+- **Category switcher**: the log filters and memory folders use a new pill style with a filled primary selection
+
+### Improvements
+
+- **Title bar**: the back button moves to the left, and the large title collapses into a compact bar at the top as you scroll
+- **Heatmap scale**: switched to quantile buckets that merge empty ranges, so a single extreme day no longer dims every other day
+- **Command rule matching**: added a "contains" match mode
+- **Bottom bar layout**: the bottom bar now floats over the content instead of taking up layout height, and content gets extra room at the end of the scroll
+- **Bottom bar opacity**: no longer tied to the custom backdrop; it has its own setting
+- **Bottom bar selection**: the selected pill now grows out from the icon's centre and shrinks back when deselected
+
+</details>
 
 ---
 
