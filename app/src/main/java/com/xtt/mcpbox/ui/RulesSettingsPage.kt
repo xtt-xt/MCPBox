@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -155,7 +157,7 @@ private fun PathRulesSection(revision: Int, onChanged: () -> Unit) {
  *
  * 与以前不同的三点：
  *  - 点整行进编辑页（新增走同一页，标题不同），不再只有「添加」弹窗；
- *  - 右侧是拖动手柄，长按拖动改顺序 —— 规则是自上而下第一条命中，顺序就是规则的一部分；
+ *  - 右侧是拖动手柄：长按拿起、跟手移动，其余行自动让出一个空位，松手才落定；
  *  - 停用的规则在列表里灰着（副标题标「已停用」），匹配时直接跳过。
  */
 @Composable
@@ -166,14 +168,86 @@ private fun CommandRulesSection(
     onOpenEdit: (String) -> Unit
 ) {
     val cmdRules = remember(revision) { AppCore.permissions.commandRules() }
-    // 拖动状态：dragId 记住「拖的是哪一条」，dragIndex 是它**当前**的位置（换位后跟着改）。
-    // 不能只在手势开始时记住下标 —— 列表换过位，同一个下标就不是同一条规则了。
-    var dragId by remember { mutableStateOf("") }
+
+    // ---- 拖动排序 ----
+    // 拖动中**不改数据**：只记「从哪一行拿起来的」和手指位移，松手才真正挪位置。
+    // 一边拖一边改数据的话，被拖的那行会跟着列表一起换位 —— 视觉上就是「跳一下」而不是跟手。
     var dragIndex by remember { mutableStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    // 每行实测高度：拖动时靠它换算「手指移了多远才算换一行」
+    // 每行实测高度：换算「手指移了多远算跨过一行」
     val heights = remember { HashMap<Int, Float>() }
-    val ruleIds = remember(cmdRules) { cmdRules.map { it.id } }
+
+    fun rowHeight(i: Int): Float = heights[i] ?: heights.values.firstOrNull() ?: 0f
+
+    /** 手指现在指到第几行（从 [from] 起，按各行高度累计）。 */
+    fun targetIndexFor(from: Int, dy: Float): Int {
+        var idx = from
+        var rest = dy
+        if (rest > 0f) {
+            while (idx + 1 < cmdRules.size) {
+                val h = rowHeight(idx)
+                if (h <= 0f || rest < h) break
+                rest -= h
+                idx++
+            }
+        } else if (rest < 0f) {
+            while (idx > 0) {
+                val h = rowHeight(idx - 1)
+                if (h <= 0f || -rest < h) break
+                rest += h
+                idx--
+            }
+        }
+        return idx
+    }
+
+    /** 松手：把这条规则挪到目标位置（和起点相同就什么都不做）。 */
+    fun drop() {
+        val from = dragIndex
+        val to = if (from >= 0) targetIndexFor(from, dragOffset) else -1
+        dragIndex = -1
+        dragOffset = 0f
+        if (from >= 0 && to >= 0 && to != from) {
+            AppCore.permissions.moveRuleTo(cmdRules[from].id, to)
+            onChanged()
+        }
+    }
+
+    /**
+     * 每一行的位移。
+     *
+     * - 被拖的那行：直接跟手（translationY = 手指位移），不做动画，并抬到最上层；
+     * - 其余行：按目标位置让出一格，130ms 动画滑过去 —— 就是「自动避让出一个空位」。
+     *
+     * 让位只靠位移、不动数据，所以松手前列表顺序一直不变，不会出现「换位后手指对着另一行」。
+     */
+    @Composable
+    fun shiftModifier(index: Int): Modifier {
+        val from = dragIndex
+        if (from < 0) return Modifier
+        val target = targetIndexFor(from, dragOffset)
+        if (index == from) {
+            return Modifier
+                .zIndex(1f)
+                .graphicsLayer {
+                    translationY = dragOffset
+                    scaleX = 1.01f
+                    scaleY = 1.01f
+                }
+        }
+        val h = rowHeight(index)
+        val shift = when {
+            target > from && index > from && index <= target -> -h
+            target < from && index >= target && index < from -> h
+            else -> 0f
+        }
+        val animated by animateFloatAsState(
+            targetValue = shift,
+            animationSpec = tween(durationMillis = 130),
+            label = "ruleRowShift"
+        )
+        return Modifier.graphicsLayer { translationY = animated }
+    }
 
     GroupLabel(L("命令规则（%s）").format(cmdRules.size))
     CardGroup(
@@ -215,42 +289,15 @@ private fun CommandRulesSection(
                                             .pointerInput(rule.id) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = {
-                                                        dragId = rule.id
                                                         dragIndex = index
                                                         dragOffset = 0f
                                                     },
                                                     onDrag = { change, amount ->
                                                         change.consume()
                                                         dragOffset += amount.y
-                                                        // 越过半行高就换位：手指跟着走，列表即时让位
-                                                        val step = (heights[dragIndex] ?: 0f) * 0.55f
-                                                        if (step > 0f) {
-                                                            val last = cmdRules.size - 1
-                                                            if (dragOffset > step && dragIndex < last) {
-                                                                AppCore.permissions.moveRuleTo(rule.id, dragIndex + 1)
-                                                                dragIndex += 1
-                                                                dragOffset -= step
-                                                                onChanged()
-                                                            } else if (dragOffset < -step && dragIndex > 0) {
-                                                                AppCore.permissions.moveRuleTo(rule.id, dragIndex - 1)
-                                                                dragIndex -= 1
-                                                                dragOffset += step
-                                                                onChanged()
-                                                            }
-                                                        }
                                                     },
-                                                    onDragEnd = {
-                                                        dragId = ""
-                                                        dragIndex = -1
-                                                        dragOffset = 0f
-                                                        onChanged()
-                                                    },
-                                                    onDragCancel = {
-                                                        dragId = ""
-                                                        dragIndex = -1
-                                                        dragOffset = 0f
-                                                        onChanged()
-                                                    }
+                                                    onDragEnd = { drop() },
+                                                    onDragCancel = { drop() }
                                                 )
                                             },
                                         contentAlignment = Alignment.Center
@@ -280,13 +327,7 @@ private fun CommandRulesSection(
         rowModifier = { index ->
             Modifier
                 .onGloballyPositioned { heights[index] = it.size.height.toFloat() }
-                .then(
-                    if (dragId.isNotEmpty() && ruleIds.getOrNull(index) == dragId) {
-                        Modifier
-                            .zIndex(1f)
-                            .graphicsLayer { translationY = dragOffset }
-                    } else Modifier
-                )
+                .then(shiftModifier(index))
         }
     )
 }

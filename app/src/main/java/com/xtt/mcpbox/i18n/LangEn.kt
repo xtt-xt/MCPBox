@@ -1580,7 +1580,7 @@ object LangEn {
     "工具（已选 %s / 共 %s）" to "Tools (%s of %s selected)",
     "交互" to "Interaction",
     "预见式返回动画" to "Predictive back animation",
-    "手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）" to "Drag from the screen edge and the page follows your finger; release to go back or spring back (Android 13 and up)",
+    "从屏幕边缘拖动，页面跟手移动，松手返回。需要 Android 13。" to "Drag from the screen edge: the page follows your finger and returns when you let go. Needs Android 13.",
     "请先填写包名" to "Enter a pack name first",
     "没有匹配的工具" to "No matching tools",
     "AI 与工具" to "AI & tools",
@@ -2445,7 +2445,7 @@ object LangEn {
     "%s%%（100%% = 原来的不透明底栏）" to "%s%% (100%% = the usual opaque bottom bar)",
     "按钮与弹窗也跟着变透明" to "Buttons and dialogs fade too",
     "关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明" to "When off, only cards and the bottom bar change; when on, pill buttons, dropdown menus and dialogs also use the card opacity",
-    "手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）。关掉后背景的图片 / 视频会换一套更干净的渲染" to "Drag from the screen edge to move the page with your finger; release to go back or snap back (Android 13+). With it off, image / video backdrops use a cleaner rendering path",
+    "从屏幕边缘拖动，页面跟手移动，松手返回。需要 Android 13。" to "Drag from the screen edge: the page follows your finger and returns when you let go. Needs Android 13.",
     // ---- 用户协议 / 免责声明 ----
     "阅读并同意条款" to "Read and accept",
     "以下条款是本应用的使用约定" to "These terms govern your use of the app",

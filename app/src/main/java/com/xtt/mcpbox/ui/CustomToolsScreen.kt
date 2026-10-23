@@ -93,21 +93,15 @@ fun CustomToolsScreen(ctx: Context, revision: Int, onChanged: () -> Unit, onBack
         onChanged()
     }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(bottom = 20.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = L("自定义工具"),
+        onBack = onBack,
+        bottomPadding = 20.dp,
+        actions = {
+            RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = { showMenu = true })
+        }
     ) {
-        PageHeader(
-            title = L("自定义工具"),
-            actions = {
-                RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = { showMenu = true })
-                Spacer(Modifier.width(8.dp))
-                RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
-            }
-        )
 
         CardGroup(
             listOf(

@@ -344,23 +344,17 @@ private fun MemoryListPage(
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("记忆库"),
+        onBack = onBack,
+        bottomPadding = 24.dp,
+        actions = {
+            RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = { showNew = true })
+            Spacer(Modifier.width(8.dp))
+            RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = onMore)
+        }
     ) {
-        PageHeader(
-            title = L("记忆库"),
-            actions = {
-                RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = { showNew = true })
-                Spacer(Modifier.width(8.dp))
-                RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = onMore)
-                Spacer(Modifier.width(8.dp))
-                RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
-            }
-        )
 
         Spacer(Modifier.height(10.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
@@ -521,10 +515,7 @@ private fun MemoryDetailPage(
     val entity = remember(revision, name) { AppCore.memory.entity(name) }
     if (entity == null) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
-            PageHeader(
-                title = L("记忆不存在"),
-                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-            )
+            PageHeader(title = L("记忆不存在"), onBack = onBack)
         }
         return
     }
@@ -701,17 +692,12 @@ private fun MemoryDetailPage(
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = entity.name,
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = entity.name,
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("基本信息"))
         CardGroup(

@@ -77,7 +77,7 @@ internal fun CommandRuleEditPage(
     ) {
         PageHeader(
             title = L(if (isNew) "添加命令规则" else "编辑命令规则"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+            onBack = onBack
         )
 
         Column(

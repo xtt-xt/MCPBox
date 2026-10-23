@@ -268,17 +268,12 @@ private fun AboutHomePage(
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("关于"),
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = L("关于"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         // ------------------------------------------------ 应用信息
         Spacer(Modifier.height(6.dp))
@@ -502,17 +497,12 @@ private fun DevModePage(
     // 带上 revision：不然开关点了界面不重组，看着像没生效
     val langMenu = remember(revision) { AppCore.prefs.languageMenu }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = L("开发者模式"),
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = L("开发者模式"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("语言"))
         CardGroup(

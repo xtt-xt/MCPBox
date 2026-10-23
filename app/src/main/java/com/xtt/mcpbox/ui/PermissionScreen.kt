@@ -186,18 +186,12 @@ private fun PermissionHomePage(
 
     // 双击底栏「权限」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            // 底栏覆盖层的高度，见 MainActivity：滚到底时最后一张卡才不会被挡住
-            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("权限"),
+        bottomPadding = 20.dp
     ) {
         val switches = remember(revision) { AppCore.permissions.snapshot() }
-
-        PageHeader(
-            title = L("权限"),
-        )
 
         // ---------------------------------------------------------- 预设会话
         // 放在最上面：一键决定「AI 能自己动手到什么程度」，比逐个键去调快得多。

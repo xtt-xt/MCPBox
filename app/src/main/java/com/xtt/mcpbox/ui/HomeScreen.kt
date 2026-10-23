@@ -73,19 +73,14 @@ fun HomeScreen(
     val scroll = rememberScrollState()
     // 双击底栏「首页」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            // 底栏是覆盖式的：末尾垫出它的高度，滚到底时最后一张卡才不会被挡住
-            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("MCP 文件盒"),
+        bottomPadding = 20.dp,
+        actions = {
+            RoundIconButton(Icons.Filled.Refresh, L("重启服务")) { onRestartService() }
+        }
     ) {
-        PageHeader(
-            title = L("MCP 文件盒"),
-            actions = {
-                RoundIconButton(Icons.Filled.Refresh, L("重启服务")) { onRestartService() }
-            }
-        )
 
         GroupLabel(L("服务"))
         CardGroup(

@@ -162,9 +162,7 @@ fun LegalNoticePage(
         ) {
             PageHeader(
                 title = if (previous.isBlank()) L("请阅读用户协议与免责声明") else L("用户协议已更新"),
-                actions = {
-                    RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onAcknowledge)
-                }
+                onBack = onAcknowledge
             )
             Column(Modifier.padding(horizontal = 22.dp, vertical = 6.dp)) {
                 Text(
@@ -264,17 +262,12 @@ fun LegalScreen(
 ) {
     val body = remember(doc, Lang.current) { Legal.text(ctx, doc) }
     if (handleBack) BackHandler { onBack() }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(bottom = 28.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = Legal.title(doc),
+        onBack = onBack,
+        bottomPadding = 28.dp
     ) {
-        PageHeader(
-            title = Legal.title(doc),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
         LegalBody(body, Modifier.padding(horizontal = 22.dp, vertical = 8.dp))
     }
 }

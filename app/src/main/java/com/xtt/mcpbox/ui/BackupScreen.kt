@@ -576,17 +576,12 @@ private fun BackupHomePage(
     val settingCount = remember(revision) { AppCore.prefs.all().size }
     val statsCount = remember(revision) { AppCore.stats.snapshot().requestsTotal }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("备份与恢复"),
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = L("备份与恢复"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("操作"))
         CardGroup(
@@ -716,16 +711,12 @@ private fun BackupCreatePage(
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
     val stats = remember(revision) { AppCore.stats.snapshot() }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 16.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = L("备份"),
+        onBack = onBack,
+        bottomPadding = 16.dp
     ) {
-        PageHeader(
-            title = L("备份"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("要备份的内容"))
         CardGroup(
@@ -909,16 +900,12 @@ private fun RestorePage(
 ) {
     val picked = items.filter { it.selected }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 16.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = L("恢复备份"),
+        onBack = onBack,
+        bottomPadding = 16.dp
     ) {
-        PageHeader(
-            title = L("恢复备份"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("备份详情"))
         CardColumn {

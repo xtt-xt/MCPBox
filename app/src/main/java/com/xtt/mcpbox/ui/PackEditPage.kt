@@ -81,7 +81,7 @@ internal fun PackEditPage(
     ) {
         PageHeader(
             title = L(if (isNew) "新建工具包" else "编辑工具包"),
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
+            onBack = onBack
         )
 
         Column(

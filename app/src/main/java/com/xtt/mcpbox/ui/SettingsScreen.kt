@@ -575,18 +575,11 @@ private fun SettingsHomePage(
 ) {
     // 双击底栏「设置」：回到顶部
     NavReselectEffect(scrollTopTick) { scroll.animateScrollTo(0) }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            // 底栏覆盖层的高度（子页时它是 0）
-            .padding(bottom = 24.dp + LocalBottomBarInset.current.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("设置"),
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = L("设置"),
-        )
-
         GroupLabel(L("通用"))
         CardGroup(
             listOf(

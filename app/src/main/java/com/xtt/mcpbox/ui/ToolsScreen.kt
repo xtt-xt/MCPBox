@@ -179,21 +179,15 @@ private fun ToolListPage(
     val disabledCount = ToolPolicy.disabled(AppCore.config).size
     val overrideCount = ToolPolicy.explicitCount(AppCore.config)
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("工具管理"),
+        onBack = onBack,
+        bottomPadding = 24.dp,
+        actions = {
+            RoundIconButton(Icons.Filled.Add, L("新建自定义工具"), onClick = onCreate)
+        }
     ) {
-        PageHeader(
-            title = L("工具管理"),
-            actions = {
-                RoundIconButton(Icons.Filled.Add, L("新建自定义工具"), onClick = onCreate)
-                Spacer(Modifier.width(8.dp))
-                RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack)
-            }
-        )
 
         Spacer(Modifier.height(10.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
@@ -283,10 +277,7 @@ private fun ToolDetailPage(
     if (spec == null) {
         // 工具可能在别处被删了
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
-            PageHeader(
-                title = L("工具不存在"),
-                actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-            )
+            PageHeader(title = L("工具不存在"), onBack = onBack)
         }
         return
     }
@@ -346,17 +337,12 @@ private fun ToolDetailPage(
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    PageScaffold(
+        scroll = rememberScrollState(),
+        title = spec.name,
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = spec.name,
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
 
         GroupLabel(L("状态"))
         CardGroup(

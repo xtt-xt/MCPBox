@@ -107,17 +107,13 @@ internal fun SettingsPageShell(
     scroll: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+    // 统一走 PageScaffold：返回按钮在左，往下滚时大标题收成顶上那条矮栏
+    PageScaffold(
+        scroll = scroll,
+        title = title,
+        onBack = onBack,
+        bottomPadding = 24.dp
     ) {
-        PageHeader(
-            title = title,
-            actions = { RoundIconButton(Icons.Filled.ArrowBack, L("返回"), onClick = onBack) }
-        )
         content()
     }
 }
@@ -286,8 +282,8 @@ internal fun AppearanceSettingsPage(
             listOf(
                 switchSpec(
                     title = L("预见式返回动画"),
-                    subtitle = L("手指从屏幕边缘往右拖时，页面跟着手指走，松手才决定返回还是弹回（Android 13 及以上）。关掉后背景的图片 / 视频会换一套更干净的渲染"),
-                    subtitleMaxLines = 4,
+                    subtitle = L("从屏幕边缘拖动，页面跟手移动，松手返回。需要 Android 13。"),
+                    subtitleMaxLines = 2,
                     icon = Icons.Filled.ArrowBack,
                     checked = remember(revision, localRev) { AppCore.prefs.predictiveBack }
                 ) { on ->

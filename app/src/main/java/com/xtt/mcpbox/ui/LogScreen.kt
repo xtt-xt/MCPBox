@@ -49,16 +49,11 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, scrollTopTick: Int = 0, onChan
     // 日志最多 400 条，一次全渲染会卡首帧：先渲染 60 条，快滑到底之前自动补下一批
     val shownCount = rememberPagedCount(shown.size, scroll, resetKey = filter)
 
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .verticalScroll(scroll)
-            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
+    PageScaffold(
+        scroll = scroll,
+        title = L("日志"),
+        bottomPadding = 20.dp
     ) {
-        PageHeader(
-            title = L("日志"),
-        )
-
         Row(
             Modifier
                 .fillMaxWidth()

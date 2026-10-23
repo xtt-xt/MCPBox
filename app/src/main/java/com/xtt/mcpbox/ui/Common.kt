@@ -108,6 +108,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.unit.Dp
 
 /* ------------------------------------------------------------------ 小工具 */
 
@@ -211,10 +215,20 @@ fun PagedHint(shownCount: Int, total: Int) {
 
 /* ------------------------------------------------------------------ 页面结构 */
 
+/**
+ * 页面大标题。
+ *
+ * 布局和参考的那种一致：**返回按钮在最左**，标题在它右边（大字号）；
+ * [actions] 仍然挂在最右（重启服务 / 清屏这类操作）。
+ *
+ * 滚动收缩由外面的 [PageScaffold] 负责 —— 大标题本身跟着内容一起滚走，
+ * 滚到位置后顶上会淡入一条矮栏。
+ */
 @Composable
 fun PageHeader(
     title: String,
     subtitle: String? = null,
+    onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Column(
@@ -224,11 +238,21 @@ fun PageHeader(
             .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 2.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (onBack != null) {
+                RoundIconButton(
+                    Icons.Filled.ArrowBack, L("返回"),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    size = 44
+                ) { onBack() }
+                Spacer(Modifier.width(14.dp))
+            }
             Text(
                 title,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
             actions()
@@ -240,8 +264,106 @@ fun PageHeader(
                 fontSize = 13.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 5.dp)
+                modifier = Modifier.padding(top = 5.dp, start = if (onBack != null) 58.dp else 0.dp)
             )
+        }
+    }
+}
+
+/**
+ * 页面骨架：大标题 + 滚动内容 + 「滚上去之后顶上淡入一条矮栏」。
+ *
+ * 矮栏只有一条：左边返回按钮（有的话），旁边是标题（小字号），右边是原来的操作按钮。
+ * 出现与否由 [scroll] 的位置驱动 —— 往下滚过大标题的一半高度就开始淡入，
+ * 所以手指往上推的时候能直接看到标题「收」到顶上。
+ *
+ * 矮栏背景跟底栏同一套：半透明主题色，开了模糊就用 haze 抓下面的内容；
+ * 没开模糊时只是一层半透明底，不额外多一次离屏绘制。
+ */
+@Composable
+fun PageScaffold(
+    scroll: ScrollState,
+    title: String,
+    subtitle: String? = null,
+    onBack: (() -> Unit)? = null,
+    /** 内容本身的底部留白（一般是 20/24dp）。底栏高度由这里自动加。 */
+    bottomPadding: Dp = 24.dp,
+    actions: @Composable RowScope.() -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit
+) {
+    // 收缩进度：滚过大标题的一半就认为「该收起来了」。
+    // 用 60dp 当阈值，和 30sp 大标题 + 18dp 上边距的实际高度差不多。
+    val collapsePx = with(LocalDensity.current) { 60.dp.toPx() }
+    // 两档状态分开读，避免滚动时每帧都重组整页：
+    //  · shown 只在「0 / 非 0」跨过时变一次（决定矮栏在不在组合里）；
+    //  · fade 是 0~1 的连续值，只在 graphicsLayer 的绘制阶段读 —— 滚动时是纯绘制，不重组。
+    val fade = remember(scroll) {
+        derivedStateOf { (scroll.value / collapsePx).coerceIn(0f, 1f) }
+    }
+    val shown = remember(scroll) { derivedStateOf { scroll.value > 2 } }
+    val barStyle = LocalBarStyle.current
+    val hazeState = LocalHazeState.current
+    val hazeOn = barStyle.usesHaze && hazeState != null
+    val barBase = MaterialTheme.colorScheme.surfaceContainer
+
+    Box(Modifier.fillMaxWidth()) {
+        // 底栏可见时它自己盖住了小白条区域，内容只需多留出它的高度往它下面滑；
+        // 底栏收起（子页 / 输入法弹出）时才需要自己避开小白条。
+        val barInset = LocalBottomBarInset.current
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(scroll)
+                .then(if (barInset <= 0f) Modifier.navigationBarsPadding() else Modifier)
+                .padding(bottom = bottomPadding + barInset.dp)
+        ) {
+            PageHeader(title = title, subtitle = subtitle, onBack = onBack, actions = actions)
+            content()
+        }
+
+        // 顶上的矮栏：滚动后才出现。alpha 跟着滚动走，所以是「淡入」而不是突然跳出来
+        if (shown.value) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .height(46.dp)
+                    .graphicsLayer { alpha = fade.value }
+                    .then(
+                        if (hazeOn) {
+                            Modifier.hazeEffect(hazeState!!) {
+                                blurRadius = barStyle.blur.dp
+                                blurEnabled = barStyle.blur > 0.5f
+                                backgroundColor = barBase
+                                alpha = barStyle.alpha.coerceAtLeast(0.72f)
+                                noiseFactor = 0.06f
+                            }
+                        } else {
+                            Modifier.background(barBase.copy(alpha = 0.94f))
+                        }
+                    )
+                    .padding(start = 14.dp, end = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onBack != null) {
+                    RoundIconButton(
+                        Icons.Filled.ArrowBack, L("返回"),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        size = 38
+                    ) { onBack() }
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    title,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                actions()
+            }
         }
     }
 }
@@ -309,7 +431,7 @@ fun CardGroup(
      * 目前只有命令规则的拖动排序用它：需要给被拖的那行加位移和 zIndex，同时借
      * `onGloballyPositioned` 量出每行高度。不传就是原来的行为。
      */
-    rowModifier: ((Int) -> Modifier)? = null
+    rowModifier: (@Composable (Int) -> Modifier)? = null
 ) {
     // 首尾圆角只认「可见行」：某行收起后，它上面的行就要接管底部圆角
     val visibleCount = rows.count { it.visible }
