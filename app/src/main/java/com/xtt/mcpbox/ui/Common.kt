@@ -229,10 +229,11 @@ fun PageHeader(
     title: String,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .padding(start = 22.dp, end = 22.dp, top = 18.dp, bottom = 2.dp)
@@ -291,22 +292,15 @@ fun PageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // 矮栏什么时候出来、多快变实。
-    //
-    // 踩过的坑：一开始让整条（含背景）跟着滚动进度从 0 淡到 1，结果滚到一半时
-    // 背景只有三成不透明 —— 看起来就是「顶栏没有背景、内容透上来」。
-    // 现在只要开始滚就出来，并且**只在前 12dp 内**从 0 淡到 1，之后一律实底。
+    // 矮栏的出现时机：滚过**大标题本身的高度**之后才出来（参考图那样），
+    // 不是一动就冒出来 —— 之前在标题还没走完时就叠了一条小标题，两层字压在一起。
+    var headerPx by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
-    val fadePx = with(density) { 12.dp.toPx() }
-    // shown 只在「0 / 非 0」跨过时变一次，滚动时不重组整页
-    val shown = remember(scroll) { derivedStateOf { scroll.value > 1 } }
-    val fade = remember(scroll) {
-        derivedStateOf { (scroll.value / fadePx).coerceIn(0f, 1f) }
+    val trigger = with(density) { 28.dp.toPx() }
+    // 只在跨过阈值那一刻变一次：滚动过程中不重组整页
+    val shown = remember(scroll, headerPx) {
+        derivedStateOf { headerPx > 0 && scroll.value > headerPx - trigger }
     }
-    val barStyle = LocalBarStyle.current
-    val hazeState = LocalHazeState.current
-    val hazeOn = barStyle.usesHaze && hazeState != null
-    val barBase = MaterialTheme.colorScheme.surfaceContainer
 
     Box(Modifier.fillMaxWidth()) {
         // 底栏可见时它自己盖住了小白条区域，内容只需多留出它的高度往它下面滑；
@@ -319,74 +313,119 @@ fun PageScaffold(
                 .then(if (barInset <= 0f) Modifier.navigationBarsPadding() else Modifier)
                 .padding(bottom = bottomPadding + barInset.dp)
         ) {
-            PageHeader(title = title, subtitle = subtitle, onBack = onBack, actions = actions)
+            PageHeader(
+                title = title,
+                subtitle = subtitle,
+                onBack = onBack,
+                actions = actions,
+                modifier = Modifier.onSizeChanged { headerPx = it.height }
+            )
             content()
         }
 
-        // 顶上的矮栏：一开始滚就出现，前 12dp 内淡入。
+        // 顶上的矮栏：和底栏**同一套浮层**（[FloatingBar]）——
+        // 同样的底色、同样的不透明度 / 模糊算法，只是参数各用各的（LocalTopBarStyle）。
         //
-        // 背景必须**先**铺、再避开状态栏：`windowInsetsPadding` 会把它自己那一段
-        // 算进节点尺寸，写成「padding 在前、背景在后」的话背景只盖住标题那 46dp，
-        // 状态栏那一截是空的 —— 内容会直接透到灵动岛 / 时间下面。
+        // 以前这里自己写了一份：背景写在 windowInsetsPadding 之后（只盖住标题那 46dp，
+        // 状态栏那一截是空的）、整条又套了 graphicsLayer 淡入（alpha 图层会把 hazeEffect
+        // 拆掉 —— 于是「不透明度开到 100 还是透明的」）。现在不再自己画。
         if (shown.value) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (hazeOn) {
-                            Modifier.hazeEffect(hazeState!!) {
-                                blurRadius = barStyle.blur.dp
-                                blurEnabled = barStyle.blur > 0.5f
-                                backgroundColor = barBase
-                                // 顶栏要能读清标题：不跟着底栏的透明度一起变淡
-                                alpha = 1f
-                                noiseFactor = 0.06f
-                            }
-                        } else {
-                            Modifier.background(barBase)
-                        }
+            FloatingBar(
+                style = LocalTopBarStyle.current,
+                hairlineBottom = true,
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        // 内容避开状态栏；上面的底色已经铺到屏幕最顶
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .height(46.dp)
+                        .padding(start = 14.dp, end = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (onBack != null) {
+                        RoundIconButton(
+                            Icons.Filled.ArrowBack, L("返回"),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            size = 38
+                        ) { onBack() }
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Text(
+                        title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                    // alpha 只作用在「内容」这一层：背景已经铺实了
-                    .graphicsLayer { alpha = fade.value }
-            ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .height(46.dp)
-                    .padding(start = 14.dp, end = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (onBack != null) {
-                    RoundIconButton(
-                        Icons.Filled.ArrowBack, L("返回"),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        size = 38
-                    ) { onBack() }
-                    Spacer(Modifier.width(10.dp))
+                    actions()
                 }
-                Text(
-                    title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                actions()
-            }
-            // 最底下一条发丝线：和内容分开，深浅两套主题下都看得见
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            )
             }
         }
     }
 }
+
+/**
+ * 浮在内容上的一条栏 —— 顶栏、底栏、全选工具条共用同一份实现。
+ *
+ * 底色固定用**底栏同色**（surfaceContainerLow），所以顶栏和底栏看起来是一条体系；
+ * 半透明 / 模糊由 [style] 决定（各自一份参数）：
+ *  · 不透明度 1 + 模糊 0 → 纯色底，不额外离屏绘制；
+ *  · 其余情况 → hazeEffect 抓下面划过去的内容做毛玻璃，tint 的 alpha 就是不透明度。
+ *
+ * 注意：调用方**不要**在这层外面再套 `graphicsLayer { alpha = … }` 做淡入 ——
+ * alpha 图层会让 hazeEffect 画不出来，表现就是「调多实都是透的」。
+ */
+@Composable
+fun FloatingBar(
+    style: BarStyle,
+    modifier: Modifier = Modifier,
+    hairlineTop: Boolean = false,
+    hairlineBottom: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val hazeState = LocalHazeState.current
+    val hazeOn = style.usesHaze && hazeState != null
+    val base = MaterialTheme.colorScheme.surfaceContainerLow
+    Column(
+        modifier
+            .fillMaxWidth()
+            .then(
+                if (hazeOn) {
+                    Modifier.hazeEffect(hazeState!!) {
+                        blurRadius = style.blur.dp
+                        blurEnabled = style.blur > 0.5f
+                        backgroundColor = base
+                        alpha = style.alpha
+                        // 深色主题里 blur 需要一点噪声，否则糊成一片
+                        noiseFactor = 0.06f
+                    }
+                } else Modifier
+            )
+            // 不走 haze 时底色乘上不透明度（100% 就是纯色，和以前完全一样）
+            .background(if (hazeOn) Color.Transparent else base.copy(alpha = base.alpha * style.alpha))
+    ) {
+        val lineAlpha = 0.6f * (if (hazeOn) style.alpha else 1f)
+        if (hairlineTop) Hairline(lineAlpha)
+        content()
+        if (hairlineBottom) Hairline(lineAlpha)
+    }
+}
+
+/** 一条 1dp 发丝线：和内容分开，深浅两套主题下都看得见。 */
+@Composable
+private fun Hairline(alpha: Float) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha))
+    )
+}
+
 
 @Composable
 fun GroupLabel(text: String) {
@@ -1110,43 +1149,14 @@ fun BottomPillNav(
     onHeight: (Float) -> Unit = {},
     onSelect: (Int) -> Unit
 ) {
-    val hazeState = LocalHazeState.current
-    val hazeOn = style.usesHaze && hazeState != null
-    // 毛玻璃层：hazeEffect 画的是「底下那一层的实时模糊 + 一层主题色 tint」。
-    // tint 的 alpha 就是底栏不透明度 —— 0 时纯模糊（能看清底下的字），100 时完全不透。
-    // 注意 lambda 不是 @Composable：颜色得先在外面取好。
-    val barBase = MaterialTheme.colorScheme.surfaceContainerLow
-    val hazeMod = if (hazeOn) {
-        Modifier.hazeEffect(hazeState!!) {
-            blurRadius = style.blur.dp
-            blurEnabled = style.blur > 0.5f
-            backgroundColor = barBase
-            alpha = style.alpha
-            // 深色主题里 blur 的对比度需要一点噪声才不会糊成一片
-            noiseFactor = 0.06f
-        }
-    } else Modifier
-    // 不走 haze 时（全不透明 / 模糊为 0）：和以前一样用 barColor（它只会被背景那套老逻辑影响）
-    val plainColor = if (hazeOn) Color.Transparent else barColor(barBase)
-
+    // 底栏和顶栏共用同一个浮层实现（[FloatingBar]）：同样的底色、同样的透明度 / 模糊算法，
+    // 只是两边各传一份 [BarStyle]。这里只管内容和「量高度」。
     val density = LocalDensity.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .then(hazeMod)
-            .background(plainColor)
-            .onSizeChanged { onHeight(with(density) { it.height.toDp().value }) }
+    FloatingBar(
+        style = style,
+        hairlineTop = true,
+        modifier = Modifier.onSizeChanged { onHeight(with(density) { it.height.toDp().value }) }
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(
-                    MaterialTheme.colorScheme.outlineVariant.copy(
-                        alpha = 0.6f * (if (hazeOn) style.alpha else 1f)
-                    )
-                )
-        )
         Row(
             Modifier
                 .fillMaxWidth()

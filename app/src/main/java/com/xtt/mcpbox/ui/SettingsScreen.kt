@@ -137,6 +137,7 @@ fun SettingsScreen(
                     onOpenSeed = {},
                     onOpenLangPack = {},
                     onOpenWallpaper = {},
+                    onOpenBars = {},
                     onOpenIcon = {},
                     onBack = {},
                     scroll = appearanceScroll
@@ -203,6 +204,7 @@ fun SettingsScreen(
                     onOpenSeed = { showSeed = true },
                     onOpenLangPack = { onPage("appearance/langpack") },
                     onOpenWallpaper = { onPage("appearance/wallpaper") },
+                    onOpenBars = { onPage("appearance/bars") },
                     onOpenIcon = { onPage("appearance/icon") },
                     onBack = back,
                     scroll = appearanceScroll
@@ -311,6 +313,7 @@ fun SettingsScreen(
                     onLangChanged = { onLangChanged(); onChanged() },
                     onBack = back
                 )
+                "appearance/bars" -> BarsSettingsPage(onBack = back)
                 "appearance/icon" -> IconSettingsPage(
                     ctx = ctx,
                     revision = revision,
