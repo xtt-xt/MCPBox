@@ -1567,9 +1567,51 @@ internal fun WallpaperSettingsPage(
             )
         )
 
-        // 底栏：**不依赖自定义背景**。它是浮在内容上面的一层，
-        // 半透明 / 毛玻璃时透出来的是从它下面划过去的卡片（所以放在背景开关之外）。
-        GroupLabel(L("底栏"))
+        // 栏：顶栏与底栏各自一套（不透明度 / 模糊）。
+        // **不依赖自定义背景** —— 它们是浮在内容上的两层，透出来的是从下面划过去的卡片。
+        GroupLabel(L("栏"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("顶栏不透明度"),
+                    subtitle = L("%s%%（100%% = 不透明顶栏）").format((TopBarLive.alpha * 100).roundToInt()),
+                    content = {
+                        Slider(
+                            value = TopBarLive.alpha * 100f,
+                            // 拖动时只改内存 → 顶栏实时跟着变；松手才落盘
+                            onValueChange = { TopBarLive.preview(alpha = it / 100f) },
+                            valueRange = 0f..100f,
+                            onValueChangeFinished = {
+                                TopBarLive.commit()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                RowSpec(
+                    title = L("顶栏模糊"),
+                    subtitle = if (android.os.Build.VERSION.SDK_INT >= 31)
+                        L("%s dp（0 = 不模糊；模糊的是顶栏下面划过去的内容）").format(TopBarLive.blur.roundToInt())
+                    else L("需要 Android 12 及以上，当前系统只做半透明"),
+                    subtitleMaxLines = 2,
+                    content = {
+                        Slider(
+                            value = TopBarLive.blur,
+                            onValueChange = { TopBarLive.preview(blur = it) },
+                            valueRange = 0f..40f,
+                            enabled = android.os.Build.VERSION.SDK_INT >= 31,
+                            onValueChangeFinished = {
+                                TopBarLive.commit()
+                                commit()
+                            }
+                        )
+                    }
+                )
+            )
+        )
+
+        // 两张卡片之间留一条缝：视觉上就是「上段 = 顶栏，下段 = 底栏」
+        Spacer(Modifier.height(10.dp))
         CardGroup(
             listOf(
                 RowSpec(

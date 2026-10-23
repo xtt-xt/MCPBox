@@ -204,7 +204,7 @@ object AppCore {
         permissions.load()
         customTools.load()
         // 底栏样式是内存里的一份实时状态，重置设置后要跟着回到默认
-        runCatching { com.xtt.mcpbox.ui.BarLive.reset() }
+        runCatching { com.xtt.mcpbox.ui.BarLive.reset(); com.xtt.mcpbox.ui.TopBarLive.reset() }
         log.clear()
     }
 

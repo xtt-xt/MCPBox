@@ -291,16 +291,18 @@ fun PageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // 收缩进度：滚过大标题的一半就认为「该收起来了」。
-    // 用 60dp 当阈值，和 30sp 大标题 + 18dp 上边距的实际高度差不多。
-    val collapsePx = with(LocalDensity.current) { 60.dp.toPx() }
-    // 两档状态分开读，避免滚动时每帧都重组整页：
-    //  · shown 只在「0 / 非 0」跨过时变一次（决定矮栏在不在组合里）；
-    //  · fade 是 0~1 的连续值，只在 graphicsLayer 的绘制阶段读 —— 滚动时是纯绘制，不重组。
+    // 矮栏什么时候出来、多快变实。
+    //
+    // 踩过的坑：一开始让整条（含背景）跟着滚动进度从 0 淡到 1，结果滚到一半时
+    // 背景只有三成不透明 —— 看起来就是「顶栏没有背景、内容透上来」。
+    // 现在只要开始滚就出来，并且**只在前 12dp 内**从 0 淡到 1，之后一律实底。
+    val density = LocalDensity.current
+    val fadePx = with(density) { 12.dp.toPx() }
+    // shown 只在「0 / 非 0」跨过时变一次，滚动时不重组整页
+    val shown = remember(scroll) { derivedStateOf { scroll.value > 1 } }
     val fade = remember(scroll) {
-        derivedStateOf { (scroll.value / collapsePx).coerceIn(0f, 1f) }
+        derivedStateOf { (scroll.value / fadePx).coerceIn(0f, 1f) }
     }
-    val shown = remember(scroll) { derivedStateOf { scroll.value > 2 } }
     val barStyle = LocalBarStyle.current
     val hazeState = LocalHazeState.current
     val hazeOn = barStyle.usesHaze && hazeState != null
@@ -321,27 +323,37 @@ fun PageScaffold(
             content()
         }
 
-        // 顶上的矮栏：滚动后才出现。alpha 跟着滚动走，所以是「淡入」而不是突然跳出来
+        // 顶上的矮栏：一开始滚就出现，前 12dp 内淡入。
+        //
+        // 背景必须**先**铺、再避开状态栏：`windowInsetsPadding` 会把它自己那一段
+        // 算进节点尺寸，写成「padding 在前、背景在后」的话背景只盖住标题那 46dp，
+        // 状态栏那一截是空的 —— 内容会直接透到灵动岛 / 时间下面。
         if (shown.value) {
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .height(46.dp)
-                    .graphicsLayer { alpha = fade.value }
                     .then(
                         if (hazeOn) {
                             Modifier.hazeEffect(hazeState!!) {
                                 blurRadius = barStyle.blur.dp
                                 blurEnabled = barStyle.blur > 0.5f
                                 backgroundColor = barBase
-                                alpha = barStyle.alpha.coerceAtLeast(0.72f)
+                                // 顶栏要能读清标题：不跟着底栏的透明度一起变淡
+                                alpha = 1f
                                 noiseFactor = 0.06f
                             }
                         } else {
-                            Modifier.background(barBase.copy(alpha = 0.94f))
+                            Modifier.background(barBase)
                         }
                     )
+                    // alpha 只作用在「内容」这一层：背景已经铺实了
+                    .graphicsLayer { alpha = fade.value }
+            ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .height(46.dp)
                     .padding(start = 14.dp, end = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -363,6 +375,14 @@ fun PageScaffold(
                     modifier = Modifier.weight(1f)
                 )
                 actions()
+            }
+            // 最底下一条发丝线：和内容分开，深浅两套主题下都看得见
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            )
             }
         }
     }

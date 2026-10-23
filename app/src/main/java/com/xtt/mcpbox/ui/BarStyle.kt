@@ -86,3 +86,41 @@ val LocalHazeState = compositionLocalOf<dev.chrisbanes.haze.HazeState?> { null }
  * 子页 / 输入法弹出时底栏收起，这个值就是 0。
  */
 val LocalBottomBarInset = compositionLocalOf { 0f }
+
+/**
+ * 顶栏（滚上去之后那条矮栏）的实时状态。
+ *
+ * 和 [BarLive] 各自一套：顶栏要能读清标题，通常比底栏更实；
+ * 底栏贴着内容，允许更透。两者互不影响。
+ */
+object TopBarLive {
+    var alpha by mutableFloatStateOf(1f)
+        private set
+    var blur by mutableFloatStateOf(0f)
+        private set
+
+    fun reload() {
+        alpha = AppCore.prefs.topBarAlpha / 100f
+        blur = AppCore.prefs.topBarBlur.toFloat()
+    }
+
+    /** 实时预览：只改内存，不落盘。 */
+    fun preview(alpha: Float? = null, blur: Float? = null) {
+        alpha?.let { this.alpha = it.coerceIn(0f, 1f) }
+        blur?.let { this.blur = it.coerceIn(0f, 40f) }
+    }
+
+    fun commit() {
+        AppCore.prefs.topBarAlpha = (alpha * 100).toInt()
+        AppCore.prefs.topBarBlur = blur.toInt()
+        reload()
+    }
+
+    fun reset() {
+        alpha = 1f
+        blur = 0f
+    }
+}
+
+/** 当前顶栏样式（由 MainActivity 在最外层提供）。 */
+val LocalTopBarStyle = compositionLocalOf { BarStyle.Opaque }

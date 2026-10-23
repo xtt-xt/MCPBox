@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AppCore.init(application)
         // 底栏样式是从 Prefs 读进内存状态的（滑块拖动要实时预览，不能每次读盘）
-        runCatching { BarLive.reload() }
+        runCatching { BarLive.reload(); TopBarLive.reload() }
         // 图标自愈：老版本切图标可能把进程杀在半路，留下「一个 LAUNCHER 组件都没开」的状态
         // （桌面图标变系统默认图、点了进不去）。每次启动按偏好对齐一遍，组件开关带 DONT_KILL_APP。
         AppIcon.ensureConsistent(this)
@@ -440,6 +440,8 @@ fun AppRoot(
     androidx.compose.runtime.key(langRev) {
     // 底栏样式：滑块拖动时改的是 BarLive（实时预览），松手才落盘
     val barStyle = BarStyle(BarLive.alpha, BarLive.blur)
+    // 顶栏（滚上去之后那条矮栏）自己一套样式，和底栏互不影响
+    val topBarStyle = BarStyle(TopBarLive.alpha, TopBarLive.blur)
     // 毛玻璃要抓「底栏下面那一层」的画，所以内容层挂 hazeSource、底栏挂 hazeEffect。
     // 全不透明又不模糊时不挂 —— 省掉一次离屏绘制，和原来的纯色底完全一样。
     val hazeState = remember { dev.chrisbanes.haze.HazeState() }
@@ -450,6 +452,7 @@ fun AppRoot(
 
     CompositionLocalProvider(
         LocalBarStyle provides barStyle,
+        LocalTopBarStyle provides topBarStyle,
         LocalHazeState provides hazeState,
         LocalBottomBarInset provides barInsetDp.value
     ) {
