@@ -720,9 +720,18 @@ fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    // 按下收圆角、松手弹回全圆：这是这套控件唯一的变化点
+    // 圆角四档：
+    //  · 选中常态   12dp
+    //  · 选中按下   10dp（比常态再收一点）
+    //  · 未选中按下 12dp
+    //  · 未选中常态 全圆胶囊
     val radius by animateDpAsState(
-        targetValue = if (pressed) 10.dp else 26.dp,
+        targetValue = when {
+            selected && pressed -> 10.dp
+            selected -> 12.dp
+            pressed -> 12.dp
+            else -> 26.dp
+        },
         animationSpec = tween(durationMillis = 130, easing = FastOutSlowInEasing),
         label = "pillCorner"
     )
@@ -740,7 +749,8 @@ fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
             .background(bg)
             .clickable(
                 interactionSource = interaction,
-                indication = null,      // 圆角自己会动，不再叠水波纹
+                // 水波和胶囊按钮一致：主色、裁进当前形状里（形状在按下时会收，跟着一起裁）
+                indication = ripple(color = scheme.primary),
                 onClick = onClick
             )
             .padding(horizontal = 18.dp, vertical = 11.dp)
