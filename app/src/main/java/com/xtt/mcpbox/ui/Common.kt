@@ -93,6 +93,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import kotlinx.coroutines.delay
@@ -293,15 +294,20 @@ fun PageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
-    // 矮栏的出现时机：滚过**大标题本身的高度**之后才出来（参考图那样），
-    // 不是一动就冒出来 —— 之前在标题还没走完时就叠了一条小标题，两层字压在一起。
+    // 矮栏的出现时机：大标题滑走**三成**就出来（约二十几 dp 的滚动距离）。
+    // 以前要等标题几乎整块滑走（headerPx - 28dp），滚半天才冒出来。
     var headerPx by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
-    val trigger = with(density) { 28.dp.toPx() }
+    val trigger = remember(headerPx) { (headerPx * 0.3f).toInt() }
     // 只在跨过阈值那一刻变一次：滚动过程中不重组整页
-    val shown = remember(scroll, headerPx) {
-        derivedStateOf { headerPx > 0 && scroll.value > headerPx - trigger }
+    val shown = remember(scroll, trigger) {
+        derivedStateOf { trigger > 0 && scroll.value > trigger }
     }
+    // 出现 / 退场动画：淡入 + 从上方轻轻滑进来
+    val appear by animateFloatAsState(
+        targetValue = if (shown.value) 1f else 0f,
+        animationSpec = tween(durationMillis = if (shown.value) 190 else 140),
+        label = "topBarAppear"
+    )
 
     val barStyle = LocalTopBarStyle.current
     val base = MaterialTheme.colorScheme.surfaceContainerLow
@@ -311,6 +317,10 @@ fun PageScaffold(
     // 于是「不透明度开到 100 还是透明的」。这里在页面内自建一份，源和矮栏是兄弟节点，正常。
     val pageHaze = remember { dev.chrisbanes.haze.HazeState() }
     val useHaze = barStyle.usesHaze
+    // 预见式返回的拖动进度（0..1）。取的是 lambda，在 graphicsLayer 里读 ——
+    // 每帧只是重绘，不会让整页重组。
+    val backProgress = LocalPredictiveDrag.current
+    var barHeightPx by remember { mutableIntStateOf(0) }
 
     Box(Modifier.fillMaxWidth()) {
         // 底栏可见时它自己盖住了小白条区域，内容只需多留出它的高度往它下面滑；
@@ -337,22 +347,32 @@ fun PageScaffold(
         // 顶上那条矮栏：滚过大标题之后出现。
         // 写法就是最普通的那种 —— 一整条铺满（铺到屏幕最顶）、内部再避开状态栏，
         // 末尾一条发丝线。不透明时是实色；半透明 / 有模糊时才走 haze。
-        if (shown.value) {
+        if (appear > 0.001f) {
             Column(
                 Modifier
                     .align(Alignment.TopCenter)
                     .fillMaxWidth()
+                    .onSizeChanged { barHeightPx = it.height }
+                    .graphicsLayer {
+                        // 出现时从上方轻轻压下来；**预见式返回拖动时整条往上收走**，
+                        // 松手返回成功后由新页面按自己的滚动位置决定要不要再出现。
+                        translationY = -(1f - appear) * 10.dp.toPx() -
+                            backProgress() * barHeightPx
+                    }
                     .then(
                         if (useHaze) {
                             Modifier.hazeEffect(pageHaze) {
                                 blurRadius = barStyle.blur.dp
                                 blurEnabled = barStyle.blur > 0.5f
                                 backgroundColor = base
-                                alpha = barStyle.alpha
+                                // tint 的不透明度跟着动画走：整条是「渐显」而不是「啪」地跳出来
+                                alpha = barStyle.alpha * appear
                                 noiseFactor = 0.06f
                             }
                         } else {
-                            Modifier.background(base.copy(alpha = base.alpha * barStyle.alpha))
+                            Modifier.background(
+                                base.copy(alpha = base.alpha * barStyle.alpha * appear)
+                            )
                         }
                     )
             ) {
@@ -362,7 +382,8 @@ fun PageScaffold(
                         // 内容避开状态栏；上面的底色已经铺到屏幕最顶
                         .windowInsetsPadding(WindowInsets.statusBars)
                         .height(46.dp)
-                        .padding(start = 14.dp, end = 14.dp),
+                        .padding(start = 14.dp, end = 14.dp)
+                        .alpha(appear),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (onBack != null) {
@@ -384,7 +405,7 @@ fun PageScaffold(
                     )
                     actions()
                 }
-                Hairline(0.6f * (if (useHaze) barStyle.alpha else 1f))
+                Hairline(0.6f * (if (useHaze) barStyle.alpha else 1f) * appear)
             }
         }
     }
@@ -1527,6 +1548,15 @@ const val PREDICTIVE_DRAG_SCALE = 0.34f
 val LocalPredictiveCommitDrag = compositionLocalOf { 0f }
 
 /**
+ * 预见式返回的拖动进度 0..1（0 = 没拖，1 = 拖满）。
+ *
+ * 给**顶栏**用：手指往右拖的时候顶栏跟着往上收走，不要跟着内容一起横移出去。
+ * 故意给的是 lambda 而不是 Float —— 调用方都在 `graphicsLayer { }` 里读，
+ * 拖动时每帧只重绘那一条，不会让整页重组。
+ */
+val LocalPredictiveDrag = compositionLocalOf<() -> Float> { { 0f } }
+
+/**
  * 页面栈的通用转场（各页的 `transitionSpec` 都调它，别各写一份）。
  *
  *  · 往里进：新页从右侧滑入 1/3 屏宽 + 淡入，旧页往左滑 1/6 + 淡出
@@ -1640,7 +1670,12 @@ fun PredictiveBackBox(
         commitDrag = 0f
     }
 
-    CompositionLocalProvider(LocalPredictiveCommitDrag provides commitDrag) {
+    CompositionLocalProvider(
+        LocalPredictiveCommitDrag provides commitDrag,
+        LocalPredictiveDrag provides {
+            (drag.value / PREDICTIVE_DRAG_SCALE).coerceIn(0f, 1f)
+        }
+    ) {
         Box(modifier.fillMaxSize().background(bg)) {
             // 拖动时下面露出上一页（它自己铺底色，免得和上层叠在一起）。
             // **提交后也要继续垫着**（commitDrag > 0）：这段时间真页面正在重新组合，
