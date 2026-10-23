@@ -92,6 +92,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import kotlinx.coroutines.delay
@@ -302,6 +303,15 @@ fun PageScaffold(
         derivedStateOf { headerPx > 0 && scroll.value > headerPx - trigger }
     }
 
+    val barStyle = LocalTopBarStyle.current
+    val base = MaterialTheme.colorScheme.surfaceContainerLow
+    // 模糊的「源」必须是**这一页自己的滚动内容**。
+    // 之前顶栏借用的是 MainActivity 那一个 HazeState —— 它在内容层的**祖先**上，
+    // 同一个绘制树里自己抓自己是抓不到的，haze 直接画成透明：
+    // 于是「不透明度开到 100 还是透明的」。这里在页面内自建一份，源和矮栏是兄弟节点，正常。
+    val pageHaze = remember { dev.chrisbanes.haze.HazeState() }
+    val useHaze = barStyle.usesHaze
+
     Box(Modifier.fillMaxWidth()) {
         // 底栏可见时它自己盖住了小白条区域，内容只需多留出它的高度往它下面滑；
         // 底栏收起（子页 / 输入法弹出）时才需要自己避开小白条。
@@ -310,6 +320,7 @@ fun PageScaffold(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(scroll)
+                .then(if (useHaze) Modifier.hazeSource(pageHaze) else Modifier)
                 .then(if (barInset <= 0f) Modifier.navigationBarsPadding() else Modifier)
                 .padding(bottom = bottomPadding + barInset.dp)
         ) {
@@ -323,17 +334,27 @@ fun PageScaffold(
             content()
         }
 
-        // 顶上的矮栏：和底栏**同一套浮层**（[FloatingBar]）——
-        // 同样的底色、同样的不透明度 / 模糊算法，只是参数各用各的（LocalTopBarStyle）。
-        //
-        // 以前这里自己写了一份：背景写在 windowInsetsPadding 之后（只盖住标题那 46dp，
-        // 状态栏那一截是空的）、整条又套了 graphicsLayer 淡入（alpha 图层会把 hazeEffect
-        // 拆掉 —— 于是「不透明度开到 100 还是透明的」）。现在不再自己画。
+        // 顶上那条矮栏：滚过大标题之后出现。
+        // 写法就是最普通的那种 —— 一整条铺满（铺到屏幕最顶）、内部再避开状态栏，
+        // 末尾一条发丝线。不透明时是实色；半透明 / 有模糊时才走 haze。
         if (shown.value) {
-            FloatingBar(
-                style = LocalTopBarStyle.current,
-                hairlineBottom = true,
-                modifier = Modifier.align(Alignment.TopCenter)
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .then(
+                        if (useHaze) {
+                            Modifier.hazeEffect(pageHaze) {
+                                blurRadius = barStyle.blur.dp
+                                blurEnabled = barStyle.blur > 0.5f
+                                backgroundColor = base
+                                alpha = barStyle.alpha
+                                noiseFactor = 0.06f
+                            }
+                        } else {
+                            Modifier.background(base.copy(alpha = base.alpha * barStyle.alpha))
+                        }
+                    )
             ) {
                 Row(
                     Modifier
@@ -363,15 +384,16 @@ fun PageScaffold(
                     )
                     actions()
                 }
+                Hairline(0.6f * (if (useHaze) barStyle.alpha else 1f))
             }
         }
     }
 }
 
 /**
- * 浮在内容上的一条栏 —— 顶栏、底栏、全选工具条共用同一份实现。
+ * 浮在内容上的一条栏 —— 底栏与全选工具条共用同一份实现。
  *
- * 底色固定用**底栏同色**（surfaceContainerLow），所以顶栏和底栏看起来是一条体系；
+ * 底色固定用 surfaceContainerLow（和顶栏同色，两条栏看起来是一条体系）；
  * 半透明 / 模糊由 [style] 决定（各自一份参数）：
  *  · 不透明度 1 + 模糊 0 → 纯色底，不额外离屏绘制；
  *  · 其余情况 → hazeEffect 抓下面划过去的内容做毛玻璃，tint 的 alpha 就是不透明度。
