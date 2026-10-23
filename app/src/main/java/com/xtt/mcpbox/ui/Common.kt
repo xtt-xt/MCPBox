@@ -322,6 +322,8 @@ fun CardGroup(
             if (spec.visible) seen++
             AnimatedVisibility(
                 visible = spec.visible,
+                // 额外修饰符套在这一层（行的兄弟节点级），拖动时的 zIndex 才压得住邻居
+                modifier = rowModifier?.invoke(index) ?: Modifier,
                 enter = expandVertically(
                     animationSpec = tween(durationMillis = 220),
                     expandFrom = Alignment.Top
@@ -335,8 +337,7 @@ fun CardGroup(
                 GroupRowItem(
                     spec = spec,
                     isFirst = slot == 0,
-                    isLast = slot == visibleCount - 1,
-                    modifier = rowModifier?.invoke(index) ?: Modifier
+                    isLast = slot == visibleCount - 1
                 )
             }
         }
