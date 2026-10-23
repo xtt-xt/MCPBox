@@ -848,6 +848,37 @@ fun main() {
         check("get_token 能调用", tokenCall.body.contains("testtoken123"), tokenCall.body.take(200))
         check("get_token 返回端口", tokenCall.body.contains("18720"))
 
+        // ---- 引导例外：没有令牌时，只有 get_token 能过 ----
+        val bare = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":46,"method":"tools/call","params":{"name":"get_token","arguments":{}}}""",
+            mapOf("Accept" to "application/json")
+        )
+        check("没有令牌也能调 get_token", bare.code == 200 && bare.body.contains("testtoken123"),
+            "code=${bare.code} ${bare.body.take(160)}")
+
+        val bareOther = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":47,"method":"tools/call","params":{"name":"server_info","arguments":{}}}""",
+            mapOf("Accept" to "application/json")
+        )
+        check("没有令牌调别的工具仍然 401", bareOther.code == 401, "code=${bareOther.code}")
+
+        val bareList = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":48,"method":"tools/list"}""",
+            mapOf("Accept" to "application/json")
+        )
+        check("没有令牌连 tools/list 都不给", bareList.code == 401, "code=${bareList.code}")
+
+        val bareBatch = http(
+            "POST", "$base/mcp",
+            """[{"jsonrpc":"2.0","id":49,"method":"tools/call","params":{"name":"get_token","arguments":{}}},
+                {"jsonrpc":"2.0","id":50,"method":"tools/call","params":{"name":"run_shell","arguments":{"command":"id"}}}]""",
+            mapOf("Accept" to "application/json")
+        )
+        check("批量请求里混了别的工具就不放行", bareBatch.code == 401, "code=${bareBatch.code}")
+
         println("\n[32] 记忆库图结构")
         val ms = MemoryStore(null)
         val c1 = ms.createEntities(

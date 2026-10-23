@@ -412,6 +412,32 @@ class McpServer(
         return block()
     }
 
+    /**
+     * 这是个「不带令牌来调 get_token」的请求吗？
+     *
+     * 只认 `method = tools/call` 且 `params.name = get_token`：initialize、tools/list、
+     * 其它任何工具都不算。批量请求里必须每一条都是它。
+     *
+     * 为什么开这个口子：令牌只拦 HTTP 侧的 /upload、/download、/api，而工具调用走协议层，
+     * 于是「AI 要传文件 → 先要令牌 → 但拿令牌的接口又要令牌」成了死循环。get_token
+     * 本身仍然要过审批（默认「询问」），所以真正动手之前手机上还会问一次。
+     */
+    private fun isTokenBootstrap(req: HttpRequest): Boolean {
+        if (req.method != "POST") return false
+        val el = runCatching { J.parseToJsonElement(req.bodyText()) }.getOrNull() ?: return false
+        fun one(e: JsonElement): Boolean {
+            val o = e as? JsonObject ?: return false
+            val method = (o["method"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return false
+            if (method != "tools/call") return false
+            val name = (o["params"] as? JsonObject)?.get("name") as? JsonPrimitive ?: return false
+            return name.isString && name.content == "get_token"
+        }
+        return when (el) {
+            is JsonArray -> el.isNotEmpty() && el.all { one(it) }
+            else -> one(el)
+        }
+    }
+
     private fun checkAuth(req: HttpRequest): Boolean {
         if (!config.tokenEnabled) return true
         val token = config.token
@@ -435,10 +461,16 @@ class McpServer(
         profile: String = ProfileStore.DEFAULT_ID
     ): Boolean {
         val session = req.header("mcp-session-id")?.let { sessions[it] }
-        if (!checkAuth(req)) {
+        // 引导例外：**只**放行「调用 get_token」这一个请求，别的工具一个都不给。
+        // 这样「AI 没有令牌 → 拿不到令牌」的死循环解得开，同时没令牌的人依然动不了任何文件。
+        val bootstrap = isTokenBootstrap(req)
+        if (!checkAuth(req) && !bootstrap) {
             return ex.respondText(
                 401, "application/json; charset=utf-8",
-                rpcError(null, -32001, L("缺少或错误的访问令牌（token）")).toString(),
+                rpcError(
+                    null, -32001,
+                    L("缺少或错误的访问令牌（token）。不带令牌时只能调用 get_token。")
+                ).toString(),
                 cors + mapOf("WWW-Authenticate" to "Bearer")
             )
         }
