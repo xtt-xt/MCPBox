@@ -721,14 +721,14 @@ fun CategoryPill(text: String, selected: Boolean, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     // 圆角四档：
-    //  · 选中常态   12dp
+    //  · 选中常态   16dp
     //  · 选中按下   10dp（比常态再收一点）
     //  · 未选中按下 12dp
     //  · 未选中常态 全圆胶囊
     val radius by animateDpAsState(
         targetValue = when {
             selected && pressed -> 10.dp
-            selected -> 12.dp
+            selected -> 16.dp
             pressed -> 12.dp
             else -> 26.dp
         },
@@ -1321,6 +1321,14 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
             },
             animationSpec = tween(150), label = "navIconBg"
         )
+        // 选中胶囊**从中间往两边长出来**：宽度从「一个小圆点」涨到整条胶囊，
+        // 因为这一格是居中的，宽度变大就是两边一起推开；取消选中时缩回中间。
+        // 按下也走同一条动画（不然按未选中的格子只有一个很小的点）。
+        val grow by animateFloatAsState(
+            targetValue = if (active || pressed) 1f else 0f,
+            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+            label = "navPillGrow"
+        )
         Box(Modifier.weight(1f)) {
             Column(
         Modifier
@@ -1337,9 +1345,11 @@ private fun RowScope.BottomNavItem(items: List<NavItem>, selected: Int, onSelect
         // 选中底色只包图标这一块；涟漪也裁在这一层，超不出胶囊圆角
         Box(
             Modifier
-                .size(width = 58.dp, height = 32.dp)
+                .size(width = (20f + 38f * grow).dp, height = 32.dp)
                 .clip(RoundedCornerShape(50))
-                .background(iconBg)
+                .background(
+                    if (active) iconBg.copy(alpha = iconBg.alpha * grow) else iconBg
+                )
                 .indication(
                     interactionSource = interaction,
                     indication = ripple(color = MaterialTheme.colorScheme.primary)
