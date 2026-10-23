@@ -124,6 +124,18 @@ internal fun SettingsPageShell(
 
 /* ------------------------------------------------------------ 外观与语言 */
 
+/**
+ * 后台算一次「背景种子色」，算出来才回调（让主题重建）。
+ *
+ * 读盘 + 解码，别放主线程；算不出来（文件坏了 / 视频首帧取不到）就什么都不做，
+ * 取色自然回落到壁纸。
+ */
+private fun ensureBackdropSeed(ctx: Context, scope: kotlinx.coroutines.CoroutineScope, onDone: () -> Unit) {
+    scope.launch {
+        if (BackdropSeed.ensure(ctx) != 0) onDone()
+    }
+}
+
 @Composable
 internal fun AppearanceSettingsPage(
     ctx: Context,
@@ -146,6 +158,8 @@ internal fun AppearanceSettingsPage(
     // 「交互」里的开关（如预见式返回动画）改了要能立刻刷新：Prefs 不是可观察状态，
     // 靠这个本页计数器把自己重组一次
     var localRev by remember { mutableStateOf(0) }
+    // 从背景取色是读盘 + 解码的活，丢到协程里做，算完再让主题重建一次
+    val scope = rememberCoroutineScope()
 
     SettingsPageShell(L("外观与语言"), L("主题配色、颜色模式与界面语言"), onBack, scroll) {
         GroupLabel(L("主题"))
@@ -161,9 +175,32 @@ internal fun AppearanceSettingsPage(
                 ) { on ->
                     if (sdkOk) {
                         AppCore.prefs.dynamicColor = on
+                        // 打开就顺手把背景种子算好（换过背景、还没算过的情况）
+                        if (on) ensureBackdropSeed(ctx, scope) { onThemeChanged() }
                         onThemeChanged()
                     }
                 },
+                // 取色方式：只在「动态取色开着 + 自定义背景开着」时出现。
+                // 背景一关，这一项整行带动画收起，取色回落到壁纸。
+                dropdownSpec(
+                    title = L("取色方式"),
+                    subtitle = L("种子色从哪来：系统壁纸，还是你设的背景图 / 视频首帧"),
+                    icon = Icons.Filled.Create,
+                    options = DynamicSeedSource.entries.map { L(it.label) },
+                    selectedIndex = DynamicSeedSource.entries
+                        .indexOf(DynamicSeedSource.of(AppCore.prefs.dynamicSeedSource))
+                ) { index ->
+                    val source = DynamicSeedSource.entries[index.coerceIn(0, DynamicSeedSource.entries.lastIndex)]
+                    AppCore.prefs.dynamicSeedSource = source.id
+                    if (source == DynamicSeedSource.BACKDROP) ensureBackdropSeed(ctx, scope) { onThemeChanged() }
+                    onThemeChanged()
+                }.copy(
+                    // 关掉自定义背景（或根本没选文件）时整行收起，取色自然回落到壁纸
+                    visible = AppCore.prefs.dynamicColor &&
+                        AppCore.prefs.backdropEnabled &&
+                        BackdropFiles.current(ctx, BackdropKind.of(AppCore.prefs.backdropKind)) != null
+                ),
+
                 // 动态取色开着的时候，种子色不起作用，就带动画收起来
                 RowSpec(
                     title = L("种子颜色"),
@@ -1325,9 +1362,24 @@ internal fun WallpaperSettingsPage(
     var cardA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropCardAlpha.toFloat()) }
     var barA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBarAlpha.toFloat()) }
 
+    // 换背景后要重算「从背景取色」的种子（没选这个取色方式就什么都不做）
+    val seedScope = rememberCoroutineScope()
+
     fun commit() {
         localRev++
         onChanged()
+        // 背景文件或开关变了 → 种子色跟着重算（同一个文件时 ensure 直接返回缓存，不重复解码）
+        if (AppCore.prefs.dynamicSeedSource == DynamicSeedSource.BACKDROP.id) {
+            seedScope.launch {
+                val seed = BackdropSeed.ensure(ctx)
+                if (seed == 0) {
+                    // 取不出来（文件坏了 / 视频首帧没解出来）：回落壁纸色，不留一个错色
+                    AppCore.prefs.backdropSeedColor = 0
+                    AppCore.prefs.backdropSeedFile = ""
+                }
+                onChanged()
+            }
+        }
     }
 
     val pickImage = rememberBackdropPicker(ctx, BackdropKind.IMAGE) { commit() }

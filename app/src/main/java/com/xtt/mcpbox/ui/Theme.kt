@@ -72,6 +72,21 @@ enum class DarkMode(val id: String, val label: String) {
     }
 }
 
+/**
+ * 动态取色的种子从哪来。
+ *
+ * - [WALLPAPER]：系统壁纸（Android 12+ 的 Material You，老系统回落种子色）
+ * - [BACKDROP]：自定义背景图 / 视频首帧（背景关掉时自动回落到壁纸）
+ */
+enum class DynamicSeedSource(val id: String, val label: String) {
+    WALLPAPER("wallpaper", "跟随壁纸"),
+    BACKDROP("backdrop", "跟随背景");
+
+    companion object {
+        fun of(id: String?): DynamicSeedSource = entries.firstOrNull { it.id == id } ?: WALLPAPER
+    }
+}
+
 /** 种子色选择器里的常用色板。 */
 val SEED_PRESETS: List<Long> = listOf(
     0xFF4C8DF6, 0xFF2FA8B8, 0xFF3FA860, 0xFF7CB342, 0xFFD9A521, 0xFFE8843C,
@@ -193,6 +208,8 @@ fun buildScheme(seedArgb: Int, dark: Boolean, style: PaletteStyle): ColorScheme 
  * @param paletteStyleId 调色板样式
  * @param darkModeId     深色 / 浅色 / 跟随系统
  * @param dynamicColor   用系统壁纸取色（Android 12+），优先级高于种子色
+ * @param seedSourceId   动态取色的种子来源：[DynamicSeedSource]
+ * @param backdropSeed   从自定义背景取出来的种子色（0 = 还没取 / 不可用）
  */
 @Composable
 fun MCPBoxTheme(
@@ -200,6 +217,8 @@ fun MCPBoxTheme(
     paletteStyleId: String = PaletteStyle.TONAL_SPOT.id,
     darkModeId: String = DarkMode.SYSTEM.id,
     dynamicColor: Boolean = false,
+    seedSourceId: String = DynamicSeedSource.WALLPAPER.id,
+    backdropSeed: Int = 0,
     content: @Composable () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -209,11 +228,17 @@ fun MCPBoxTheme(
         DarkMode.SYSTEM -> isSystemInDarkTheme()
     }
     val style = PaletteStyle.of(paletteStyleId)
-    val scheme = remember(dark, dynamicColor, seedArgb, style) {
-        if (dynamicColor && Build.VERSION.SDK_INT >= 31) {
+    val scheme = remember(dark, dynamicColor, seedArgb, style, seedSourceId, backdropSeed) {
+        val fromBackdrop = dynamicColor &&
+            DynamicSeedSource.of(seedSourceId) == DynamicSeedSource.BACKDROP &&
+            backdropSeed != 0
+        if (dynamicColor && Build.VERSION.SDK_INT >= 31 && !fromBackdrop) {
             runCatching {
                 if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
             }.getOrElse { buildScheme(seedArgb, dark, style) }
+        } else if (fromBackdrop) {
+            // 和系统动态取色同一套算法（色调点）：差别只在种子从壁纸换成背景图
+            buildScheme(backdropSeed, dark, PaletteStyle.TONAL_SPOT)
         } else {
             buildScheme(seedArgb, dark, style)
         }

@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -56,6 +57,7 @@ import com.xtt.mcpbox.i18n.L
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.android.material.color.utilities.Hct
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
@@ -308,8 +310,114 @@ object BackdropFiles {
     }
 }
 
+/**
+ * 从自定义背景里取种子色（动态取色用）。
+ *
+ * 取的是「主导色」：把背景缩到 96px 宽，逐个像素转成 HCT，丢掉太暗（tone < 22）、
+ * 太亮（tone > 92）和几乎没彩（chroma < 6）的像素 —— 不然大片黑边 / 白底会把结果拉成灰色。
+ * 剩下的按色相每 15° 分一桶，取像素最多的那一桶，桶内的色相做**向量平均**
+ * （直接算角度平均会在 0°/360° 接缝处算错），亮度固定 50（配色算法只用色相和彩度）。
+ *
+ * 视频背景取的是它的首帧（和设置页里那张预览图同一帧）。
+ */
+object BackdropSeed {
+
+    private const val SAMPLE_W = 96
+
+    fun kind(ctx: Context): BackdropKind = BackdropKind.of(AppCore.prefs.backdropKind)
+
+    /** 现在能不能从背景取色：开着背景、并且确实有文件。 */
+    fun available(ctx: Context): Boolean =
+        AppCore.prefs.backdropEnabled && BackdropFiles.current(ctx, kind(ctx)) != null
+
+    /**
+     * 现成的种子 —— 缓存和当前背景文件对得上才返回，否则 0。
+     *
+     * 同步、不读盘（只在组合里比较文件名），可以放心在主题入口调。
+     */
+    fun cached(ctx: Context): Int {
+        // 背景关掉时一律当「没有」：取色回落到壁纸，和设置页里那一行的显隐保持一致
+        if (!AppCore.prefs.backdropEnabled) return 0
+        val f = BackdropFiles.current(ctx, kind(ctx)) ?: return 0
+        val saved = AppCore.prefs.backdropSeedColor
+        return if (saved != 0 && AppCore.prefs.backdropSeedFile == f.name) saved else 0
+    }
+
+    /**
+     * 换了背景就重算一次；文件没变就直接用缓存。
+     *
+     * @return 种子色（0 = 取不出来，调用方回落到壁纸）
+     */
+    suspend fun ensure(ctx: Context, force: Boolean = false): Int = withContext(Dispatchers.IO) {
+        val k = kind(ctx)
+        val f = BackdropFiles.current(ctx, k) ?: return@withContext 0
+        if (!force) {
+            val saved = AppCore.prefs.backdropSeedColor
+            if (saved != 0 && AppCore.prefs.backdropSeedFile == f.name) return@withContext saved
+        }
+        val poster = BackdropFiles.poster(f, k) ?: return@withContext 0
+        val seed = runCatching { dominantSeed(poster.asAndroidBitmap()) }.getOrDefault(0)
+        if (seed != 0) {
+            AppCore.prefs.backdropSeedColor = seed
+            AppCore.prefs.backdropSeedFile = f.name
+        }
+        seed
+    }
+
+    /** 主导色的种子（ARGB）；取不出来返回 0。 */
+    fun dominantSeed(src: Bitmap): Int {
+        if (src.width <= 0 || src.height <= 0) return 0
+        val h = (src.height.toFloat() / src.width * SAMPLE_W).toInt().coerceAtLeast(1)
+        val small = if (src.width == SAMPLE_W && src.height == h) src
+        else Bitmap.createScaledBitmap(src, SAMPLE_W, h, true)
+        val px = IntArray(SAMPLE_W * h)
+        small.getPixels(px, 0, SAMPLE_W, 0, 0, SAMPLE_W, h)
+        if (small !== src) small.recycle()
+
+        val bins = 24
+        val count = IntArray(bins)
+        val sinSum = DoubleArray(bins)
+        val cosSum = DoubleArray(bins)
+        val chromaSum = DoubleArray(bins)
+        var total = 0
+        var graySum = 0.0
+        var grayN = 0
+
+        px.forEach { argb ->
+            val hct = Hct.fromInt(argb)
+            val tone = hct.tone
+            val chroma = hct.chroma
+            if (chroma < 6.0) {
+                // 灰阶像素单独统计，彩色像素全军覆没时拿它兜底
+                if (tone in 22.0..92.0) { graySum += tone; grayN++ }
+                return@forEach
+            }
+            if (tone < 22.0 || tone > 92.0) return@forEach
+            val i = ((hct.hue + 7.5) / 15.0).toInt() % bins
+            val rad = Math.toRadians(hct.hue)
+            count[i]++
+            sinSum[i] += kotlin.math.sin(rad) * chroma
+            cosSum[i] += kotlin.math.cos(rad) * chroma
+            chromaSum[i] += chroma
+            total++
+        }
+
+        if (total == 0) {
+            // 整张图都没有像样的彩色：退回「平均灰」，给一点点彩度免得全灰
+            if (grayN == 0) return 0
+            return Hct.from(0.0, 4.0, 50.0).toInt()
+        }
+
+        val best = count.indices.maxByOrNull { count[it] } ?: return 0
+        val hue = Math.toDegrees(kotlin.math.atan2(sinSum[best], cosSum[best]))
+        val chroma = (chromaSum[best] / count[best] * 1.2).coerceIn(12.0, 90.0)
+        return Hct.from((hue + 360.0) % 360.0, chroma, 50.0).toInt()
+    }
+}
+
 /** 按长边降采样解码（背景只需要屏幕级别，原图直接解会 OOM）。 */
 private fun decodeScaled(file: File, maxDim: Int): ImageBitmap? = runCatching {
+
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null

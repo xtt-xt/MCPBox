@@ -148,6 +148,13 @@ fun SettingsScreen(
                     onBack = {},
                     scroll = shellScroll
                 )
+                // 编辑命令规则时，底下露出来的那一页是「命令规则」列表本身
+                "shell/rules/command" -> RulesSettingsPage(
+                    kind = RuleKind.COMMAND,
+                    revision = revision,
+                    onChanged = {},
+                    onBack = {}
+                )
                 else -> SettingsHomePage(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
@@ -183,7 +190,11 @@ fun SettingsScreen(
         PageSurface(sub = current.isNotEmpty()) {
         // 顶层是空串，给它一个固定名字当 key
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
-            when (current) {
+            // 「编辑某条命令规则」的 key 是 `shell/rules/command/<id>`：把这一整类归一
+            // 成同一个分支（id 从 originalKey 里取），不然 when 里要列无数种 id。
+            val isRuleEdit = current.startsWith("shell/rules/command/") &&
+                current != "shell/rules/command/new"
+            when (if (isRuleEdit) "shell/rules/command/edit" else current) {
                 "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
                     revision = revision,
@@ -253,6 +264,23 @@ fun SettingsScreen(
                 )
                 "shell/rules/command" -> RulesSettingsPage(
                     kind = RuleKind.COMMAND,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back,
+                    onOpenNew = { onPage("shell/rules/command/new") },
+                    onOpenEdit = { id -> onPage("shell/rules/command/$id") }
+                )
+                "shell/rules/command/edit" -> CommandRuleEditPage(
+                    ctx = ctx,
+                    ruleId = current.removePrefix("shell/rules/command/"),
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                // 命令规则的编辑页（新增用同一个页面，id 是 "new"）
+                "shell/rules/command/new" -> CommandRuleEditPage(
+                    ctx = ctx,
+                    ruleId = null,
                     revision = revision,
                     onChanged = onChanged,
                     onBack = back
@@ -706,5 +734,10 @@ private fun settingsDepth(page: String): Int = page.split('/').count { it.isNotE
  * 二级页只取**第一段**是有意的：拿 `substringBeforeLast('/')` 会得到 `shell/rules`，
  * 那不是一个有效页面，会掉进兜底分支 → 看起来就是「一返回就跳回设置首页」。
  */
-private fun parentPage(page: String): String =
-    if (page.contains('/')) page.substringBefore('/') else ""
+private fun parentPage(page: String): String = when {
+    // 四级（命令规则编辑页 `shell/rules/command/<id>`）退到它真正的上一级，
+    // 也就是「命令规则」页；三级页（`shell/rules/path`）仍然退到「终端与命令」。
+    page.split('/').count { it.isNotEmpty() } >= 4 -> page.substringBeforeLast('/')
+    page.contains('/') -> page.substringBefore('/')
+    else -> ""
+}

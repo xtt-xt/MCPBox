@@ -80,6 +80,13 @@ class Prefs(context: Context) : SettingsSource {
 
         /** 桌面图标用哪一个（见 ui/AppIcon.kt 的 id）。 */
         const val KEY_APP_ICON = "app_icon"
+
+        /** 动态取色的种子从哪来：`wallpaper`（系统壁纸）/ `backdrop`（自定义背景）。 */
+        const val KEY_SEED_SOURCE = "dynamic_seed_source"
+        /** 从自定义背景里取出来的种子色（ARGB，0 = 还没取）。 */
+        const val KEY_BACKDROP_SEED = "backdrop_seed_color"
+        /** 上面那个种子是从哪个文件取的 —— 换背景后靠它判断要不要重算。 */
+        const val KEY_BACKDROP_SEED_FILE = "backdrop_seed_file"
     }
 
     override fun getString(key: String, def: String?): String? = sp.getString(key, def)
@@ -379,6 +386,27 @@ class Prefs(context: Context) : SettingsSource {
     var appIcon: String
         get() = getString(KEY_APP_ICON, "line") ?: "line"
         set(value) = putString(KEY_APP_ICON, value)
+
+    /**
+     * 动态取色的种子从哪来：`wallpaper` / `backdrop`。
+     *
+     * 只在「动态取色」开着、并且「自定义背景」也开着时才有意义；
+     * 背景一关，界面就把这一项藏起来，取色回落到壁纸。
+     */
+    var dynamicSeedSource: String
+        get() = getString(KEY_SEED_SOURCE, com.xtt.mcpbox.ui.DynamicSeedSource.WALLPAPER.id)
+            ?: com.xtt.mcpbox.ui.DynamicSeedSource.WALLPAPER.id
+        set(value) = putString(KEY_SEED_SOURCE, value)
+
+    /** 从自定义背景里取出来的种子色（0 = 还没取）。 */
+    var backdropSeedColor: Int
+        get() = getInt(KEY_BACKDROP_SEED, 0)
+        set(value) = putInt(KEY_BACKDROP_SEED, value)
+
+    /** 那个种子是从哪个背景文件取的（换背景 / 换类型后要重算）。 */
+    var backdropSeedFile: String
+        get() = getString(KEY_BACKDROP_SEED_FILE, "") ?: ""
+        set(value) = putString(KEY_BACKDROP_SEED_FILE, value)
 
     /** 重置所有设置（服务器核心的配置也在里面）。 */
     override fun clearAll() = sp.edit().clear().apply()

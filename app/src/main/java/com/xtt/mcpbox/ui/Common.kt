@@ -300,7 +300,14 @@ data class RowSpec(
 fun CardGroup(
     rows: List<RowSpec>,
     modifier: Modifier = Modifier,
-    horizontalPadding: Int = 14
+    horizontalPadding: Int = 14,
+    /**
+     * 给每一行套一层额外修饰符（按 [rows] 的下标）。
+     *
+     * 目前只有命令规则的拖动排序用它：需要给被拖的那行加位移和 zIndex，同时借
+     * `onGloballyPositioned` 量出每行高度。不传就是原来的行为。
+     */
+    rowModifier: ((Int) -> Modifier)? = null
 ) {
     // 首尾圆角只认「可见行」：某行收起后，它上面的行就要接管底部圆角
     val visibleCount = rows.count { it.visible }
@@ -310,7 +317,7 @@ fun CardGroup(
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding.dp)
     ) {
-        rows.forEach { spec ->
+        rows.forEachIndexed { index, spec ->
             val slot = seen
             if (spec.visible) seen++
             AnimatedVisibility(
@@ -328,7 +335,8 @@ fun CardGroup(
                 GroupRowItem(
                     spec = spec,
                     isFirst = slot == 0,
-                    isLast = slot == visibleCount - 1
+                    isLast = slot == visibleCount - 1,
+                    modifier = rowModifier?.invoke(index) ?: Modifier
                 )
             }
         }
@@ -336,7 +344,12 @@ fun CardGroup(
 }
 
 @Composable
-private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
+private fun GroupRowItem(
+    spec: RowSpec,
+    isFirst: Boolean,
+    isLast: Boolean,
+    modifier: Modifier = Modifier
+) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val clickable = spec.onClick != null
@@ -363,7 +376,7 @@ private fun GroupRowItem(spec: RowSpec, isFirst: Boolean, isLast: Boolean) {
         ),
         animationSpec = tween(160), label = "rowBg"
     )
-    Column(Modifier.fillMaxWidth()) {
+    Column(modifier.fillMaxWidth()) {
         // 组内就靠这 2dp 的缝隙分开（不再画分隔线）
         if (!isFirst) Spacer(Modifier.height(GroupGap))
         Surface(

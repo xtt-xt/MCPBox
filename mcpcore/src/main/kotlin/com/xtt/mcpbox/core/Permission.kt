@@ -116,7 +116,12 @@ data class Rule(
     val path: String = "",
     val match: String = MATCH_PREFIX,
     val action: String = PermAction.ASK.id,
-    val note: String = ""
+    val note: String = "",
+    /**
+     * 停用的规则仍然留在列表里（保留它的位置和内容），但匹配时直接跳过 ——
+     * 相当于「临时摘掉」一条，不用删掉再重建。
+     */
+    val enabled: Boolean = true
 ) {
     /** pattern 优先，旧数据回落到 path。 */
     val target: String get() = pattern.ifBlank { path }
@@ -130,6 +135,7 @@ data class Rule(
         const val MATCH_PREFIX = "prefix"
         const val MATCH_EXACT = "exact"
         const val MATCH_REGEX = "regex"
+        const val MATCH_CONTAINS = "contains"
     }
 }
 
@@ -342,21 +348,53 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
         notifyChanged()
     }
 
+    /**
+     * 把一条规则挪到**同类型**里的第 [toIndex] 位（界面拖动排序用）。
+     *
+     * 参数是「在命令规则 / 路径规则这一串里的下标」，不是整张 rules 表的下标 ——
+     * 两种规则混在同一张表里，界面看到的顺序与表里的位置不是一回事。
+     * 重排时只动同类型的槽位，另一类的相对位置保持不变。
+     */
+    fun moveRuleTo(id: String, toIndex: Int) {
+        val list = rules.toMutableList()
+        val idx = list.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        val isCmd = list[idx].isCommand
+        val same = list.filter { it.isCommand == isCmd }.toMutableList()
+        val from = same.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val to = toIndex.coerceIn(0, same.lastIndex)
+        if (from == to) return
+        val item = same.removeAt(from)
+        same.add(to, item)
+        var k = 0
+        for (i in list.indices) {
+            if (list[i].isCommand == isCmd) {
+                list[i] = same[k]
+                k++
+            }
+        }
+        rules = list
+        persist()
+        notifyChanged()
+    }
+
     fun snapshot(): Map<String, PermAction> = switches
 
     fun decide(perm: PermKey, path: String? = null, command: String? = null): PermDecision {
         if (config.readOnly && (perm == PermKey.WRITE || perm == PermKey.DELETE)) {
             return PermDecision(PermAction.DENY, "只读模式已开启")
         }
-        // 1) 命令规则：按顺序，第一条命中生效
+        // 1) 命令规则：按顺序，第一条命中生效（停用的规则跳过）
         if (!command.isNullOrBlank()) {
             val hit = rules.firstOrNull { r ->
-                r.isCommand && (r.perm == "*" || r.perm == perm.id) && commandMatches(r, command)
+                r.isCommand && r.enabled && (r.perm == "*" || r.perm == perm.id) && commandMatches(r, command)
             }
             if (hit != null) {
                 val how = when (hit.match) {
                     Rule.MATCH_EXACT -> "完全匹配"
                     Rule.MATCH_REGEX -> "正则匹配"
+                    Rule.MATCH_CONTAINS -> "包含匹配"
                     else -> "前缀匹配"
                 }
                 return PermDecision(hit.actionEnum, "命令规则「${hit.target}」（$how）", hit.id)
@@ -390,6 +428,7 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
             Rule.MATCH_REGEX -> runCatching {
                 Regex(target, RegexOption.IGNORE_CASE).containsMatchIn(cmd)
             }.getOrDefault(false)
+            Rule.MATCH_CONTAINS -> cmd.contains(target, ignoreCase = true)
             else -> cmd == target || cmd.startsWith("$target ")
         }
     }

@@ -30,6 +30,14 @@ data class StatsSnapshot(
 
     /** 有记录的天数。 */
     val activeDays: Int get() = requestsByDay.count { it.value > 0L }
+
+    /**
+     * 按天相加的总数。
+     *
+     * 正常情况下它等于 [requestsTotal]。不相等说明「按天聚合」那一步漏了或者去重了，
+     * 热力图就会和卡片上的总数对不上 —— 界面只在真的不等时才记一条日志，不刷屏。
+     */
+    val dailySum: Long get() = requestsByDay.values.sum()
 }
 
 /**
@@ -306,17 +314,103 @@ fun heatWeeks(
     return out
 }
 
-/** 热力图的分档：0 = 没有，1..4 = 由浅到深（跟着一年里最忙的那天走）。 */
-fun heatLevel(count: Long, max: Long): Int = when {
-    count <= 0L -> 0
-    max <= 0L -> 0
-    else -> {
-        val r = count.toDouble() / max.toDouble()
-        when {
-            r <= 0.25 -> 1
-            r <= 0.5 -> 2
-            r <= 0.75 -> 3
+/** 热力图的分档方式。 */
+enum class HeatScaleKind(val id: String) {
+    /** 线性：`v / max`，简单直观，但单日极值会把其余日子压得很暗。 */
+    LINEAR("linear"),
+
+    /** 平方根：`sqrt(v / max)`，中低段层次更好（数据量少的时候用）。 */
+    SQRT("sqrt"),
+
+    /** 分位数：按 P50 / P75 / P90 分档，不受极值影响（分布极不均匀时用）。 */
+    QUANTILE("quantile")
+}
+
+/**
+ * 热力图的色阶：`次数 → 等级(0..4) → 颜色`。
+ *
+ * 中间隔这一层是为了让**颜色和数值解耦**：换配色、加档位都只动颜色那一半，
+ * 算法这边只回答「这天算第几档」。
+ *
+ * 三套算法各有失效边界，所以按数据自己挑：
+ *  - 记录少（不到 20 天）或全 0：线性 —— 样本太少时任何统计量都没意义；
+ *  - `max / median > 10`：分位数 —— 有一天特别忙的话，线性会把别的日子全压成一档；
+ *  - 其余：平方根 —— 中低段（1~20 次）的层次比线性清楚。
+ */
+data class HeatScale(
+    val kind: HeatScaleKind,
+    val max: Long,
+    val median: Long,
+    /** 非 0 的档位边界（次数 ≤ 边界 即落到对应档）；分位数模式下是 P50/P75/P90/P99。 */
+    val cuts: List<Double>,
+    /** 有记录（> 0）的天数。 */
+    val activeDays: Int
+) {
+    /** 0 = 没有请求；1..4 = 由浅到深。 */
+    fun level(count: Long): Int {
+        if (count <= 0L) return 0
+        if (max <= 0L) return 0
+        val v = when (kind) {
+            HeatScaleKind.LINEAR -> count.toDouble() / max
+            HeatScaleKind.SQRT -> kotlin.math.sqrt(count.toDouble() / max)
+            HeatScaleKind.QUANTILE -> 0.0 // 分位数直接用 cuts 比
+        }
+        if (kind == HeatScaleKind.QUANTILE) {
+            return when {
+                count <= cuts[0] -> 1
+                count <= cuts[1] -> 2
+                count <= cuts[2] -> 3
+                else -> 4
+            }
+        }
+        return when {
+            v <= 0.25 -> 1
+            v <= 0.5 -> 2
+            v <= 0.75 -> 3
             else -> 4
         }
     }
+
+    companion object {
+        /** 少于这么多天就不做统计判断，直接线性。 */
+        const val MIN_DAYS_FOR_ADAPTIVE = 20
+
+        /** 最忙那天超过中位数这么多倍，就改用分位数。 */
+        const val OUTLIER_RATIO = 10.0
+
+        fun of(counts: Collection<Long>): HeatScale {
+            val positive = counts.filter { it > 0L }.sorted()
+            val max = positive.maxOrNull() ?: 0L
+            if (positive.isEmpty()) {
+                return HeatScale(HeatScaleKind.LINEAR, 0L, 0L, listOf(0.0, 0.0, 0.0, 0.0), 0)
+            }
+            val median = percentile(positive, 50.0)
+            val p = { q: Double -> percentile(positive, q) }
+            val qCuts = listOf(p(50.0), p(75.0), p(90.0), p(99.0))
+            val kind = when {
+                positive.size < MIN_DAYS_FOR_ADAPTIVE -> HeatScaleKind.LINEAR
+                median > 0 && max.toDouble() / median > OUTLIER_RATIO -> HeatScaleKind.QUANTILE
+                else -> HeatScaleKind.SQRT
+            }
+            return HeatScale(
+                kind = kind,
+                max = max,
+                median = median.toLong(),
+                cuts = if (kind == HeatScaleKind.QUANTILE) qCuts
+                else listOf(max * 0.25, max * 0.5, max * 0.75, max.toDouble()),
+                activeDays = positive.size
+            )
+        }
+
+        /** 最近秩法分位数（够用，不引入统计库）。 */
+        private fun percentile(sorted: List<Long>, q: Double): Double {
+            if (sorted.isEmpty()) return 0.0
+            val rank = kotlin.math.ceil(q / 100.0 * sorted.size).toInt().coerceIn(1, sorted.size)
+            return sorted[rank - 1].toDouble()
+        }
+    }
 }
+
+/** 兼容旧调用：按线性算一档。新代码请用 [HeatScale.level]。 */
+fun heatLevel(count: Long, max: Long): Int = HeatScale.of(listOf(max)).level(count)
+

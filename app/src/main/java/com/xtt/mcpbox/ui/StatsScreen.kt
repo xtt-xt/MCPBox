@@ -49,8 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.core.HeatDay
+import com.xtt.mcpbox.core.HeatScale
 import com.xtt.mcpbox.core.StatsSnapshot
-import com.xtt.mcpbox.core.heatLevel
 import com.xtt.mcpbox.core.heatWeeks
 import kotlinx.coroutines.delay
 import java.time.LocalDate
@@ -78,6 +78,19 @@ fun StatsSettingsPage(onBack: () -> Unit) {
         }
     }
     val snap = remember(now / 1000L) { AppCore.stats.snapshot() }
+
+    // 自检：按天相加应当等于总数。不等说明聚合漏了/去重了 —— 只在真的不等时记一条，
+    // 记在「日志」页的系统分类里，平时不会有人看到。
+    LaunchedEffect(snap.requestsTotal) {
+        if (snap.requestsTotal != snap.dailySum) {
+            AppCore.log.add(
+                com.xtt.mcpbox.core.LogKind.ERROR,
+                tool = "stats",
+                ok = false,
+                message = "统计按天相加 %s 与总数 %s 不一致".format(snap.dailySum, snap.requestsTotal)
+            )
+        }
+    }
 
     SettingsPageShell(L("统计"), L("请求次数、运行时长与启动次数（只增不减）"), onBack) {
         GroupLabel(L("请求"))
@@ -109,7 +122,8 @@ private fun HeatCard(snap: StatsSnapshot) {
         ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val from = if (earliest != null && earliest.isBefore(yearAgo)) earliest else yearAgo
     val weeks = heatWeeks(snap.requestsByDay, today, from)
-    val max = snap.requestsByDay.values.maxOrNull() ?: 0L
+    // 色阶按「画出来的这一段」里的每一天算：不把一年前还在用的老数据掺进来
+    val scale = HeatScale.of(weeks.flatten().filterNotNull().map { it.count })
 
     CardColumn {
         CardBox {
@@ -127,7 +141,7 @@ private fun HeatCard(snap: StatsSnapshot) {
                 )
             }
             Spacer(Modifier.height(14.dp))
-            HeatGrid(weeks, max)
+            HeatGrid(weeks, scale)
             Spacer(Modifier.height(10.dp))
             HeatLegend()
         }
@@ -135,7 +149,7 @@ private fun HeatCard(snap: StatsSnapshot) {
 }
 
 @Composable
-private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
+private fun HeatGrid(weeks: List<List<HeatDay?>>, scale: HeatScale) {
     val gap = 3.dp
     val minCell = 13.dp
     val monthRow = 18.dp
@@ -203,7 +217,7 @@ private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
                         weeks.forEach { week ->
                             Column(verticalArrangement = Arrangement.spacedBy(gap)) {
                                 week.forEach { day ->
-                                    HeatCell(cell, day, max)
+                                    HeatCell(cell, day, scale)
                                 }
                             }
                         }
@@ -215,8 +229,8 @@ private fun HeatGrid(weeks: List<List<HeatDay?>>, max: Long) {
 }
 
 @Composable
-private fun HeatCell(cell: Dp, day: HeatDay?, max: Long) {
-    val level = if (day == null) -1 else heatLevel(day.count, max)
+private fun HeatCell(cell: Dp, day: HeatDay?, scale: HeatScale) {
+    val level = if (day == null) -1 else scale.level(day.count)
     Box(
         Modifier
             .size(cell)

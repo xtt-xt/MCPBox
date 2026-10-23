@@ -97,15 +97,25 @@ class MainActivity : ComponentActivity() {
             val style = remember(themeRev) { AppCore.prefs.paletteStyle }
             val darkMode = remember(themeRev) { AppCore.prefs.darkMode }
             val dynColor = remember(themeRev) { AppCore.prefs.dynamicColor }
+            // 动态取色的种子来源：壁纸 / 自定义背景（背景取色是在设置页算好存起来的，
+            // 这里只读缓存，跟当前背景文件对不上就当没有）
+            val seedSource = remember(themeRev) { AppCore.prefs.dynamicSeedSource }
+            val backdropSeed = remember(themeRev) {
+                if (com.xtt.mcpbox.ui.DynamicSeedSource.of(seedSource) ==
+                    com.xtt.mcpbox.ui.DynamicSeedSource.BACKDROP
+                ) BackdropSeed.cached(this@MainActivity) else 0
+            }
             MCPBoxTheme(
                 seedArgb = seed,
                 paletteStyleId = style,
                 darkModeId = darkMode,
-                dynamicColor = dynColor
+                dynamicColor = dynColor,
+                seedSourceId = seedSource,
+                backdropSeed = backdropSeed
             ) {
                 // 把当前配色同步给悬浮窗（它在 Compose 外面，拿不到 MaterialTheme）
                 val cs = MaterialTheme.colorScheme
-                LaunchedEffect(seed, style, darkMode, dynColor) {
+                LaunchedEffect(seed, style, darkMode, dynColor, seedSource, backdropSeed) {
                     AppCore.overlayPalette = OverlayPalette(
                         background = cs.background.toArgb(),
                         card = cs.surfaceContainer.toArgb(),

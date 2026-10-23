@@ -503,6 +503,52 @@ fun main() {
         check("shell_info 列出后端", okShellInfo && shellInfoMsg.contains("应用沙箱"), shellInfoMsg)
         check("shell_info 列出命令规则", shellInfoMsg.contains("rm"), shellInfoMsg)
 
+        // ---- 规则编辑：改匹配方式 / 动作 / 备注 / 停用 / 拖动排序 ----
+        val rmRule = permissions.commandRules().first { it.target == "rm" }
+        permissions.updateRule(rmRule.copy(note = "危险命令", action = PermAction.ASK.id))
+        val edited = permissions.commandRules().first { it.id == rmRule.id }
+        check("编辑：备注写进去了", edited.note == "危险命令", edited.toString())
+        check(
+            "编辑：动作改成询问后不再直接拒绝",
+            permissions.decide(PermKey.SHELL, command = "rm -rf /tmp/x").action == PermAction.ASK
+        )
+
+        permissions.updateRule(edited.copy(enabled = false))
+        check(
+            "停用：规则不再参与匹配",
+            permissions.decide(PermKey.SHELL, command = "rm -rf /tmp/x").ruleId != rmRule.id,
+            permissions.decide(PermKey.SHELL, command = "rm -rf /tmp/x").source
+        )
+        check("停用：规则本身还在列表里", permissions.commandRules().any { it.id == rmRule.id })
+        permissions.updateRule(edited)
+        check(
+            "重新启用后照常命中",
+            permissions.decide(PermKey.SHELL, command = "rm -rf /tmp/x").ruleId == rmRule.id
+        )
+
+        // 包含匹配
+        val containsRule = permissions.addCommandRule(
+            "git push", PermAction.DENY, match = Rule.MATCH_CONTAINS, note = "禁止推送"
+        )
+        check(
+            "包含匹配：命令中间出现也算命中",
+            permissions.decide(PermKey.SHELL, command = "cd /tmp && git push origin main").action == PermAction.DENY
+        )
+        check(
+            "包含匹配：不相干的命令不受影响",
+            permissions.decide(PermKey.SHELL, command = "git status").action == PermAction.ASK
+        )
+        permissions.removeRule(containsRule.id)
+
+        // 拖动排序：moveRuleTo 的下标是「在命令规则这一串里的位置」
+        val before = permissions.commandRules().map { it.id }
+        permissions.moveRuleTo(before.last(), 0)
+        val after = permissions.commandRules().map { it.id }
+        check("排序：最后一条挪到最前", after.first() == before.last(), after.toString())
+        check("排序：条数不变", after.size == before.size && after.toSet() == before.toSet())
+        permissions.moveRuleTo(before.last(), before.lastIndex)
+        check("排序：再挪回原位", permissions.commandRules().map { it.id } == before)
+
         println("\n[18] 自定义工具")
         answer("创建自定义工具", ApprovalDecision.ALLOW_ALWAYS)
         val (okCreate, createText) = call(
@@ -2500,6 +2546,37 @@ fun main() {
         check("分档：最大值最深", heatLevel(10L, 10L) == 4)
         check("分档：中间值居中", heatLevel(5L, 10L) in 2..3)
         check("分档：没有记录（max = 0）不炸", heatLevel(0L, 0L) == 0)
+
+        // ---- 自适应色阶 ----
+        // 记录太少：不做统计判断，直接线性
+        val few = HeatScale.of(listOf(1L, 2L, 3L, 9L))
+        check("色阶：天数不足 20 走线性", few.kind == HeatScaleKind.LINEAR, few.toString())
+
+        // 分布均匀、天数够：平方根（中低段层次更好）
+        val even = (1..30).map { it.toLong() * 2 }
+        check("色阶：分布均匀走平方根", HeatScale.of(even).kind == HeatScaleKind.SQRT,
+            HeatScale.of(even).toString())
+
+        // 有一天特别忙：改分位数，极值不再把别的日子压成一档
+        val spike = (1..30).map { 3L } + 900L
+        val q = HeatScale.of(spike)
+        check("色阶：存在极值时走分位数", q.kind == HeatScaleKind.QUANTILE, q.toString())
+        // 绝大多数日子都是同一个值：它们该落在同一个浅档里，和极值那天分得开
+        check("色阶：普通日子有颜色且未被误判成 0", q.level(3L) in 1..3, "等级 ${q.level(3L)}")
+        check("色阶：普通日子与极值不同档", q.level(3L) < q.level(900L), "${q.level(3L)} / ${q.level(900L)}")
+        check("色阶：极值那天仍是最深", q.level(900L) == 4)
+
+        // 0 始终最浅；等级随次数单调不减
+        val s2 = HeatScale.of((1..40).map { it.toLong() })
+        check("色阶：0 次永远是 0 档", s2.level(0L) == 0)
+        check(
+            "色阶：次数越多等级不会反降",
+            (1L..40L).map { s2.level(it) }.zipWithNext().all { (a, b) -> b >= a }
+        )
+
+        // 自检口径：按天相加应等于总数
+        val sumSnap = StatsSnapshot(requestsTotal = 6L, requestsByDay = mapOf("2026-10-01" to 2L, "2026-10-02" to 4L))
+        check("统计：dailySum 等于按天相加", sumSnap.dailySum == 6L)
     }
 
     println("\n[50] 自动补齐权限（有 Root / Shizuku 时进入 App 自动补）")
