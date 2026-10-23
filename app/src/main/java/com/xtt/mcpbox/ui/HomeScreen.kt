@@ -77,7 +77,8 @@ fun HomeScreen(
         Modifier
             .fillMaxWidth()
             .verticalScroll(scroll)
-            .padding(bottom = 20.dp)
+            // 底栏是覆盖式的：末尾垫出它的高度，滚到底时最后一张卡才不会被挡住
+            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
     ) {
         PageHeader(
             title = L("MCP 文件盒"),

@@ -190,7 +190,8 @@ private fun PermissionHomePage(
         Modifier
             .fillMaxWidth()
             .verticalScroll(scroll)
-            .padding(bottom = 20.dp)
+            // 底栏覆盖层的高度，见 MainActivity：滚到底时最后一张卡才不会被挡住
+            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
     ) {
         val switches = remember(revision) { AppCore.permissions.snapshot() }
 

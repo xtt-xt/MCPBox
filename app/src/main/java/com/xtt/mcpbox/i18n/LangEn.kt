@@ -2496,5 +2496,12 @@ object LangEn {
     "删除这条规则？" to "Delete this rule?",
     "删掉后这条命令重新回到「执行命令」权限开关的判定" to "After deleting, the command falls back to the \"Run commands\" permission switch",
     "删掉之后，这条命令要重新按权限开关判定，可能又会弹审批。" to "Once deleted, this command goes back to the permission switch and may ask for approval again.",
+    "底栏" to "Bottom bar",
+    "底栏不透明度" to "Bar opacity",
+    "%s%%（100%% = 不透明底栏）" to "%s%% (100%% = opaque bar)",
+    "底栏模糊" to "Bar blur",
+    "%s dp（0 = 不模糊；模糊的是底栏下面划过去的内容）" to "%s dp (0 = sharp; blurs what scrolls underneath)",
+    "需要 Android 12 及以上，当前系统只做半透明" to "Needs Android 12+; this device falls back to translucency",
+    "缺少或错误的访问令牌（token）。不带令牌时只能调用 get_token。" to "Missing or wrong access token. Without one you can only call get_token.",
     )
 }

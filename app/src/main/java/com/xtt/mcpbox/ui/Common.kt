@@ -91,6 +91,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import kotlinx.coroutines.delay
@@ -98,6 +99,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -957,17 +959,51 @@ data class NavItem(val label: String, val icon: ImageVector)
  *  - 整条浮在页面之上（顶部分割线 + 低一档的底色），内容避开系统小白条、底色铺到屏幕最底。
  */
 @Composable
-fun BottomPillNav(items: List<NavItem>, selected: Int, onSelect: (Int) -> Unit) {
+fun BottomPillNav(
+    items: List<NavItem>,
+    selected: Int,
+    /** 底栏样式（不透明度 / 模糊），默认全不透明 = 原来的样子。 */
+    style: BarStyle = BarStyle.Opaque,
+    /** 实测高度（dp）：覆盖式布局靠它算内容末尾的留白，硬编码会因字体大小 / 手势条高度对不上。 */
+    onHeight: (Float) -> Unit = {},
+    onSelect: (Int) -> Unit
+) {
+    val hazeState = LocalHazeState.current
+    val hazeOn = style.usesHaze && hazeState != null
+    // 毛玻璃层：hazeEffect 画的是「底下那一层的实时模糊 + 一层主题色 tint」。
+    // tint 的 alpha 就是底栏不透明度 —— 0 时纯模糊（能看清底下的字），100 时完全不透。
+    // 注意 lambda 不是 @Composable：颜色得先在外面取好。
+    val barBase = MaterialTheme.colorScheme.surfaceContainerLow
+    val hazeMod = if (hazeOn) {
+        Modifier.hazeEffect(hazeState!!) {
+            blurRadius = style.blur.dp
+            blurEnabled = style.blur > 0.5f
+            backgroundColor = barBase
+            alpha = style.alpha
+            // 深色主题里 blur 的对比度需要一点噪声才不会糊成一片
+            noiseFactor = 0.06f
+        }
+    } else Modifier
+    // 不走 haze 时（全不透明 / 模糊为 0）：和以前一样用 barColor（它只会被背景那套老逻辑影响）
+    val plainColor = if (hazeOn) Color.Transparent else barColor(barBase)
+
+    val density = LocalDensity.current
     Column(
         Modifier
             .fillMaxWidth()
-            .background(barColor(MaterialTheme.colorScheme.surfaceContainerLow))
+            .then(hazeMod)
+            .background(plainColor)
+            .onSizeChanged { onHeight(with(density) { it.height.toDp().value }) }
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                .background(
+                    MaterialTheme.colorScheme.outlineVariant.copy(
+                        alpha = 0.6f * (if (hazeOn) style.alpha else 1f)
+                    )
+                )
         )
         Row(
             Modifier
@@ -1194,10 +1230,26 @@ fun SelectionBar(
     onSelectNone: () -> Unit,
     onAction: () -> Unit
 ) {
+    // 和底部导航栏共用同一套样式：它是浮在列表上的工具条，透出来的是列表内容
+    val style = LocalBarStyle.current
+    val hazeState = LocalHazeState.current
+    val hazeOn = style.usesHaze && hazeState != null
+    val barBase = MaterialTheme.colorScheme.surfaceContainerLow
+    val hazeMod = if (hazeOn) {
+        Modifier.hazeEffect(hazeState!!) {
+            blurRadius = style.blur.dp
+            blurEnabled = style.blur > 0.5f
+            backgroundColor = barBase
+            alpha = style.alpha
+            noiseFactor = 0.06f
+        }
+    } else Modifier
+    val plainColor = if (hazeOn) Color.Transparent else barColor(barBase)
     Column(
         Modifier
             .fillMaxWidth()
-            .background(barColor(MaterialTheme.colorScheme.surfaceContainerLow))
+            .then(hazeMod)
+            .background(plainColor)
     ) {
         Box(
             Modifier

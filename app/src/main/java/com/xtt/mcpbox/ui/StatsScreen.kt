@@ -247,8 +247,9 @@ private fun heatColor(level: Int): Color {
     return when (level) {
         -1 -> Color.Transparent
         0 -> empty
-        // 起点给到 0.45：不然第 1 档和「没有请求」几乎分不出来
-        else -> lerp(empty, primary, 0.45f + 0.55f * (level - 1) / 3f)
+        // 起点给到 0.45：不然第 1 档和「没有请求」几乎分不出来。
+        // 最高档给满 primary（5 级 → 0.45 + 0.55 * (level-1)/4）
+        else -> lerp(empty, primary, 0.45f + 0.55f * (level - 1) / (HeatScale.LEVELS - 1).toFloat())
     }
 }
 
@@ -267,7 +268,7 @@ private fun HeatLegend() {
     ) {
         Text(L("少"), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
         Spacer(Modifier.width(6.dp))
-        (0..4).forEach { level ->
+        (0..HeatScale.LEVELS).forEach { level ->
             Box(
                 Modifier
                     .size(12.dp)

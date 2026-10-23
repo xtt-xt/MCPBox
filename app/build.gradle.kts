@@ -113,6 +113,10 @@ dependencies {
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
+    // 毛玻璃（实时模糊底层内容）：底栏与全选工具条用。
+    // 1.5.4 对应的 compose 是 1.7.3，和上面的 bom 一致。
+    implementation("dev.chrisbanes.haze:haze:1.5.4")
+
     // 从种子色派生整套 M3 配色（HCT 色彩空间）。
     // 注意：material-color-utilities 没有独立坐标，它打包在 MDC 里，
     // 包名就是 com.google.android.material.color.utilities.*

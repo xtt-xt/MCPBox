@@ -81,6 +81,15 @@ class Prefs(context: Context) : SettingsSource {
         /** 桌面图标用哪一个（见 ui/AppIcon.kt 的 id）。 */
         const val KEY_APP_ICON = "app_icon"
 
+        /**
+         * 底栏（底部导航栏 + 全选工具条）的不透明度 0~100。
+         *
+         * 和自定义背景无关：底栏是浮在内容上面的一层，半透明时透出的是从它下面划过的卡片。
+         */
+        const val KEY_BAR_ALPHA = "bar_alpha"
+        /** 底栏的模糊半径（dp）0~40。 */
+        const val KEY_BAR_BLUR = "bar_blur"
+
         /** 动态取色的种子从哪来：`wallpaper`（系统壁纸）/ `backdrop`（自定义背景）。 */
         const val KEY_SEED_SOURCE = "dynamic_seed_source"
         /** 从自定义背景里取出来的种子色（ARGB，0 = 还没取）。 */
@@ -381,6 +390,18 @@ class Prefs(context: Context) : SettingsSource {
     var backdropChromeTint: Boolean
         get() = getBoolean(KEY_BACKDROP_CHROME_TINT, false)
         set(value) = putBoolean(KEY_BACKDROP_CHROME_TINT, value)
+
+    /* ---------------------------------------------------------------- 底栏 */
+
+    /** 底栏不透明度 0~100（100 = 原来的不透明底栏，0 = 完全透明）。 */
+    var barAlpha: Int
+        get() = getInt(KEY_BAR_ALPHA, 100).coerceIn(0, 100)
+        set(value) = putInt(KEY_BAR_ALPHA, value.coerceIn(0, 100))
+
+    /** 底栏模糊半径（dp）0~40，0 = 不模糊。 */
+    var barBlur: Int
+        get() = getInt(KEY_BAR_BLUR, 0).coerceIn(0, 40)
+        set(value) = putInt(KEY_BAR_BLUR, value.coerceIn(0, 40))
 
     /** 桌面图标用哪一个（ui/AppIcon 的 id，默认 `line`）。 */
     var appIcon: String

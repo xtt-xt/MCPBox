@@ -573,9 +573,12 @@ fun cardColor(color: Color): Color {
 /** 底栏（含选择栏）的底色，按「底栏不透明度」变半透明。 */
 @Composable
 fun barColor(color: Color): Color {
-    val bd = LocalBackdrop.current
-    if (!bd.active || bd.barAlpha >= 1f) return color
-    return color.copy(alpha = color.alpha * bd.barAlpha)
+    // 底栏透明度只认 LocalBarStyle（和自定义背景无关）。
+    // 以前这里读的是背景那套的 barAlpha：结果「关掉背景」或「换背景」时底栏会退回旧值，
+    // 看起来就是「调整完还保留之前的状态」。
+    val style = LocalBarStyle.current
+    if (style.alpha >= 0.999f) return color
+    return color.copy(alpha = color.alpha * style.alpha)
 }
 
 /**

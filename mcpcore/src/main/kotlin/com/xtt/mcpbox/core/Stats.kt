@@ -314,92 +314,53 @@ fun heatWeeks(
     return out
 }
 
-/** 热力图的分档方式。 */
-enum class HeatScaleKind(val id: String) {
-    /** 线性：`v / max`，简单直观，但单日极值会把其余日子压得很暗。 */
-    LINEAR("linear"),
-
-    /** 平方根：`sqrt(v / max)`，中低段层次更好（数据量少的时候用）。 */
-    SQRT("sqrt"),
-
-    /** 分位数：按 P50 / P75 / P90 分档，不受极值影响（分布极不均匀时用）。 */
-    QUANTILE("quantile")
-}
-
 /**
- * 热力图的色阶：`次数 → 等级(0..4) → 颜色`。
+ * 热力图的色阶：`次数 → 等级(0..5) → 颜色`。
  *
- * 中间隔这一层是为了让**颜色和数值解耦**：换配色、加档位都只动颜色那一半，
+ * 中间隔这一层是为了让**颜色和数值解耦**：换配色、改档数都只动颜色那一半，
  * 算法这边只回答「这天算第几档」。
  *
- * 三套算法各有失效边界，所以按数据自己挑：
- *  - 记录少（不到 20 天）或全 0：线性 —— 样本太少时任何统计量都没意义；
- *  - `max / median > 10`：分位数 —— 有一天特别忙的话，线性会把别的日子全压成一档；
- *  - 其余：平方根 —— 中低段（1~20 次）的层次比线性清楚。
+ * 算法用**分位数**，并按排名自动合并空档：
+ *  - 取有数据的日子排序，按 20% / 40% / 60% / 80% 位置的值当分档线（5 级）；
+ *  - 两条线之间一个数据都没有（或者两条线相等）就合并，所以数据很均匀时
+ *    不会出现「明明都是 100，却分成三种颜色」的假差异；
+ *  - 不看天数、不看 max/median —— 天数少的时候分位数照样成立，
+ *    而按 max 的百分比分档在「一天 897 次、其余几十次」这种分布下会把别的日子全压成一档。
  */
 data class HeatScale(
-    val kind: HeatScaleKind,
+    /** 分档线（升序、已去重）。等级 = 1 + 比它大的线的条数。 */
+    val cuts: List<Double>,
     val max: Long,
     val median: Long,
-    /** 非 0 的档位边界（次数 ≤ 边界 即落到对应档）；分位数模式下是 P50/P75/P90/P99。 */
-    val cuts: List<Double>,
     /** 有记录（> 0）的天数。 */
     val activeDays: Int
 ) {
-    /** 0 = 没有请求；1..4 = 由浅到深。 */
-    fun level(count: Long): Int {
-        if (count <= 0L) return 0
-        if (max <= 0L) return 0
-        val v = when (kind) {
-            HeatScaleKind.LINEAR -> count.toDouble() / max
-            HeatScaleKind.SQRT -> kotlin.math.sqrt(count.toDouble() / max)
-            HeatScaleKind.QUANTILE -> 0.0 // 分位数直接用 cuts 比
-        }
-        if (kind == HeatScaleKind.QUANTILE) {
-            return when {
-                count <= cuts[0] -> 1
-                count <= cuts[1] -> 2
-                count <= cuts[2] -> 3
-                else -> 4
-            }
-        }
-        return when {
-            v <= 0.25 -> 1
-            v <= 0.5 -> 2
-            v <= 0.75 -> 3
-            else -> 4
-        }
-    }
+    /** 0 = 没有请求；1..5 = 由浅到深。 */
+    fun level(count: Long): Int = when {
+        count <= 0L -> 0L
+        max <= 0L -> 0
+        else -> 1 + cuts.count { count > it }
+    }.toInt()
 
     companion object {
-        /** 少于这么多天就不做统计判断，直接线性。 */
-        const val MIN_DAYS_FOR_ADAPTIVE = 20
-
-        /** 最忙那天超过中位数这么多倍，就改用分位数。 */
-        const val OUTLIER_RATIO = 10.0
+        /** 一共有几级（不含「没有」那一档）。 */
+        const val LEVELS = 5
 
         fun of(counts: Collection<Long>): HeatScale {
             val positive = counts.filter { it > 0L }.sorted()
             val max = positive.maxOrNull() ?: 0L
-            if (positive.isEmpty()) {
-                return HeatScale(HeatScaleKind.LINEAR, 0L, 0L, listOf(0.0, 0.0, 0.0, 0.0), 0)
+            if (positive.isEmpty()) return HeatScale(emptyList(), 0L, 0L, 0)
+            val median = percentile(positive, 50.0).toLong()
+            // 5 级要 4 条线：20 / 40 / 60 / 80 百分位。
+            // 每条线都压到 max 以下：不然「所有值都等于 max」时没有任何线比 max 小，
+            // 最忙那天反而落在最浅一档 —— 最大值必须是最深那档。
+            val ceiling = (max - 1).toDouble()
+            val raw = (1 until LEVELS).map { i ->
+                percentile(positive, i * 100.0 / LEVELS).coerceAtMost(ceiling)
             }
-            val median = percentile(positive, 50.0)
-            val p = { q: Double -> percentile(positive, q) }
-            val qCuts = listOf(p(50.0), p(75.0), p(90.0), p(99.0))
-            val kind = when {
-                positive.size < MIN_DAYS_FOR_ADAPTIVE -> HeatScaleKind.LINEAR
-                median > 0 && max.toDouble() / median > OUTLIER_RATIO -> HeatScaleKind.QUANTILE
-                else -> HeatScaleKind.SQRT
-            }
-            return HeatScale(
-                kind = kind,
-                max = max,
-                median = median.toLong(),
-                cuts = if (kind == HeatScaleKind.QUANTILE) qCuts
-                else listOf(max * 0.25, max * 0.5, max * 0.75, max.toDouble()),
-                activeDays = positive.size
-            )
+            // 去重后保持升序：两条线相等说明这一段里没有数据，合并掉
+            val cuts = raw.distinct().sorted()
+            return HeatScale(cuts, max, median, positive.size)
         }
 
         /** 最近秩法分位数（够用，不引入统计库）。 */
@@ -411,6 +372,4 @@ data class HeatScale(
     }
 }
 
-/** 兼容旧调用：按线性算一档。新代码请用 [HeatScale.level]。 */
-fun heatLevel(count: Long, max: Long): Int = HeatScale.of(listOf(max)).level(count)
 

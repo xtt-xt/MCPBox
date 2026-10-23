@@ -2573,36 +2573,36 @@ fun main() {
         check("热力图：今天那格计数是 3", weeks.last().firstOrNull { it?.date == today }?.count == 3L)
         check("热力图：起点之前的日子留空（第一列 5 个空白）",
             weeks.first().count { it == null } == 5, "空白 ${weeks.first().count { it == null }}")
-        check("分档：0 次最浅", heatLevel(0L, 10L) == 0)
-        check("分档：最大值最深", heatLevel(10L, 10L) == 4)
-        check("分档：中间值居中", heatLevel(5L, 10L) in 2..3)
-        check("分档：没有记录（max = 0）不炸", heatLevel(0L, 0L) == 0)
+        val basic = HeatScale.of(listOf(1L, 3L, 5L, 7L, 9L, 11L, 13L, 15L, 17L, 19L))
+        check("分档：0 次最浅", basic.level(0L) == 0)
+        check("分档：最大值最深", basic.level(19L) == HeatScale.LEVELS, "等级 ${basic.level(19L)}")
+        check("分档：中间值居中", basic.level(9L) in 2 until HeatScale.LEVELS, "等级 ${basic.level(9L)}")
+        check("分档：全 0 不炸", HeatScale.of(listOf(0L, 0L)).level(0L) == 0)
 
-        // ---- 自适应色阶 ----
-        // 记录太少：不做统计判断，直接线性
-        val few = HeatScale.of(listOf(1L, 2L, 3L, 9L))
-        check("色阶：天数不足 20 走线性", few.kind == HeatScaleKind.LINEAR, few.toString())
+        // ---- 自适应色阶：分位数 + 合并空档，6 档（无 + 5 级） ----
+        // 真实分布：一天 897，其余多是几十次。按 max 的百分比分档会把它们全压成一档。
+        val realish = listOf(5L, 6L, 30L, 42L, 65L, 76L, 101L, 176L, 192L, 199L, 280L, 439L, 897L)
+        val hr = HeatScale.of(realish)
+        check("色阶：最忙那天是最深一档", hr.level(897L) == HeatScale.LEVELS, "等级 ${hr.level(897L)}")
+        check("色阶：最小的那几天仍有颜色", hr.level(5L) >= 1)
+        check("色阶：低值和高值分得开", hr.level(5L) < hr.level(192L), "${hr.level(5L)} / ${hr.level(192L)}")
+        check("色阶：至少用到 4 档", realish.map { hr.level(it) }.distinct().size >= 4,
+            realish.map { hr.level(it) }.toString())
 
-        // 分布均匀、天数够：平方根（中低段层次更好）
-        val even = (1..30).map { it.toLong() * 2 }
-        check("色阶：分布均匀走平方根", HeatScale.of(even).kind == HeatScaleKind.SQRT,
-            HeatScale.of(even).toString())
+        // 数据很均匀（每天都一样）：合并空档后不该被硬切成多种颜色
+        val flat = HeatScale.of(List(30) { 100L })
+        check("色阶：均匀数据只有一种等级", flat.cuts.size <= 1, flat.toString())
+        check("色阶：均匀数据最多一档", flat.level(100L) <= 2, "等级 ${flat.level(100L)}")
 
-        // 有一天特别忙：改分位数，极值不再把别的日子压成一档
-        val spike = (1..30).map { 3L } + 900L
-        val q = HeatScale.of(spike)
-        check("色阶：存在极值时走分位数", q.kind == HeatScaleKind.QUANTILE, q.toString())
-        // 绝大多数日子都是同一个值：它们该落在同一个浅档里，和极值那天分得开
-        check("色阶：普通日子有颜色且未被误判成 0", q.level(3L) in 1..3, "等级 ${q.level(3L)}")
-        check("色阶：普通日子与极值不同档", q.level(3L) < q.level(900L), "${q.level(3L)} / ${q.level(900L)}")
-        check("色阶：极值那天仍是最深", q.level(900L) == 4)
+        // 严重不均：也不会全挤成一档
+        val sparse = HeatScale.of(listOf(1L, 2L, 3L, 900L))
+        check("色阶：极值不会把其他日子压成 0 档", sparse.level(1L) >= 1)
 
         // 0 始终最浅；等级随次数单调不减
-        val s2 = HeatScale.of((1..40).map { it.toLong() })
-        check("色阶：0 次永远是 0 档", s2.level(0L) == 0)
+        check("色阶：0 次永远是 0 档", hr.level(0L) == 0)
         check(
             "色阶：次数越多等级不会反降",
-            (1L..40L).map { s2.level(it) }.zipWithNext().all { (a, b) -> b >= a }
+            (0L..900L).map { hr.level(it) }.zipWithNext().all { (a, b) -> b >= a }
         )
 
         // 自检口径：按天相加应等于总数

@@ -1360,7 +1360,6 @@ internal fun WallpaperSettingsPage(
     var tint by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropTint.toFloat()) }
     var blur by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBlur.toFloat()) }
     var cardA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropCardAlpha.toFloat()) }
-    var barA by remember(rev) { mutableFloatStateOf(AppCore.prefs.backdropBarAlpha.toFloat()) }
 
     // 换背景后要重算「从背景取色」的种子（没选这个取色方式就什么都不做）
     val seedScope = rememberCoroutineScope()
@@ -1560,22 +1559,6 @@ internal fun WallpaperSettingsPage(
                         )
                     }
                 ),
-                RowSpec(
-                    title = L("底栏不透明度"),
-                    subtitle = L("%s%%（100%% = 原来的不透明底栏）").format(barA.roundToInt()),
-                    visible = enabled,
-                    content = {
-                        Slider(
-                            value = barA,
-                            onValueChange = { barA = it },
-                            valueRange = 0f..100f,
-                            onValueChangeFinished = {
-                                AppCore.prefs.backdropBarAlpha = barA.roundToInt()
-                                commit()
-                            }
-                        )
-                    }
-                ),
                 switchSpec(
                     title = L("按钮与弹窗也跟着变透明"),
                     subtitle = L("关掉时只动卡片和底栏；打开后胶囊按钮 / 下拉菜单 / 弹窗也按「卡片不透明度」变透明"),
@@ -1585,6 +1568,49 @@ internal fun WallpaperSettingsPage(
                     AppCore.prefs.backdropChromeTint = on
                     commit()
                 }.copy(visible = enabled)
+            )
+        )
+
+        // 底栏：**不依赖自定义背景**。它是浮在内容上面的一层，
+        // 半透明 / 毛玻璃时透出来的是从它下面划过去的卡片（所以放在背景开关之外）。
+        GroupLabel(L("底栏"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("底栏不透明度"),
+                    subtitle = L("%s%%（100%% = 不透明底栏）").format((BarLive.alpha * 100).roundToInt()),
+                    content = {
+                        Slider(
+                            value = BarLive.alpha * 100f,
+                            // 拖动时直接改内存里的 BarLive → 底栏实时跟着变；松手才落盘
+                            onValueChange = { BarLive.preview(alpha = it / 100f) },
+                            valueRange = 0f..100f,
+                            onValueChangeFinished = {
+                                BarLive.commit()
+                                commit()
+                            }
+                        )
+                    }
+                ),
+                RowSpec(
+                    title = L("底栏模糊"),
+                    subtitle = if (android.os.Build.VERSION.SDK_INT >= 31)
+                        L("%s dp（0 = 不模糊；模糊的是底栏下面划过去的内容）").format(BarLive.blur.roundToInt())
+                    else L("需要 Android 12 及以上，当前系统只做半透明"),
+                    subtitleMaxLines = 2,
+                    content = {
+                        Slider(
+                            value = BarLive.blur,
+                            onValueChange = { BarLive.preview(blur = it) },
+                            valueRange = 0f..40f,
+                            enabled = android.os.Build.VERSION.SDK_INT >= 31,
+                            onValueChangeFinished = {
+                                BarLive.commit()
+                                commit()
+                            }
+                        )
+                    }
+                )
             )
         )
 

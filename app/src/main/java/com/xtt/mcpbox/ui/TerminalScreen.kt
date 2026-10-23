@@ -144,7 +144,13 @@ fun TerminalScreen(
         Spacer(Modifier.height(10.dp))
 
         // 输入。底部留 8dp：贴着屏幕最底下太挤（尤其是开着 IME 的时候），往上抬一点点
-        Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp)) {
+        // 底栏是覆盖层：输入框下面垫出它的高度，免得被挡住
+        Column(
+            Modifier.padding(
+                start = 14.dp, end = 14.dp,
+                bottom = 8.dp + LocalBottomBarInset.current.dp
+            )
+        ) {
             OutlinedTextField(
                 value = input,
                 onValueChange = { input = it },

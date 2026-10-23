@@ -580,7 +580,8 @@ private fun SettingsHomePage(
             .fillMaxWidth()
             .verticalScroll(scroll)
             .navigationBarsPadding()
-            .padding(bottom = 24.dp)
+            // 底栏覆盖层的高度（子页时它是 0）
+            .padding(bottom = 24.dp + LocalBottomBarInset.current.dp)
     ) {
         PageHeader(
             title = L("设置"),

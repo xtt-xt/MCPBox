@@ -53,7 +53,7 @@ fun LogScreen(ctx: Context, logs: List<LogEntry>, scrollTopTick: Int = 0, onChan
         Modifier
             .fillMaxWidth()
             .verticalScroll(scroll)
-            .padding(bottom = 20.dp)
+            .padding(bottom = 20.dp + LocalBottomBarInset.current.dp)
     ) {
         PageHeader(
             title = L("日志"),

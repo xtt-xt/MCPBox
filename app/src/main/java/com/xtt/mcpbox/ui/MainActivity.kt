@@ -48,7 +48,9 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.toArgb
@@ -84,6 +86,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppCore.init(application)
+        // 底栏样式是从 Prefs 读进内存状态的（滑块拖动要实时预览，不能每次读盘）
+        runCatching { BarLive.reload() }
         // 图标自愈：老版本切图标可能把进程杀在半路，留下「一个 LAUNCHER 组件都没开」的状态
         // （桌面图标变系统默认图、点了进不去）。每次启动按偏好对齐一遍，组件开关带 DONT_KILL_APP。
         AppIcon.ensureConsistent(this)
@@ -434,34 +438,31 @@ fun AppRoot(
 
     // 切语言 / 主题时只重建内容，导航状态（tab / 两个页面栈）留在外面
     androidx.compose.runtime.key(langRev) {
+    // 底栏样式：滑块拖动时改的是 BarLive（实时预览），松手才落盘
+    val barStyle = BarStyle(BarLive.alpha, BarLive.blur)
+    // 毛玻璃要抓「底栏下面那一层」的画，所以内容层挂 hazeSource、底栏挂 hazeEffect。
+    // 全不透明又不模糊时不挂 —— 省掉一次离屏绘制，和原来的纯色底完全一样。
+    val hazeState = remember { dev.chrisbanes.haze.HazeState() }
+    val barVisible = !inSubPage && !imeVisible
+    // 底栏实测高度：覆盖式布局要拿它在内容末尾垫一块空白（硬编码会因字体大小 / 手势条高度对不上）
+    var barHeightDp by remember { mutableStateOf(0f) }
+    val barInsetDp = if (barVisible) barHeightDp.dp else 0.dp
+
+    CompositionLocalProvider(
+        LocalBarStyle provides barStyle,
+        LocalHazeState provides hazeState,
+        LocalBottomBarInset provides barInsetDp.value
+    ) {
+    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .then(if (barStyle.usesHaze) Modifier.hazeSource(hazeState) else Modifier)
+    ) {
     Scaffold(
+        // 底栏改成了覆盖层（见下面），不再作为 bottomBar —— 那样会占掉内容高度
         containerColor = backdropBoxColor(LocalBackdrop.current),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = {
-            AnimatedVisibility(
-                visible = !inSubPage && !imeVisible,
-                enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
-                exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120))
-            ) {
-                BottomPillNav(navItems, tab) { index ->
-                    if (index != tab) {
-                        // 切页面：切走就清掉双击计数（点 A → 点 B → 再点 A 不算双击）
-                        tab = index
-                        lastTapTab = -1
-                    } else {
-                        // 当前这一格：双击才回顶（终端是回底）
-                        val now = SystemClock.uptimeMillis()
-                        if (lastTapTab == index && now - lastTapAt <= DOUBLE_TAP_MS) {
-                            scrollTopTick++
-                            lastTapTab = -1        // 一次双击只回一次
-                        } else {
-                            lastTapTab = index
-                            lastTapAt = now
-                        }
-                    }
-                }
-            }
-        }
     ) { padding ->
         Box(
             Modifier
@@ -539,6 +540,35 @@ fun AppRoot(
             }
                         }
 }
+        }
+    }
+            }
+
+            // 覆盖式底栏：不占布局空间，浮在内容上面，内容能从它下面划过去
+            AnimatedVisibility(
+                visible = barVisible,
+                enter = slideInVertically(animationSpec = tween(220)) { it } + fadeIn(tween(160)),
+                exit = slideOutVertically(animationSpec = tween(180)) { it } + fadeOut(tween(120)),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                BottomPillNav(navItems, tab, barStyle, onHeight = { barHeightDp = it }) { index ->
+                    if (index != tab) {
+                        // 切页面：切走就清掉双击计数（点 A → 点 B → 再点 A 不算双击）
+                        tab = index
+                        lastTapTab = -1
+                    } else {
+                        // 当前这一格：双击才回顶（终端是回底）
+                        val now = SystemClock.uptimeMillis()
+                        if (lastTapTab == index && now - lastTapAt <= DOUBLE_TAP_MS) {
+                            scrollTopTick++
+                            lastTapTab = -1        // 一次双击只回一次
+                        } else {
+                            lastTapTab = index
+                            lastTapAt = now
+                        }
+                    }
+                }
+            }
         }
     }
     }
