@@ -66,6 +66,7 @@ tools/release.sh                       One-shot release script
 # Build
 ./gradlew :app:assembleDebug        # debug
 ./gradlew :app:assembleRelease      # release (unsigned if no keystore)
+./gradlew :app:assembleFast         # fast variant (for daily installs)
 ```
 
 | Item | Value |
@@ -77,6 +78,20 @@ tools/release.sh                       One-shot release script
 | AGP / Kotlin | 8.7.3 / 2.1.0 |
 | Modules | `mcpcore` + `harness` + `app` |
 | release APK size | ~2.7 MB |
+
+### The `fast` variant
+
+A test build that coexists with the release app, so day-to-day installs do not overwrite the version you are actually using:
+
+| Item | release | fast variant |
+|---|---|---|
+| Package | `com.xtt.mcpbox` | `com.xtt.mcpbox.fast` |
+| Launcher name | MCP 文件盒 | MCP 文件盒 测试版 |
+| Port | 8720 | 8721 |
+| Signing | release | release (same key, different package → both can coexist) |
+| R8 / resource shrinking | on | off (faster builds, larger APK) |
+
+The two builds keep separate data directories (`filesDir` is per package) and can be installed and run side by side. `fast` is for development installs only and is not shipped in releases.
 
 ## Signing
 

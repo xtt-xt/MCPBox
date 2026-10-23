@@ -50,6 +50,33 @@ Token:     the full URL copied from the app home page's "Copy address" (token in
 
 > Mainstream MCP clients only fetch the tool list once, when connecting — **reconnect the client (or restart the app) after changing packs**.
 
+## Build
+
+Requires JDK 17. The repository ships a Gradle wrapper:
+
+```bash
+./gradlew :harness:e2e          # end-to-end tests
+./gradlew :app:assembleRelease  # release APK
+```
+
+For a test build that does **not** overwrite the release app, use the `fast` variant:
+
+```bash
+./gradlew :app:assembleFast
+```
+
+| Item | Release | fast variant |
+|---|---|---|
+| Package | `com.xtt.mcpbox` | `com.xtt.mcpbox.fast` |
+| Launcher name | MCP 文件盒 | MCP 文件盒 测试版 |
+| Port | 8720 | 8721 |
+| Signing | release | release (same key, different package, so both can coexist) |
+| R8 shrinking | on | off (faster builds, larger APK) |
+
+The two builds keep separate data and can be installed and run side by side. `fast` is for day-to-day development only and is not shipped in releases.
+
+Signing, versioning and release steps: [08 Build and release](docs/en/08-build-and-release.md).
+
 ## Documentation
 
 Full docs live in [`docs/en/`](docs/en/) (English) and [`docs/`](docs/) (Chinese).

@@ -50,6 +50,33 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件系统
 
 > 主流 MCP 客户端只在连接时拉一次工具列表 —— **改完工具包要重连客户端（或重启 App）** 才生效。
 
+## 构建
+
+需要 JDK 17，仓库自带 Gradle wrapper：
+
+```bash
+./gradlew :harness:e2e          # 端到端测试
+./gradlew :app:assembleRelease  # 正式包
+```
+
+想要一个**不覆盖正式版**的测试包，用 `fast` 变体：
+
+```bash
+./gradlew :app:assembleFast
+```
+
+| 项 | 正式版 | fast 变体 |
+|---|---|---|
+| 包名 | `com.xtt.mcpbox` | `com.xtt.mcpbox.fast` |
+| 桌面名 | MCP 文件盒 | MCP 文件盒 测试版 |
+| 端口 | 8720 | 8721 |
+| 签名 | Release | Release（与正式版同签名，但包名不同，可共存） |
+| R8 压缩 | 开 | 关（构建更快，体积更大） |
+
+两版数据互相隔离，可以同时安装、同时运行。fast 只用于日常开发装机，不随发行版分发。
+
+签名、版本号与发版细节见 [08 构建与发布](docs/08-构建与发布.md)。
+
 ## 文档
 
 详细文档在 [`docs/`](docs/)（中文）与 [`docs/en/`](docs/en/)（English）。
