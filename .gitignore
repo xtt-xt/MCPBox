@@ -2,6 +2,7 @@
 build/
 */build/
 .gradle/
+.kotlin/
 captures/
 .cxx/
 *.apk

@@ -1712,8 +1712,9 @@ internal fun SshSettingsPage(
     var showExtra by remember { mutableStateOf(false) }
     var showRegen by remember { mutableStateOf(false) }
 
+    // 三个字段各自单独显示、单独复制：**不要**拼成 `ssh://user@host:port` 这种整串，
+    // 用户会把它整个粘进客户端的「主机」输入框 → UnknownHostException（真机上踩过）。
     val host = if (bindAll) NetUtil.localIpv4() ?: "127.0.0.1" else "127.0.0.1"
-    val address = "ssh://%s@%s:%d".format(config.sshUser, host, port)
 
     SettingsPageShell(title = L("SSH 服务"), onBack = onBack) {
         GroupLabel(L("服务"))
@@ -1746,7 +1747,7 @@ internal fun SshSettingsPage(
                 switchSpec(
                     title = L("允许局域网访问"),
                     subtitle = if (bindAll) L("同一 Wi-Fi 下的设备也能连")
-                    else L("只监听 127.0.0.1，手机上的客户端够用"),
+                    else L("只监听 127.0.0.1，手机上的客户端够用；客户端主机就填 127.0.0.1"),
                     icon = Icons.Filled.Lock,
                     checked = bindAll
                 ) { on ->
@@ -1758,14 +1759,33 @@ internal fun SshSettingsPage(
             )
         )
 
-        GroupLabel(L("连接"))
+        GroupLabel(L("客户端里填这几项"))
         CardGroup(
             listOf(
                 RowSpec(
-                    title = L("连接地址"),
-                    subtitle = address,
+                    title = L("主机"),
+                    subtitle = host,
                     icon = Icons.Filled.Share,
-                    onClick = { copyText(ctx, address, L("地址已复制")) }
+                    onClick = { copyText(ctx, host, L("主机已复制")) }
+                ),
+                RowSpec(
+                    title = L("端口"),
+                    subtitle = port.toString(),
+                    icon = Icons.Filled.Share,
+                    onClick = { copyText(ctx, port.toString(), L("端口已复制")) }
+                ),
+                RowSpec(
+                    title = L("用户名"),
+                    subtitle = config.sshUser,
+                    icon = Icons.Filled.Person,
+                    onClick = { copyText(ctx, config.sshUser, L("用户名已复制")) }
+                ),
+                RowSpec(
+                    title = L("远程目录"),
+                    subtitle = AppCore.config.primaryRoot(),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Place,
+                    onClick = { copyText(ctx, AppCore.config.primaryRoot(), L("远程目录已复制")) }
                 ),
                 RowSpec(
                     title = L("主机指纹"),
@@ -1773,12 +1793,6 @@ internal fun SshSettingsPage(
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Lock,
                     onClick = { if (fingerprint.isNotBlank()) copyText(ctx, fingerprint, L("指纹已复制")) }
-                ),
-                RowSpec(
-                    title = L("登录用户名"),
-                    subtitle = L("%s（客户端里填这个）").format(config.sshUser),
-                    icon = Icons.Filled.Person,
-                    onClick = { copyText(ctx, config.sshUser, L("用户名已复制")) }
                 )
             )
         )
@@ -1894,8 +1908,16 @@ internal fun SshSettingsPage(
         CardColumn {
             CardBox {
                 Text(
-                    L("在客户端的「SSH 工作区」里填：主机 %s、端口 %s、用户名 %s，认证方式选密码或私钥，远程目录填 %s。")
-                        .format(host, port, config.sshUser, AppCore.config.primaryRoot()),
+                    L("主机的输入框里只填主机名（上面的 %s），不要带 ssh:// 前缀、用户名和端口。")
+                        .format(host),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    L("端口 %s、用户名 %s 各有自己的输入框；认证方式选密码或私钥；远程目录填 %s。")
+                        .format(port, config.sshUser, AppCore.config.primaryRoot()),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
                     lineHeight = 19.sp

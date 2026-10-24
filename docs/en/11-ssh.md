@@ -35,7 +35,13 @@ In RikkaHub's "New SSH workspace":
 - Port `8722`
 - User `mcpbox`
 - Auth: **private key** (paste the whole key shown in the app) or password
-- Remote directory `/storage/emulated/0` (or anything inside the allowed roots)
+- Remote directory: leave it empty (the client lands in the main root), or an absolute path inside
+  the allowed roots
+
+> The client sees the tree **rooted at the main root** (chroot style): listing `/` gives the main
+> root, and `/Download`, `/xtt` … are relative to that subtree. Absolute paths that hit the
+> allow-list still work, so `sftp` on the command line can use `/storage/emulated/0/...` directly.
+> Anything outside the allow-list is refused.
 
 Command-line check:
 
@@ -81,9 +87,12 @@ ssh  -i key -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
    whole "get KeyAgreement" path. Setting only `org.apache.sshd.androidMode` is **not enough**
    (MINA validates the value with the same matcher, `"true"` doesn't match); call
    `OsUtils.setAndroid(true)` directly.
-3. **`realpath .` is rejected by our own allow-list**: clients ask for the current directory first,
-   and MINA's default directory is `/`. `GuardedSftpSubsystem.resolveFile` maps empty / `.` / `~`
-   to the primary root.
+3. **The client treats the working directory as its own root**: RikkaHub's file page starts by listing
+   `/` and then uses `/Download`-style paths relative to that root.
+   `GuardedSftpSubsystem.resolveFile` handles it chroot-style: empty / `.` / `~` / `/` map to the
+   primary root, absolute paths inside the allow-list are used as-is, everything else is hung under
+   the primary root. Mapping only `.` (the earlier version) left the file page stuck on `/` with
+   `SSH_FX_PERMISSION_DENIED`.
 4. **Commands must not run on the IO thread**: with a null executor, `AbstractCommandSupport`
    calls `run()` on the caller thread — a Nio2 IO thread — and one long `waitFor()` blocks the
    whole server until it no longer even sends a banner.
@@ -97,3 +106,8 @@ ssh  -i key -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
    `IDLE_TIMEOUT`; a `Duration` throws `NumberFormatException` inside the timer thread.
 8. **R8**: `app/proguard-rules.pro` keeps all of `org.apache.sshd.**`, `net.i2p.crypto.eddsa.**`
    and `org.slf4j.**`, otherwise release builds "cannot connect, with no visible reason".
+9. **MINA can wedge by itself**: on a real device the port stayed in LISTEN, TCP still connected,
+   but no banner ever came and every later connection sat in the accept queue. That state is
+   invisible from the outside, so the server runs a watchdog thread: every 30 s it connects to its
+   own port and reads one banner line; two misses in a row restart the service in place. The
+   watchdog's own connection is not written to the activity log.

@@ -24,4 +24,3 @@ tasks.register<JavaExec>("e2e") {
     mainClass.set("com.xtt.mcpbox.harness.MainKt")
     standardInput = System.`in`
 }
-

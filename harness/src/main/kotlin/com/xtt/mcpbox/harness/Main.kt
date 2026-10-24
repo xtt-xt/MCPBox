@@ -2747,6 +2747,19 @@ fun main() {
         }
         check("SFTP：能读文件", back == "inside\n", back)
 
+        // 客户端（RikkaHub 的 SSH 工作区）把「工作目录」当成自己的根：
+        // 打开文件页先 realpath("/") 或列 "/"，之后每一级都是 "/docs" 这种写法。
+        val clientRoot = sftp.realpath("/")
+        check("SFTP：客户端视角的根就是主根目录", clientRoot == home, clientRoot)
+        @Suppress("UNCHECKED_CAST")
+        val rootNames = (sftp.ls("/") as java.util.Vector<com.jcraft.jsch.ChannelSftp.LsEntry>)
+            .map { it.filename }
+        check("SFTP：能列客户端视角的根目录", rootNames.contains("docs"), rootNames.toString())
+        @Suppress("UNCHECKED_CAST")
+        val chrootDocs = (sftp.ls("/docs") as java.util.Vector<com.jcraft.jsch.ChannelSftp.LsEntry>)
+            .map { it.filename }
+        check("SFTP：chroot 风格的子路径能打开", chrootDocs.contains("inside.txt"), chrootDocs.toString())
+
         sftp.rm("$home/upload.txt")
         check("SFTP：能删除文件", !File(sshHome, "upload.txt").exists())
 

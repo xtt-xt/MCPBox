@@ -83,6 +83,18 @@ class PhoneSshServer(
 
     private val clients = CopyOnWriteArrayList<Session>()
 
+    /**
+     * 看门狗线程：MINA 在这台机器上出现过「TCP 还能连上、但再也不回 banner」的挂死，
+     * 端口一直 LISTEN、accept 队列一直堆积，重启服务就恢复。与其等用户去设置页开关一次，
+     * 不如自己每分钟敲一次门，连续两次没人应就原地重启。
+     */
+    @Volatile
+    private var watchdog: Thread? = null
+
+    /** 看门狗自己发起的那次连接，不要写进活动日志。 */
+    @Volatile
+    private var probing = false
+
     val isRunning: Boolean get() = server?.isOpen == true
 
     fun start(): Boolean {
@@ -102,6 +114,7 @@ class PhoneSshServer(
                 LogKind.SYSTEM,
                 message = L("SSH 服务已启动，端口 %s").format(config.sshPort)
             )
+            startWatchdog()
             true
         } catch (t: Throwable) {
             val msg = t.message ?: t.javaClass.simpleName
@@ -114,11 +127,65 @@ class PhoneSshServer(
     }
 
     fun stop() {
+        watchdog?.interrupt()
+        watchdog = null
         val s = server ?: return
         server = null
         clients.clear()
         runCatching { s.stop(true) }
         eventLog.add(LogKind.SYSTEM, message = L("SSH 服务已停止"))
+    }
+
+    // ---------------------------------------------------------------- 看门狗
+
+    private fun startWatchdog() {
+        if (watchdog?.isAlive == true) return
+        watchdog = Thread({
+            var misses = 0
+            while (true) {
+                try {
+                    Thread.sleep(PROBE_INTERVAL_MS)
+                } catch (e: InterruptedException) {
+                    return@Thread
+                }
+                val current = server ?: return@Thread
+                if (!current.isOpen) return@Thread
+                if (probeBanner()) {
+                    misses = 0
+                    continue
+                }
+                misses++
+                if (misses < 2) continue
+                misses = 0
+                // 再确认一次还没被换掉，避免和用户手动重启撞车
+                if (server !== current) continue
+                eventLog.add(LogKind.ERROR, ok = false, message = L("SSH 服务无响应，已自动重启"))
+                server = null
+                runCatching { current.stop(true) }
+                start()
+                return@Thread
+            }
+        }, "ssh-watchdog").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    /** 连一下自己的端口，半秒内能读到 SSH 版本横幅就算活着。 */
+    private fun probeBanner(): Boolean {
+        probing = true
+        return try {
+            java.net.Socket().use { sock ->
+                sock.connect(java.net.InetSocketAddress("127.0.0.1", config.sshPort), 2000)
+                sock.soTimeout = 3000
+                val line = sock.getInputStream().bufferedReader().readLine()
+                line != null && line.startsWith("SSH-")
+            }
+        } catch (e: Exception) {
+            false
+        } finally {
+            probing = false
+        }
     }
 
     /** 配置改了（端口 / 认证 / 命令开关）后按需要重启。 */
@@ -173,7 +240,7 @@ class PhoneSshServer(
         s.addSessionListener(object : SessionListener {
             override fun sessionCreated(session: Session) {
                 clients.add(session)
-                eventLog.add(LogKind.SYSTEM, message = L("SSH 客户端已连接"))
+                if (!probing) eventLog.add(LogKind.SYSTEM, message = L("SSH 客户端已连接"))
             }
 
             override fun sessionException(session: Session, t: Throwable) {
@@ -186,7 +253,7 @@ class PhoneSshServer(
 
             override fun sessionClosed(session: Session) {
                 clients.remove(session)
-                eventLog.add(LogKind.SYSTEM, message = L("SSH 客户端已断开"))
+                if (!probing) eventLog.add(LogKind.SYSTEM, message = L("SSH 客户端已断开"))
             }
         })
 
@@ -248,16 +315,42 @@ class PhoneSshServer(
     ) : SftpSubsystem(channel, cfg) {
 
         override fun resolveFile(remotePath: String): Path {
-            // 客户端一上来就会 `realpath .` 找当前目录，而 MINA 的默认目录是根 "/"，
-            // 根不在白名单里 → 直接 permission denied，客户端连 cwd 都拿不到。
-            // 这里把「什么都没写 / . / ~」统一映射到主根目录（也就是客户端的工作目录）。
+            // 客户端的视角和我们不一样：RikkaHub 把「工作目录」当成它自己的根，
+            // 打开文件页第一件事就是列 "/"，之后每一级都用 "/Download" 这种
+            // 「相对它自己那个根」的写法。所以这里按 chroot 处理：
+            //  · "" / "." / "~" / "/" → 主根目录；
+            //  · 命中白名单的绝对路径（/storage/emulated/0/...）原样使用，
+            //    给 sshfs、命令行 sftp 这类客户端留后路；
+            //  · 其余路径（包括所有相对路径）都挂到主根目录下面。
+            // 越界的仍然交给 [guard] 拒掉，白名单只有 PathSandbox 一处判定。
+            val root = File(config.primaryRoot()).absoluteFile.toPath()
             val raw = remotePath.trim()
-            if (raw.isEmpty() || raw == "." || raw == "./" || raw == "~" || raw == "~/") {
-                return File(config.primaryRoot()).absoluteFile.toPath()
+            val mapped = if (raw.isEmpty() || raw == "." || raw == "./" || raw == "~" || raw == "~/" || raw == "/") {
+                root
+            } else {
+                val direct = runCatching { super.resolveFile(raw) }.getOrNull()
+                when {
+                    direct != null && allowed(direct) -> direct
+                    else -> root.resolve(relativePart(raw))
+                }
             }
-            val path = super.resolveFile(remotePath)
-            guard(path, remotePath)
-            return path
+            guard(mapped, remotePath)
+            return mapped
+        }
+
+        /** 去掉开头的 `/`、`~/`、`./`，得到一个可以挂在主根目录下面的相对路径。 */
+        private fun relativePart(raw: String): String {
+            var p = raw.replace('\\', '/')
+            if (p.startsWith("~/")) p = p.substring(2) else if (p.startsWith("~")) p = p.substring(1)
+            return p.trimStart('/')
+        }
+
+        /** 这个真实路径是不是已经在白名单里（不抛异常版本）。 */
+        private fun allowed(path: Path): Boolean = try {
+            sandbox.resolve(path.toAbsolutePath().toString(), mustExist = false)
+            true
+        } catch (e: Exception) {
+            false
         }
 
         private fun guard(path: Path, raw: String) {
@@ -478,6 +571,9 @@ class PhoneSshServer(
 
     companion object {
 
+        /** 看门狗敲门间隔。别太密：每敲一次都会真的建一条 TCP 连接。 */
+        private const val PROBE_INTERVAL_MS = 30_000L
+
         /**
          * 生成一对客户端密钥（给「把私钥填进客户端」用）。
          *
@@ -539,7 +635,6 @@ class PhoneSshServer(
                 // value matcher 校验该属性的值（"true" 匹配不上），所以 isAndroid() 仍然是 false。
                 // 直接调它的 setAndroid 把结果钉死。
                 runCatching { org.apache.sshd.common.util.OsUtils.setAndroid(true) }
-                runCatching { org.apache.sshd.common.util.OsUtils.setDalvikMachine(true) }
             }
         }
     }

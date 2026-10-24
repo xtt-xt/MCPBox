@@ -184,10 +184,12 @@ class McpService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // 从最近任务里划掉 App 也不停服务（用户要求：只有主动关闭才停）
+        // 从最近任务里划掉 App：**进程会被系统回收**，这个服务也跟着结束。
+        // 这里不做任何保活（那需要另外的手段）；只是把「实际发生了什么」写进日志，
+        // 别再打印「服务器继续运行」那种与事实相反的提示。
         super.onTaskRemoved(rootIntent)
         if (prefs.shouldRun || AppCore.config.sshEnabled) {
-            AppCore.log.add(LogKind.SYSTEM, message = L("App 被划掉，服务器继续运行"))
+            AppCore.log.add(LogKind.SYSTEM, message = L("App 被划掉，服务随之结束"))
         }
     }
 

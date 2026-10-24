@@ -33,7 +33,11 @@
 - 端口 `8722`
 - 用户名 `mcpbox`
 - 认证：**私钥**（把 App 里那把私钥整段贴进去）或密码
-- 远程目录 `/storage/emulated/0`（或「允许访问的目录」里的任何一个）
+- 远程目录留空即可（客户端会落在主根目录）；要填就填「允许访问的目录」里的一个绝对路径
+
+> 客户端看到的目录树是**以主根目录为根**的一棵子树（类似 chroot）：它列 `/` 拿到的是主根目录，
+> 往下走 `/Download`、`/xtt` 这些都是相对这棵子树的。命中白名单的绝对路径照样能用，
+> 所以 `sftp` 命令行直接敲 `/storage/emulated/0/...` 也没问题。不在白名单里的一律拒绝。
 
 命令行验证：
 
@@ -75,8 +79,10 @@ ssh  -i 私钥 -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
    把「取 KeyAgreement」整条路打断。**只设 `org.apache.sshd.androidMode` 属性不管用**
    （MINA 用同一个 value matcher 校验属性值，`"true"` 匹配不上），必须直接调
    `OsUtils.setAndroid(true)`。
-3. **`realpath .` 会被自己的白名单拒掉**：客户端一上来就找当前目录，而 MINA 的默认目录是根 `/`。
-   `GuardedSftpSubsystem.resolveFile` 里把空串 / `.` / `~` 统一映射到主根目录。
+3. **客户端把「工作目录」当自己的根**：RikkaHub 打开文件页第一件事是列 `/`，之后每一级都是
+   `/Download` 这种「相对它自己那个根」的写法。`GuardedSftpSubsystem.resolveFile` 按 chroot 处理：
+   空串 / `.` / `~` / `/` 映射到主根目录，命中白名单的绝对路径原样使用，其余都挂到主根目录下面。
+   早先只在 `.` 上做了映射，结果文件页停在 `/` 上一直 `SSH_FX_PERMISSION_DENIED`。
 4. **命令不能在 IO 线程上跑**：`AbstractCommandSupport` 的 executor 传 null 时直接在调用线程
    `run()`，那是 Nio2 IO 线程 —— 一条 `waitFor()` 的长命令会让整个服务器之后连 banner 都收不到。
 5. **命令的 executor 不能共用**：MINA 在通道结束时会 `close()` / `shutdownNow()` 掉它，
@@ -88,3 +94,7 @@ ssh  -i 私钥 -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
    会在计时线程里抛 `NumberFormatException`。
 8. **R8**：`app/proguard-rules.pro` 里整包保留 `org.apache.sshd.**`、`net.i2p.crypto.eddsa.**`、
    `org.slf4j.**`，否则 release 包会「连不上但看不出原因」。
+9. **MINA 会自己挂死**：真机上遇到过「端口还在 LISTEN、TCP 也能连上，但再也不回 banner」，
+   之后所有连接都卡在 accept 队列里。这种状态没法从外面判断，所以服务端自带一个看门狗线程：
+   每 30 秒连一次自己的端口、读一行 banner，连续两次读不到就原地重启服务。
+   看门狗自己那条连接不写进活动日志。
