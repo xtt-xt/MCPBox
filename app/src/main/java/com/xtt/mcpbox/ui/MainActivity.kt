@@ -500,7 +500,8 @@ fun AppRoot(
                     pending = pending,
                     host = AppCore.host,
                     onToggleService = { on ->
-                        if (on) McpService.start(ctx) else McpService.stop(ctx)
+                        // 首页这个开关只管 MCP 服务；SSH 是设置里另一个独立开关
+                        McpService.setMcpEnabled(ctx, on)
                         revision++
                     },
                     onRestartService = { McpService.restart(ctx) },

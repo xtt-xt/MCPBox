@@ -15,8 +15,8 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action ?: return
         if (action != Intent.ACTION_BOOT_COMPLETED && action != "android.intent.action.QUICKBOOT_POWERON") return
         AppCore.init(context.applicationContext as Application)
-        if (AppCore.prefs.shouldRun && AppCore.prefs.autoStartBoot) {
-            runCatching { McpService.start(context) }
+        if ((AppCore.prefs.shouldRun || AppCore.config.sshEnabled) && AppCore.prefs.autoStartBoot) {
+            runCatching { McpService.sync(context) }
         }
     }
 }

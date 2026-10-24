@@ -22,6 +22,42 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
+## 未发布
+
+<details open>
+<summary><b>中文</b></summary>
+
+### 新增
+
+- **SSH 服务**：内置 SSH / SFTP 服务端，客户端的「SSH 工作区」可以直接连进来读写手机文件
+- **SSH 认证**：密码登录与公钥登录各有开关，密钥对在 App 里生成，可复制或被重新生成
+- **SSH 命令执行**：默认关闭的独立开关，打开后可选应用沙箱 / Root / Shizuku 身份
+
+### 服务
+
+- SSH 与 MCP 是两个独立开关，关掉一个不影响另一个；两个都关时前台服务才退出
+- SSH 的路径复用「允许访问的目录」，越界与只读模式照旧生效
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### New
+
+- **SSH service**: a built-in SSH / SFTP server so a client's SSH workspace can connect and read or write phone files
+- **SSH authentication**: separate switches for password and public-key login; the key pair is generated in the app and can be copied or regenerated
+- **SSH command execution**: an independent switch, off by default, with app sandbox / Root / Shizuku identities
+
+### Service
+
+- SSH and MCP are separate switches; turning one off does not affect the other, and the foreground service only exits when both are off
+- SSH paths reuse the allowed roots, and out-of-range paths and read-only mode apply as before
+
+</details>
+
+---
+
 ## v1.3.0 · 2026-10-24
 
 <details open>

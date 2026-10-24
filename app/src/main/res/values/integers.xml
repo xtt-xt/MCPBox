@@ -4,4 +4,6 @@
 <resources>
     <!-- 出厂服务端口。测试变体（src/fast）里覆盖成 8721，好和正式版同时开。 -->
     <integer name="default_port">8720</integer>
+    <!-- 出厂 SSH 端口（和 HTTP 端口错开；测试变体里是 8723） -->
+    <integer name="default_ssh_port">8722</integer>
 </resources>

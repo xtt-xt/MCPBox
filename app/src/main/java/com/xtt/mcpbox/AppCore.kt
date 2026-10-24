@@ -10,6 +10,7 @@ import com.xtt.mcpbox.core.ApprovalCenter
 import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.CustomToolStore
 import com.xtt.mcpbox.core.DefaultRoots
+import com.xtt.mcpbox.core.DefaultSshPort
 import com.xtt.mcpbox.core.EventLog
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.MemoryStore
@@ -17,6 +18,8 @@ import com.xtt.mcpbox.core.PackStore
 import com.xtt.mcpbox.core.PermissionStore
 import com.xtt.mcpbox.core.ProfileStore
 import com.xtt.mcpbox.core.ToolMetaStore
+import com.xtt.mcpbox.core.PathSandbox
+import com.xtt.mcpbox.core.PhoneSshServer
 import com.xtt.mcpbox.core.PosixShLauncher
 import com.xtt.mcpbox.core.ServerMeta
 import com.xtt.mcpbox.core.ShellBackends
@@ -67,6 +70,9 @@ object AppCore {
     @Volatile var overlayPalette: OverlayPalette = OverlayPalette.Fallback
     lateinit var server: McpServer
         private set
+    /** 内置 SSH / SFTP 服务（和 HTTP 服务是两个独立功能，各有各的开关）。 */
+    lateinit var ssh: PhoneSshServer
+        private set
     lateinit var app: Application
         private set
 
@@ -108,6 +114,9 @@ object AppCore {
             com.xtt.mcpbox.core.DefaultPort.value = runCatching {
                 application.resources.getInteger(R.integer.default_port)
             }.getOrDefault(8720)
+            com.xtt.mcpbox.core.DefaultSshPort.value = runCatching {
+                application.resources.getInteger(R.integer.default_ssh_port)
+            }.getOrDefault(8722)
             config = Config(prefs)
             log = EventLog().also { it.enabled = config.logEnabled }
             permissions = PermissionStore(config, prefs)
@@ -148,6 +157,14 @@ object AppCore {
             // AI 执行的命令也显示在 App 的「终端」页里
             com.xtt.mcpbox.core.ShellMirror.attach { text -> terminal.append(text) }
             browser = BrowserController(application)
+            // SSH：服务端自己的实现（SFTP 的路径判定复用同一份 PathSandbox）
+            PhoneSshServer.bootstrap(application.filesDir.absolutePath, androidMode = true)
+            ssh = PhoneSshServer(
+                config = config,
+                sandbox = PathSandbox(config),
+                log = log,
+                keyDir = java.io.File(application.filesDir, "ssh")
+            )
             server = McpServer(
                 config = config,
                 permissions = permissions,
@@ -175,6 +192,24 @@ object AppCore {
             else -> "$brand $model"
         }
         return "$name (Android ${Build.VERSION.RELEASE})"
+    }
+
+    /**
+     * 让 SSH 服务跟着配置走：开着的要跑起来、关掉的要停。
+     *
+     * 只在服务进程里调用（前台服务没起来时起服务，由 [com.xtt.mcpbox.server.McpService] 负责）。
+     */
+    fun syncSsh() {
+        if (config.sshEnabled) {
+            if (!ssh.isRunning) ssh.start()
+        } else if (ssh.isRunning) {
+            ssh.stop()
+        }
+    }
+
+    /** 端口 / 监听地址 / 命令开关这类改动要重启 SSH 才生效（认证是现读配置的，不用重启）。 */
+    fun restartSshIfRunning() {
+        runCatching { ssh.restartIfRunning() }
     }
 
     /** 把配置写回磁盘并广播给需要感知变化的地方。 */

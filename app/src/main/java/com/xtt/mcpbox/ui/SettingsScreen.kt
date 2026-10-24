@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -293,6 +294,12 @@ fun SettingsScreen(
                     onOpenRules = { onPage("shell/rules/$it") },
                     onBack = back,
                     scroll = shellScroll
+                )
+                "ssh" -> SshSettingsPage(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
                 )
                 "browser" -> BrowserSettingsPage(
                     revision = revision,
@@ -610,7 +617,15 @@ private fun SettingsHomePage(
                     L("浏览器"),
                     L("内置 WebView：内网限制、页面数、搜索引擎、cookie 与 User-Agent"),
                     Icons.Filled.Search
-                ) { onPage("browser") }
+                ) { onPage("browser") },
+                entrySpec(
+                    L("SSH 服务"),
+                    L("内置 SSH / SFTP：让客户端的「SSH 工作区」直接读写手机文件")
+                        .let { base ->
+                            if (AppCore.config.sshEnabled) base + L(" · 已开启") else base
+                        },
+                    Icons.Filled.Person
+                ) { onPage("ssh") }
             )
         )
 

@@ -2682,6 +2682,153 @@ fun main() {
         )
     }
 
+
+    println("\n[55] 内置 SSH / SFTP 服务")
+    run {
+        try {
+        val sshHome = Files.createTempDirectory("mcpbox-ssh").toFile()
+        File(sshHome, "docs").mkdirs()
+        File(sshHome, "docs/inside.txt").writeText("inside\n")
+        val outside = Files.createTempDirectory("mcpbox-outside").toFile()
+        File(outside, "secret.txt").writeText("secret\n")
+
+        val sshSettings = MemorySettings().apply {
+            putString(Config.Keys.ROOTS, sshHome.absolutePath)
+            putInt(Config.Keys.SSH_PORT, 18722)
+            putBoolean(Config.Keys.SSH_BIND_ALL, false)
+            putString(Config.Keys.SSH_USER, "mcpbox")
+            putString(Config.Keys.SSH_PASSWORD, "pass1234")
+            putBoolean(Config.Keys.SSH_PASSWORD_ENABLED, true)
+            putBoolean(Config.Keys.SSH_PUBKEY_ENABLED, true)
+            putBoolean(Config.Keys.SSH_SHELL_ENABLED, false)
+            putString(Config.Keys.SSH_SHELL_BACKEND, "app")
+        }
+        val sshConfig = Config(sshSettings)
+        val sshLog = EventLog()
+        val sshServer = PhoneSshServer(
+            sshConfig,
+            PathSandbox(sshConfig),
+            sshLog,
+            File(sshHome.parentFile, sshHome.name + "-keys")
+        )
+
+        check("SSH：服务能起来", sshServer.start(), sshServer.lastError ?: "")
+        check("SSH：主机指纹是 SHA256 格式", sshServer.fingerprint.startsWith("SHA256:"), sshServer.fingerprint)
+
+        fun client(password: String = "pass1234"): com.jcraft.jsch.Session {
+            val jsch = com.jcraft.jsch.JSch()
+            val s = jsch.getSession("mcpbox", "127.0.0.1", 18722)
+            s.setPassword(password)
+            s.setConfig("StrictHostKeyChecking", "no")
+            s.connect(8000)
+            return s
+        }
+
+        // 错误的密码必须被拒
+        val badAuth = runCatching { client("wrong").disconnect(); true }.getOrElse { false }
+        check("SSH：密码错误连不上", !badAuth)
+
+        val session = client()
+        check("SSH：密码正确能连上", session.isConnected)
+
+        val sftp = (session.openChannel("sftp") as com.jcraft.jsch.ChannelSftp).apply { connect(8000) }
+        val home = sshHome.absolutePath
+
+        @Suppress("UNCHECKED_CAST")
+        val names = (sftp.ls(home) as java.util.Vector<com.jcraft.jsch.ChannelSftp.LsEntry>)
+            .map { it.filename }
+        check("SFTP：能列目录", names.contains("docs"), names.toString())
+
+        sftp.put(java.io.ByteArrayInputStream("hello ssh\n".toByteArray()), "$home/upload.txt")
+        check("SFTP：能写入文件", File(sshHome, "upload.txt").readText() == "hello ssh\n")
+
+        val back = sftp.get("$home/docs/inside.txt").let { input ->
+            input.bufferedReader().use { it.readText() }
+        }
+        check("SFTP：能读文件", back == "inside\n", back)
+
+        sftp.rm("$home/upload.txt")
+        check("SFTP：能删除文件", !File(sshHome, "upload.txt").exists())
+
+        // 白名单之外必须拒掉（这里用一个真实存在的系统文件）
+        val escape = runCatching { sftp.get("${outside.absolutePath}/secret.txt").close() }
+        check("SFTP：白名单外的路径被拒", escape.isFailure)
+
+        val noShell = runCatching {
+            val ch = session.openChannel("exec") as com.jcraft.jsch.ChannelExec
+            ch.setCommand("echo hi")
+            ch.connect(5000)
+            ch.disconnect()
+            true
+        }.getOrElse { false }
+        check("SSH：命令开关关着时 exec 被拒", !noShell)
+        sftp.disconnect()
+        session.disconnect()
+
+        // 打开命令开关后 exec 应该能跑（harness 里后端是 /bin/sh）
+        sshConfig.sshShellEnabled = true
+        sshConfig.sshShellBackend = "app"
+        check("SSH：改配置后能重启", sshServer.restartIfRunning(), sshServer.lastError ?: "")
+        val session2 = client()
+        val out = runCatching {
+            val ch = session2.openChannel("exec") as com.jcraft.jsch.ChannelExec
+            ch.setCommand("echo hello-exec")
+            val inp = ch.inputStream
+            ch.connect(8000)
+            val text = inp.bufferedReader().use { it.readText() }
+            ch.disconnect()
+            text
+        }.getOrElse { "ERR:${it.message}" }
+        check("SSH：命令开关打开后能执行命令", out.contains("hello-exec"), out.trim())
+        session2.disconnect()
+
+        // 只读模式：写操作要拦下来，读照旧
+        sshConfig.readOnly = true
+        check("SSH：只读模式重启正常", sshServer.restartIfRunning(), sshServer.lastError ?: "")
+        val session3 = client()
+        val sftp3 = (session3.openChannel("sftp") as com.jcraft.jsch.ChannelSftp).apply { connect(8000) }
+        val writeDenied = runCatching {
+            sftp3.put(java.io.ByteArrayInputStream("x".toByteArray()), "$home/readonly.txt")
+            true
+        }.getOrElse { false }
+        check("SFTP：只读模式下写被拒", !writeDenied && !File(sshHome, "readonly.txt").exists())
+        val stillReadable = runCatching { sftp3.get("$home/docs/inside.txt").close() }.isSuccess
+        check("SFTP：只读模式下读不受影响", stillReadable)
+        sftp3.disconnect()
+        session3.disconnect()
+        sshConfig.readOnly = false
+
+        val pair = PhoneSshServer.generateClientKeyPair()
+        check(
+            "SSH：能生成客户端密钥对",
+            pair.first.contains("PRIVATE KEY") && pair.second.split(' ').size >= 2,
+            pair.second.take(30)
+        )
+        check(
+            "SSH：生成的公钥是 OpenSSH 格式",
+            pair.second.startsWith("ssh-ed25519 ") || pair.second.startsWith("ssh-rsa "),
+            pair.second.take(20)
+        )
+        // 生成的私钥必须真的能被客户端读进去（不然界面里那把就是废的）
+        val parsed = runCatching {
+            val jsch = com.jcraft.jsch.JSch()
+            jsch.addIdentity(
+                "mcpbox-test",
+                pair.first.toByteArray(),
+                pair.second.toByteArray(),
+                null
+            )
+            jsch.getIdentityRepository().identities.size
+        }.getOrElse { -1 }
+        check("SSH：生成的私钥能被 SSH 客户端解析", parsed >= 1, "identities=$parsed")
+
+        sshServer.stop()
+        check("SSH：服务能停掉", !sshServer.isRunning)
+        } catch (t: Throwable) {
+            check("SSH 段整体不抛异常", false, t.toString())
+        }
+    }
+
     println("\n====================================")
     println("通过 $passed 项，失败 $failed 项")
     println("====================================")

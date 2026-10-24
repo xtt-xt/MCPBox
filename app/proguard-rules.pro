@@ -31,3 +31,18 @@
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
 -dontwarn kotlinx.**
+
+# ---------------------------------------------------------------- 内置 SSH 服务
+# Apache MINA SSHD 大量使用反射与 ServiceLoader（加密 provider、IO 实现、SFTP 子系统），
+# R8 把它们裁掉就会在真机上「连不上但看不出原因」，所以整包保留。
+-keep class org.apache.sshd.** { *; }
+-keep interface org.apache.sshd.** { *; }
+-keep class net.i2p.crypto.eddsa.** { *; }
+-keepclassmembers class * implements org.apache.sshd.common.util.security.SecurityProviderRegistrar { *; }
+-keep class org.slf4j.** { *; }
+-keepattributes Signature,InnerClasses,EnclosingMethod
+-dontwarn org.apache.sshd.**
+-dontwarn net.i2p.crypto.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.slf4j.**
+-dontwarn javax.naming.**

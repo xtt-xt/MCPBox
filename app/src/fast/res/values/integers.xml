@@ -4,4 +4,6 @@
 <resources>
     <!-- 测试变体的出厂端口：和正式版的 8720 错开，两个可以同时开服务 -->
     <integer name="default_port">8721</integer>
+    <!-- 测试变体的 SSH 端口，同样和正式版错开 -->
+    <integer name="default_ssh_port">8723</integer>
 </resources>

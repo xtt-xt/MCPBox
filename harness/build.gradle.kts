@@ -9,6 +9,8 @@ plugins {
 dependencies {
     implementation(project(":mcpcore"))
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // 测试客户端：用一个真的 SSH 客户端去连内置 SSH 服务端
+    implementation("com.github.mwiede:jsch:0.2.20")
 }
 
 kotlin {
@@ -22,3 +24,4 @@ tasks.register<JavaExec>("e2e") {
     mainClass.set("com.xtt.mcpbox.harness.MainKt")
     standardInput = System.`in`
 }
+

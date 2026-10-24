@@ -44,6 +44,14 @@ object DefaultPort {
 }
 
 /**
+ * SSH 服务的出厂端口（正式版 8722 / 测试变体 8723，和 HTTP 端口一样按变体注入）。
+ * 两个包名的 App 要能同时开 SSH，所以端口也得错开。
+ */
+object DefaultSshPort {
+    @Volatile var value: Int = 8722
+}
+
+/**
  * Live configuration of the phone MCP server. Values are volatile so HTTP worker
  * threads always observe the latest state pushed from the UI.
  */
@@ -86,6 +94,19 @@ class Config(private val src: SettingsSource) {
         const val BROWSER_ENGINES = "browser_engines_json"
         const val BROWSER_UA = "browser_user_agent"
         const val BROWSER_ENGINE = "browser_default_engine"
+        /** 内置 SSH / SFTP 服务（独立于 HTTP 服务，各有各的开关与端口） */
+        const val SSH_ENABLED = "ssh_enabled"
+        const val SSH_PORT = "ssh_port"
+        const val SSH_BIND_ALL = "ssh_bind_all"
+        const val SSH_USER = "ssh_user"
+        const val SSH_PASSWORD_ENABLED = "ssh_password_enabled"
+        const val SSH_PASSWORD = "ssh_password"
+        const val SSH_PUBKEY_ENABLED = "ssh_pubkey_enabled"
+        const val SSH_KEY_PRIVATE = "ssh_key_private"
+        const val SSH_KEY_PUBLIC = "ssh_key_public"
+        const val SSH_EXTRA_KEYS = "ssh_extra_keys"
+        const val SSH_SHELL_ENABLED = "ssh_shell_enabled"
+        const val SSH_SHELL_BACKEND = "ssh_shell_backend"
     }
 
     object Modes {
@@ -170,6 +191,28 @@ class Config(private val src: SettingsSource) {
     @Volatile var browserUserAgent: String = "mobile"
     /** browser_search 不指定 engine 时用哪个。 */
     @Volatile var browserDefaultEngine: String = "bing"
+    /**
+     * SSH / SFTP 服务。和 HTTP 服务是**两个独立功能**：各有各的开关、端口与监听地址，
+     * 关掉一个不影响另一个。
+     */
+    @Volatile var sshEnabled: Boolean = false
+    @Volatile var sshPort: Int = DefaultSshPort.value
+    @Volatile var sshBindAll: Boolean = false
+    /** 固定的登录用户名（客户端里填这个）。 */
+    @Volatile var sshUser: String = "mcpbox"
+    @Volatile var sshPasswordEnabled: Boolean = true
+    @Volatile var sshPassword: String = ""
+    @Volatile var sshPubkeyEnabled: Boolean = true
+    /** 生成的客户端私钥（OpenSSH 格式，填进客户端）。 */
+    @Volatile var sshKeyPrivate: String = ""
+    /** 上面那把私钥对应的公钥（一行）。 */
+    @Volatile var sshKeyPublic: String = ""
+    /** 用户额外贴进来的公钥，一行一把。 */
+    @Volatile var sshExtraKeys: String = ""
+    /** 允许客户端执行命令（默认关：只给文件读写）。 */
+    @Volatile var sshShellEnabled: Boolean = false
+    /** 命令用哪个身份跑：auto / app / root / shizuku。 */
+    @Volatile var sshShellBackend: String = "auto"
     @Volatile var revision: Long = 0
 
     companion object {
@@ -183,6 +226,10 @@ class Config(private val src: SettingsSource) {
         if (token.isBlank()) {
             token = Tokens.generateToken()
             src.putString(Keys.TOKEN, token)
+        }
+        if (sshPassword.isBlank()) {
+            sshPassword = Tokens.generateToken(16)
+            src.putString(Keys.SSH_PASSWORD, sshPassword)
         }
     }
 
@@ -222,6 +269,18 @@ class Config(private val src: SettingsSource) {
         browserEngines = src.getString(Keys.BROWSER_ENGINES, "") ?: ""
         browserUserAgent = src.getString(Keys.BROWSER_UA, "mobile") ?: "mobile"
         browserDefaultEngine = src.getString(Keys.BROWSER_ENGINE, "bing") ?: "bing"
+        sshEnabled = src.getBoolean(Keys.SSH_ENABLED, false)
+        sshPort = src.getInt(Keys.SSH_PORT, DefaultSshPort.value).coerceIn(1024, 65535)
+        sshBindAll = src.getBoolean(Keys.SSH_BIND_ALL, false)
+        sshUser = src.getString(Keys.SSH_USER, "mcpbox")?.takeIf { it.isNotBlank() } ?: "mcpbox"
+        sshPasswordEnabled = src.getBoolean(Keys.SSH_PASSWORD_ENABLED, true)
+        sshPassword = src.getString(Keys.SSH_PASSWORD, null) ?: ""
+        sshPubkeyEnabled = src.getBoolean(Keys.SSH_PUBKEY_ENABLED, true)
+        sshKeyPrivate = src.getString(Keys.SSH_KEY_PRIVATE, null) ?: ""
+        sshKeyPublic = src.getString(Keys.SSH_KEY_PUBLIC, null) ?: ""
+        sshExtraKeys = src.getString(Keys.SSH_EXTRA_KEYS, null) ?: ""
+        sshShellEnabled = src.getBoolean(Keys.SSH_SHELL_ENABLED, false)
+        sshShellBackend = src.getString(Keys.SSH_SHELL_BACKEND, "auto") ?: "auto"
         revision++
     }
 
@@ -259,10 +318,31 @@ class Config(private val src: SettingsSource) {
         src.putString(Keys.BROWSER_ENGINES, browserEngines)
         src.putString(Keys.BROWSER_UA, browserUserAgent)
         src.putString(Keys.BROWSER_ENGINE, browserDefaultEngine)
+        src.putBoolean(Keys.SSH_ENABLED, sshEnabled)
+        src.putInt(Keys.SSH_PORT, sshPort)
+        src.putBoolean(Keys.SSH_BIND_ALL, sshBindAll)
+        src.putString(Keys.SSH_USER, sshUser)
+        src.putBoolean(Keys.SSH_PASSWORD_ENABLED, sshPasswordEnabled)
+        src.putString(Keys.SSH_PASSWORD, sshPassword)
+        src.putBoolean(Keys.SSH_PUBKEY_ENABLED, sshPubkeyEnabled)
+        src.putString(Keys.SSH_KEY_PRIVATE, sshKeyPrivate)
+        src.putString(Keys.SSH_KEY_PUBLIC, sshKeyPublic)
+        src.putString(Keys.SSH_EXTRA_KEYS, sshExtraKeys)
+        src.putBoolean(Keys.SSH_SHELL_ENABLED, sshShellEnabled)
+        src.putString(Keys.SSH_SHELL_BACKEND, sshShellBackend)
         revision++
     }
 
     fun primaryRoot(): String = roots.firstOrNull() ?: DefaultRoots.primary()
+
+    /** 换一把客户端密钥（旧私钥立刻失效）。 */
+    fun regenerateSshKey() {
+        val pair = PhoneSshServer.generateClientKeyPair()
+        sshKeyPrivate = pair.first
+        sshKeyPublic = pair.second
+        src.putString(Keys.SSH_KEY_PRIVATE, sshKeyPrivate)
+        src.putString(Keys.SSH_KEY_PUBLIC, sshKeyPublic)
+    }
 
     fun newToken(): String {
         token = Tokens.generateToken()

@@ -26,6 +26,7 @@ AI client ──HTTP(MCP)──▶ MCPBox on the phone ──▶ filesystem / sh
 | **Permissions & approvals** | 9 permission keys with three states, preset sessions, path / command rules, four-state per-tool policy; approvals via overlay or notification | [02](docs/en/02-permissions.md) |
 | **Memory store** | Long-term memory for the AI: entities + observations + relations (a knowledge graph), browsable, editable and importable/exportable in the app | [04](docs/en/04-memory.md) |
 | **File transfer** | `POST /upload` / `GET /download` plus an in-browser upload page (multi-select); zip lets you move a **whole directory in one request** | [05](docs/en/05-file-transfer-and-web.md) |
+| **SSH service** | A built-in SSH / SFTP server so a client's SSH workspace can read and write phone files directly; its switch is independent of the MCP service and paths still obey the allowed roots | [11](docs/en/11-ssh.md) |
 | **Static site hosting** | Open web artifacts straight from the phone at `http://127.0.0.1:8720/web/?token=…` — read-only, with directory listings | [05](docs/en/05-file-transfer-and-web.md) |
 | **Built-in browser** | The AI browses by itself: read text and interactive elements, click / fill forms / scroll / run JS / screenshot / search, with **per-page** cookies and User-Agent. No Root needed | [06](docs/en/06-browser-and-ui-automation.md) |
 | **UI automation** | Screenshot, dump the view tree, tap / swipe / type (incl. Chinese) / keys / launch apps / wait for elements (needs Root or Shizuku) | [06](docs/en/06-browser-and-ui-automation.md) |

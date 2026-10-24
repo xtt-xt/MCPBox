@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -75,12 +76,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
+import com.xtt.mcpbox.NetUtil
 import com.xtt.mcpbox.core.ApprovalPresentation
 import com.xtt.mcpbox.core.BrowserEngines
 import com.xtt.mcpbox.core.Config
 import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.ServerMeta
+import com.xtt.mcpbox.core.Tokens
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -1674,5 +1677,424 @@ internal fun WallpaperSettingsPage(
             }
         }
 
+    }
+}
+
+/* ------------------------------------------------------------ SSH 服务 */
+
+/**
+ * 内置 SSH / SFTP 服务（客户端「SSH 工作区」接的那一头）。
+ *
+ * 和 MCP（HTTP）服务是**两个独立开关**：这里关掉只影响 SSH，首页那个总开关照旧管 MCP。
+ * 语义上给的是「手机上的文件」，所以路径仍然受「允许访问的目录」白名单约束。
+ */
+@Composable
+internal fun SshSettingsPage(
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onBack: () -> Unit
+) {
+    val config = AppCore.config
+    val enabled = remember(revision) { config.sshEnabled }
+    val running = remember(revision) { AppCore.ssh.isRunning }
+    val fingerprint = remember(revision) { AppCore.ssh.fingerprint }
+    val lastError = remember(revision) { AppCore.ssh.lastError }
+    val passwordEnabled = remember(revision) { config.sshPasswordEnabled }
+    val pubkeyEnabled = remember(revision) { config.sshPubkeyEnabled }
+    val shellEnabled = remember(revision) { config.sshShellEnabled }
+    val port = remember(revision) { config.sshPort }
+    val bindAll = remember(revision) { config.sshBindAll }
+
+    var showPort by remember { mutableStateOf(false) }
+    var showPassword by remember { mutableStateOf(false) }
+    var showPrivate by remember { mutableStateOf(false) }
+    var showExtra by remember { mutableStateOf(false) }
+    var showRegen by remember { mutableStateOf(false) }
+
+    val host = if (bindAll) NetUtil.localIpv4() ?: "127.0.0.1" else "127.0.0.1"
+    val address = "ssh://%s@%s:%d".format(config.sshUser, host, port)
+
+    SettingsPageShell(title = L("SSH 服务"), onBack = onBack) {
+        GroupLabel(L("服务"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("启用 SSH 服务"),
+                    subtitle = when {
+                        !enabled -> L("关闭时客户端连不上（和 MCP 服务互不影响）")
+                        running -> L("正在监听 %s:%s").format(host, port)
+                        lastError != null -> L("启动失败：%s").format(lastError)
+                        else -> L("已开启，等待连接")
+                    },
+                    icon = Icons.Filled.Person,
+                    checked = enabled
+                ) { on ->
+                    com.xtt.mcpbox.server.McpService.setSshEnabled(ctx, on)
+                    onChanged()
+                },
+                RowSpec(
+                    title = L("监听端口"),
+                    subtitle = L("当前 %s").format(port),
+                    icon = Icons.Filled.Share,
+                    trailing = {
+                        PillButton(L("修改"), outlined = true, color = MaterialTheme.colorScheme.primary, compact = true) {
+                            showPort = true
+                        }
+                    }
+                ),
+                switchSpec(
+                    title = L("允许局域网访问"),
+                    subtitle = if (bindAll) L("同一 Wi-Fi 下的设备也能连")
+                    else L("只监听 127.0.0.1，手机上的客户端够用"),
+                    icon = Icons.Filled.Lock,
+                    checked = bindAll
+                ) { on ->
+                    config.sshBindAll = on
+                    AppCore.saveConfig()
+                    AppCore.restartSshIfRunning()
+                    onChanged()
+                }
+            )
+        )
+
+        GroupLabel(L("连接"))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("连接地址"),
+                    subtitle = address,
+                    icon = Icons.Filled.Share,
+                    onClick = { copyText(ctx, address, L("地址已复制")) }
+                ),
+                RowSpec(
+                    title = L("主机指纹"),
+                    subtitle = fingerprint.ifBlank { L("服务启动后显示，首次连接时核对") },
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Lock,
+                    onClick = { if (fingerprint.isNotBlank()) copyText(ctx, fingerprint, L("指纹已复制")) }
+                ),
+                RowSpec(
+                    title = L("登录用户名"),
+                    subtitle = L("%s（客户端里填这个）").format(config.sshUser),
+                    icon = Icons.Filled.Person,
+                    onClick = { copyText(ctx, config.sshUser, L("用户名已复制")) }
+                )
+            )
+        )
+
+        GroupLabel(L("认证"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("密码登录"),
+                    subtitle = L("客户端填用户名 + 密码"),
+                    icon = Icons.Filled.Lock,
+                    checked = passwordEnabled
+                ) { on ->
+                    config.sshPasswordEnabled = on
+                    AppCore.saveConfig()
+                    onChanged()
+                },
+                RowSpec(
+                    title = L("登录密码"),
+                    subtitle = L("已设置（%s 位）").format(config.sshPassword.length),
+                    icon = Icons.Filled.Create,
+                    visible = passwordEnabled,
+                    onClick = { showPassword = true }
+                ),
+                switchSpec(
+                    title = L("公钥登录"),
+                    subtitle = L("客户端用私钥登录，不用传密码"),
+                    icon = Icons.Filled.Person,
+                    checked = pubkeyEnabled
+                ) { on ->
+                    config.sshPubkeyEnabled = on
+                    AppCore.saveConfig()
+                    onChanged()
+                },
+                RowSpec(
+                    title = L("公钥"),
+                    subtitle = L("点一下复制，粘到客户端的公钥里"),
+                    icon = Icons.Filled.Share,
+                    visible = pubkeyEnabled,
+                    onClick = {
+                        if (config.sshKeyPublic.isBlank()) {
+                            config.regenerateSshKey()
+                            AppCore.saveConfig()
+                            onChanged()
+                        }
+                        copyText(ctx, config.sshKeyPublic, L("公钥已复制"))
+                    }
+                ),
+                RowSpec(
+                    title = L("私钥"),
+                    subtitle = L("点开查看后复制，填到客户端的私钥里"),
+                    icon = Icons.Filled.Lock,
+                    visible = pubkeyEnabled,
+                    onClick = {
+                        if (config.sshKeyPrivate.isBlank()) {
+                            config.regenerateSshKey()
+                            AppCore.saveConfig()
+                            onChanged()
+                        }
+                        showPrivate = true
+                    }
+                ),
+                RowSpec(
+                    title = L("额外公钥"),
+                    subtitle = if (config.sshExtraKeys.isBlank()) L("还没添加")
+                    else L("已添加 %s 行").format(config.sshExtraKeys.lines().count { it.isNotBlank() }),
+                    icon = Icons.Filled.Create,
+                    visible = pubkeyEnabled,
+                    onClick = { showExtra = true }
+                ),
+                RowSpec(
+                    title = L("重新生成密钥对"),
+                    subtitle = L("旧私钥立刻失效，已经连上的客户端要换一把"),
+                    icon = Icons.Filled.Refresh,
+                    visible = pubkeyEnabled,
+                    onClick = { showRegen = true }
+                )
+            )
+        )
+
+        GroupLabel(L("命令"))
+        CardGroup(
+            listOf(
+                switchSpec(
+                    title = L("允许执行命令"),
+                    subtitle = L("打开后客户端能在手机上跑命令；只给文件读写就关着"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Warning,
+                    checked = shellEnabled
+                ) { on ->
+                    config.sshShellEnabled = on
+                    AppCore.saveConfig()
+                    if (running) AppCore.restartSshIfRunning()
+                    onChanged()
+                },
+                dropdownSpec(
+                    title = L("执行身份"),
+                    subtitle = L("没有 Root / Shizuku 时只会用应用沙箱"),
+                    icon = Icons.Filled.Person,
+                    options = listOf(L("自动"), L("应用沙箱"), L("Root"), "Shizuku"),
+                    selectedIndex = listOf("auto", "app", "root", "shizuku")
+                        .indexOf(config.sshShellBackend).coerceAtLeast(0)
+                ) { index ->
+                    config.sshShellBackend = listOf("auto", "app", "root", "shizuku")[index]
+                    AppCore.saveConfig()
+                    if (running) AppCore.restartSshIfRunning()
+                    onChanged()
+                }.copy(visible = shellEnabled)
+            )
+        )
+
+        GroupLabel(L("怎么接"))
+        CardColumn {
+            CardBox {
+                Text(
+                    L("在客户端的「SSH 工作区」里填：主机 %s、端口 %s、用户名 %s，认证方式选密码或私钥，远程目录填 %s。")
+                        .format(host, port, config.sshUser, AppCore.config.primaryRoot()),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp
+                )
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+    }
+
+    if (showPort) {
+        var portText by remember { mutableStateOf(AppCore.config.sshPort.toString()) }
+        AlertDialog(
+            onDismissRequest = { showPort = false },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("SSH 端口"), fontSize = 20.sp) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = portText,
+                        onValueChange = { v -> portText = v.filter { it.isDigit() }.take(5) },
+                        label = { Text("1024 - 65535") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        L("改完 SSH 服务会重启，客户端里的端口也要跟着改。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val p = portText.toIntOrNull()
+                    if (p == null || p !in 1024..65535) {
+                        toast(ctx, L("端口需要 1024 - 65535"))
+                    } else {
+                        AppCore.config.sshPort = p
+                        AppCore.saveConfig()
+                        showPort = false
+                        AppCore.restartSshIfRunning()
+                        toast(ctx, L("SSH 端口已改为 %s").format(p))
+                        onChanged()
+                    }
+                }) { Text(L("应用"), color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPort = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
+    if (showPassword) {
+        AlertDialog(
+            onDismissRequest = { showPassword = false },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("SSH 登录密码"), fontSize = 20.sp) },
+            text = {
+                Column {
+                    CodeBlock(AppCore.config.sshPassword)
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        L("改密码后已经连上的客户端要重新连一次。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copyText(ctx, AppCore.config.sshPassword, L("密码已复制"))
+                }) { Text(L("复制"), color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    AppCore.config.sshPassword = Tokens.generateToken(16)
+                    AppCore.saveConfig()
+                    showPassword = false
+                    toast(ctx, L("密码已重新生成"))
+                    onChanged()
+                }) { Text(L("重新生成"), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        )
+    }
+
+    if (showPrivate) {
+        AlertDialog(
+            onDismissRequest = { showPrivate = false },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("客户端私钥"), fontSize = 20.sp) },
+            text = {
+                Column {
+                    Text(
+                        L("把这整段（含 BEGIN / END 两行）填到客户端的私钥里，别发给别人。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    CodeBlock(
+                        AppCore.config.sshKeyPrivate.lines().take(4).joinToString("\n") + "\n…"
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copyText(ctx, AppCore.config.sshKeyPrivate, L("私钥已复制"))
+                    showPrivate = false
+                }) { Text(L("复制"), color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPrivate = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
+    if (showExtra) {
+        var text by remember { mutableStateOf(AppCore.config.sshExtraKeys) }
+        AlertDialog(
+            onDismissRequest = { showExtra = false },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("额外公钥"), fontSize = 20.sp) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.take(4000) },
+                        label = { Text(L("一行一把，例如 ssh-ed25519 AAAA…")) },
+                        minLines = 4,
+                        maxLines = 8,
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        L("用来放你自己机器上的公钥（比如 Termux 里的 ~/.ssh/id_ed25519.pub）。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.config.sshExtraKeys = text.trim()
+                    AppCore.saveConfig()
+                    showExtra = false
+                    toast(ctx, L("公钥已保存"))
+                    onChanged()
+                }) { Text(L("保存"), color = MaterialTheme.colorScheme.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExtra = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
+
+    if (showRegen) {
+        AlertDialog(
+            onDismissRequest = { showRegen = false },
+            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
+            shape = RoundedCornerShape(28.dp),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("重新生成密钥对？"), fontSize = 20.sp) },
+            text = {
+                Text(
+                    L("旧私钥会立刻失效，已经用它的客户端要换成新的那把。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    AppCore.config.regenerateSshKey()
+                    AppCore.saveConfig()
+                    showRegen = false
+                    toast(ctx, L("已生成新的密钥对"))
+                    onChanged()
+                }) { Text(L("重新生成"), color = Sem.bad) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegen = false }) {
+                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
     }
 }
