@@ -38,6 +38,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - SSH 与 MCP 是两个独立开关，关掉一个不影响另一个；两个都关时前台服务才退出
 - SSH 的路径复用「允许访问的目录」，越界与只读模式照旧生效
 
+### 修复
+
+- 客户端文件页停在根目录报权限拒绝：路径现在按「以工作目录为根」解析
+- SSH 服务偶发连上却无响应时自动重启
+
 </details>
 
 <details>
@@ -53,6 +58,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 - SSH and MCP are separate switches; turning one off does not affect the other, and the foreground service only exits when both are off
 - SSH paths reuse the allowed roots, and out-of-range paths and read-only mode apply as before
+
+### Fixes
+
+- The client's file page no longer fails with permission denied at the root directory: paths resolve relative to the working directory
+- The SSH service restarts itself when it stops answering
 
 </details>
 

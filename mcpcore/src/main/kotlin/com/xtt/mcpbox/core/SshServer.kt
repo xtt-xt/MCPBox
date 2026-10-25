@@ -171,6 +171,9 @@ class PhoneSshServer(
         }
     }
 
+    /** 立刻敲一次门（harness 与「立即检测」按钮用）。 */
+    fun probeNow(): Boolean = probeBanner()
+
     /** 连一下自己的端口，半秒内能读到 SSH 版本横幅就算活着。 */
     private fun probeBanner(): Boolean {
         probing = true

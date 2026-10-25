@@ -2835,8 +2835,15 @@ fun main() {
         }.getOrElse { -1 }
         check("SSH：生成的私钥能被 SSH 客户端解析", parsed >= 1, "identities=$parsed")
 
+        // 看门狗：真的起了一个线程在敲门，停服务时也要跟着收掉
+        val threadNames = { Thread.getAllStackTraces().keys.mapNotNull { it.name } }
+        check("SSH：看门狗线程已启动", threadNames().contains("ssh-watchdog"), threadNames().filter { it.contains("ssh") }.toString())
+        check("SSH：看门狗敲得通（能读到 banner）", sshServer.probeNow())
+
         sshServer.stop()
         check("SSH：服务能停掉", !sshServer.isRunning)
+        Thread.sleep(400)
+        check("SSH：停服务后看门狗线程退出", !threadNames().contains("ssh-watchdog"), threadNames().filter { it.contains("ssh") }.toString())
         } catch (t: Throwable) {
             check("SSH 段整体不抛异常", false, t.toString())
         }
