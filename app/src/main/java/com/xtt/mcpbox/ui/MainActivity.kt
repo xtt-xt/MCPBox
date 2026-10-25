@@ -373,6 +373,22 @@ fun AppRoot(
         navStack.getOrNull(navStack.lastIndex - 1)?.takeIf { it.tab == tab }?.page
 
     /**
+     * 某个页面现在在栈里的深度（1 = tab 根页），**只用来判断转场方向**。
+     *
+     * 不能拿页面 key 自己算（`split('/')` 那种）：命令与执行和工具权限都是「一级子页」，
+     * 这么算深度一样 → 返回时被判成「往里进」，于是退出又演一遍进入动画。
+     *
+     * 已经在栈里的页面用下标；**已经出栈的那一页**（返回时的 initialState）查不到，
+     * 给 [Int.MAX_VALUE] 让「目标 vs 当前」自然判成往回退。纯函数，不在组合期间改状态。
+     */
+    val depthOf: (String) -> Int = { key ->
+        when {
+            key.isEmpty() -> 1
+            else -> navStack.indexOfLast { it.page == key }.let { if (it < 0) Int.MAX_VALUE else it + 1 }
+        }
+    }
+
+    /**
      * 跳到某个位置。
      *
      * 目标页是**根页**（page 为空）= 切 tab：栈清空只留它，避免「切走再切回来还在子页」。
@@ -563,7 +579,6 @@ fun AppRoot(
                     sshRunning = AppCore.ssh.isRunning,
                     sshPort = AppCore.config.sshPort,
                     onToggleSsh = { on -> McpService.setSshEnabled(ctx, on); revision++ },
-                    onOpenSsh = { go(Route(PERMISSION_TAB, "ssh")) },
                     onPermNeed = requestPermission,
                     onAutoGrant = onAutoGrant,
                     onOpenPermissions = { go(Route(PERMISSION_TAB, "")) },
@@ -582,6 +597,7 @@ fun AppRoot(
                     scrollTopTick = scrollTopTick,
                     page = permPage,
                     behindPage = behindPage,
+                    depthOf = depthOf,
                     onPage = { go(Route(PERMISSION_TAB, it)) },
                     onBack = ::goBack
                 ) { revision++ }
@@ -593,6 +609,7 @@ fun AppRoot(
                     revision = revision,
                     page = settingsPage,
                     behindPage = behindPage,
+                    depthOf = depthOf,
                     onPage = { go(Route(SETTINGS_TAB, it)) },
                     onBack = ::goBack,
                     onThemeChanged = onThemeChanged,

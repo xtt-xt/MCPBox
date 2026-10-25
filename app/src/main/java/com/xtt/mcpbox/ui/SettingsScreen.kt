@@ -91,6 +91,8 @@ fun SettingsScreen(
     page: String,
     /** 预见式返回时露出来的上一页（= 路由栈倒数第二项）；null = 上一级在别的 tab，不铺预览。 */
     behindPage: String? = null,
+    /** 页面 key → 路由栈深度，只用于判断转场方向（见 PermissionScreen 里的同名参数）。 */
+    depthOf: (String) -> Int = { if (it.isEmpty()) 1 else 2 },
     onPage: (String) -> Unit,
     /** 返回由外面统一出栈，不再按页面 key 反推上一级。 */
     onBack: () -> Unit = {},
@@ -169,7 +171,7 @@ fun SettingsScreen(
             pageSlide(
                 // 深度 = 非空段数：设置首页 "" → 0，外观 / 终端与命令 → 1，规则 → 3。
                 // 别写成 split('/').size - 1：一级子页会得到 0、跟首页同深度，方向就判反了。
-                entering = pageForward(targetState, initialState) { settingsDepth(it) },
+                entering = pageForward(targetState, initialState, depthOf),
                 commitDrag = commitDrag,
                 noOverlap = noOverlap
             )
@@ -650,12 +652,4 @@ private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRa
 }
 
 /* ------------------------------------------------------------ 子页路由 */
-
-/**
- * 设置页的层级：首页 0 / 一级子页（外观、网络、浏览器…）1 / 二级子页（`appearance/…`）2。
- *
- * 用**非空段数**算，别写成 `split('/').size - 1` —— 那样一级子页会算成 0、跟首页一样深，
- * 从规则页返回时就分不出「往里进」还是「往回退」，动画会反过来。
- */
-private fun settingsDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
 

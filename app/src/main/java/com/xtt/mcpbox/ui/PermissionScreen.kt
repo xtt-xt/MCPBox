@@ -104,6 +104,11 @@ fun PermissionScreen(
      * null 表示上一级在**别的 tab**（比如从主页点进来的 SSH），那边是另一棵树，不铺预览。
      */
     behindPage: String? = null,
+    /**
+     * 页面 key → 它在路由栈里的深度（1 = tab 根页）。
+     * 只用来判断转场方向：同级的两个子页（命令与执行 / 工具权限）靠页面 key 自己算不出先后。
+     */
+    depthOf: (String) -> Int = { if (it.isEmpty()) 1 else 2 },
     onPage: (String) -> Unit = {},
     /** 返回：由外面统一出栈，**不再按页面 key 反推上一级**。 */
     onBack: () -> Unit = {},
@@ -156,8 +161,9 @@ fun PermissionScreen(
             targetState = page,
             transitionSpec = {
                 pageSlide(
-                    // 方向看**层级**：首页 0 / 一级子页 1 / 规则页 2 / 规则编辑 3
-                    entering = pageForward(targetState, initialState) { permDepth(it) },
+                    // 方向看**真实栈深度**（由外面按导航事件记下来），不看页面 key 的层级：
+                    // 命令与执行 → 工具权限 和反过来都是「一级」，靠 key 算会两边都判成「往里进」
+                    entering = pageForward(targetState, initialState, depthOf),
                     commitDrag = commitDrag,
                     noOverlap = noOverlap
                 )
@@ -294,9 +300,6 @@ private fun PermPageContent(
         )
     }
 }
-
-/** 层级 = 非空段数：首页 0，一级子页 1，规则列表 2，规则编辑 3。 */
-private fun permDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
 
 /**
  * 权限首页：预设会话 + 五个入口 + 全局限制。

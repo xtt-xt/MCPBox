@@ -71,8 +71,6 @@ fun HomeScreen(
     sshRunning: Boolean,
     sshPort: Int,
     onToggleSsh: (Boolean) -> Unit,
-    /** 打开 SSH 服务设置页（客户端填什么、认证、执行身份都在那一页）。 */
-    onOpenSsh: () -> Unit,
     onPermNeed: (PermNeed) -> Unit,
     onAutoGrant: () -> Unit,
     onOpenPermissions: () -> Unit,
@@ -124,36 +122,33 @@ fun HomeScreen(
                         )
                     )
                 }
-            }
-        )
-
-        // SSH 单独一张卡，不和 MCP 挤在一起：它们是两个独立的功能，各有各的端口。
-        // 整行点击进设置页、右边开关直接开关服务 —— 和上面 MCP 那张卡的语义一致。
-        Spacer(Modifier.height(7.dp))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("SSH 服务"),
-                    subtitle = when {
-                        !sshEnabled -> L("已关闭 · 端口 %s").format(sshPort)
-                        sshRunning -> L("正在监听 · 端口 %s").format(sshPort)
-                        else -> L("已开启，但没在监听 · 端口 %s").format(sshPort)
-                    },
-                    icon = Icons.Filled.Person,
-                    onClick = onOpenSsh,
-                    trailing = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            StatusDot(
-                                if (sshRunning) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.error,
-                                9
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            AppSwitch(sshEnabled) { onToggleSsh(it) }
+                // SSH 和 MCP 挨在**同一组**里：两张卡连成一体（首尾圆角、中间直角），
+                // 一看就是「同一台设备上的两个服务」。点整行 = 开关，和上面那张卡一致；
+                // 要改端口 / 凭据走「权限 → 远程访问 → SSH 服务」。
+                add(
+                    RowSpec(
+                        title = L("SSH 服务"),
+                        subtitle = when {
+                            !sshEnabled -> L("已关闭 · 端口 %s").format(sshPort)
+                            sshRunning -> L("正在监听 · 端口 %s").format(sshPort)
+                            else -> L("已开启，但没在监听 · 端口 %s").format(sshPort)
+                        },
+                        icon = Icons.Filled.Person,
+                        onClick = { onToggleSsh(!sshEnabled) },
+                        trailing = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                StatusDot(
+                                    if (sshRunning) MaterialTheme.colorScheme.tertiary
+                                    else MaterialTheme.colorScheme.error,
+                                    9
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                AppSwitch(sshEnabled) { onToggleSsh(it) }
+                            }
                         }
-                    }
+                    )
                 )
-            )
+            }
         )
 
         if (status.running) {
