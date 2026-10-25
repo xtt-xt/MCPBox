@@ -89,7 +89,11 @@ fun SettingsScreen(
     status: McpServer.ServerStatus,
     revision: Int,
     page: String,
+    /** 预见式返回时露出来的上一页（= 路由栈倒数第二项）；null = 上一级在别的 tab，不铺预览。 */
+    behindPage: String? = null,
     onPage: (String) -> Unit,
+    /** 返回由外面统一出栈，不再按页面 key 反推上一级。 */
+    onBack: () -> Unit = {},
     onThemeChanged: () -> Unit,
     onLangChanged: () -> Unit,
     /** 关于页里「预览更新弹窗」拿到的东西（开发者模式用），交给 MainActivity 去弹。 */
@@ -105,7 +109,7 @@ fun SettingsScreen(
     var showPassword by remember { mutableStateOf(false) }
     var passwordText by remember { mutableStateOf("") }
     var showSeed by remember { mutableStateOf(false) }
-    val back = { onPage(parentPage(page)) }
+    val back = onBack
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
@@ -123,12 +127,12 @@ fun SettingsScreen(
     PredictiveBackBox(
         onBack = back,
         handleBack = page.isNotEmpty(),
-        follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
+        follow = page.isNotEmpty() && behindPage != null && AppCore.prefs.predictiveBack,
         behind = {
             // 拖动时下面露出来的那一页 —— **必须是这一页真正的上一级**，松手后就地返回，
             // 不做「先露设置首页、松手再跳到上一级」那种补丁（那看着就是「关闭界面后跳转」）。
             // 预览层在拖动 / 提交后的 0.4 秒里只负责显示，回调全给空 lambda。
-            when (parentPage(page)) {
+            when (behindPage) {
                 "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
                     revision = revision,
@@ -655,15 +659,3 @@ private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRa
  */
 private fun settingsDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
 
-/**
- * 上一级页面：`appearance/langpack` 退到 `appearance`，一级子页退到设置首页（空串）。
- *
- * 只取**第一段**是有意的：拿 `substringBeforeLast('/')` 会得到不存在的路径，
- * 掉进兜底分支 → 看起来就是「一返回就跳回设置首页」。
- *
- * 命令规则 / 路径规则 / SSH 都已经搬到「权限」tab 的页面栈里，那边有自己的层级函数。
- */
-private fun parentPage(page: String): String = when {
-    page.contains('/') -> page.substringBefore('/')
-    else -> ""
-}

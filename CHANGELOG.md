@@ -40,9 +40,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ### 界面
 
-- 权限页改成安全中心：预设 + 工具权限 / 文件范围 / 命令与执行 / 审批 / 连接与访问 / 全局限制
+- 权限页改成安全中心：预设 + 工具权限 / 文件范围 / 命令与执行 / 审批 / 远程访问 / 全局限制
 - 9 个权限开关按文件、系统、网络分组，默认允许的排在后面
 - 设置里的「安全与审批」「终端与命令」「SSH 服务」并进权限页，设置只留和授权无关的项
+- 首页「服务」下面加了 SSH 开关卡片，和 MCP 分开；点整行进 SSH 设置页
+- 子页按实际来路返回：从首页进的 SSH 退回首页，从命令与执行进的工具权限退回命令与执行
 
 ### 修复
 
@@ -67,9 +69,11 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ### Interface
 
-- The Permissions tab is now a security hub: preset plus Tool permissions / File scope / Commands / Approvals / Connections / Global limits
+- The Permissions tab is now a security hub: preset plus Tool permissions / File scope / Commands / Approvals / Remote access / Global limits
 - The 9 permission switches are grouped by files, system and network, with allow-by-default ones last
 - Security & approvals, Terminal & commands and SSH service moved into Permissions; Settings keeps only non-authorisation items
+- The Home services section gained a separate SSH switch card; tapping the row opens the SSH page
+- Sub-pages return where they came from: SSH opened from Home goes back to Home, Tool permissions opened from Commands goes back to Commands
 
 ### Fixes
 

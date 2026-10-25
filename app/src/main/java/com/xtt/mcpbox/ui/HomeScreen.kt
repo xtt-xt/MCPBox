@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
@@ -65,6 +66,13 @@ fun HomeScreen(
     host: AndroidHost,
     onToggleService: (Boolean) -> Unit,
     onRestartService: () -> Unit,
+    /** SSH 服务的开关状态：和「权限 → SSH 服务」页里那个是同一个值。 */
+    sshEnabled: Boolean,
+    sshRunning: Boolean,
+    sshPort: Int,
+    onToggleSsh: (Boolean) -> Unit,
+    /** 打开 SSH 服务设置页（客户端填什么、认证、执行身份都在那一页）。 */
+    onOpenSsh: () -> Unit,
     onPermNeed: (PermNeed) -> Unit,
     onAutoGrant: () -> Unit,
     onOpenPermissions: () -> Unit,
@@ -117,6 +125,35 @@ fun HomeScreen(
                     )
                 }
             }
+        )
+
+        // SSH 单独一张卡，不和 MCP 挤在一起：它们是两个独立的功能，各有各的端口。
+        // 整行点击进设置页、右边开关直接开关服务 —— 和上面 MCP 那张卡的语义一致。
+        Spacer(Modifier.height(7.dp))
+        CardGroup(
+            listOf(
+                RowSpec(
+                    title = L("SSH 服务"),
+                    subtitle = when {
+                        !sshEnabled -> L("已关闭 · 端口 %s").format(sshPort)
+                        sshRunning -> L("正在监听 · 端口 %s").format(sshPort)
+                        else -> L("已开启，但没在监听 · 端口 %s").format(sshPort)
+                    },
+                    icon = Icons.Filled.Person,
+                    onClick = onOpenSsh,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            StatusDot(
+                                if (sshRunning) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.error,
+                                9
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            AppSwitch(sshEnabled) { onToggleSsh(it) }
+                        }
+                    }
+                )
+            )
         )
 
         if (status.running) {

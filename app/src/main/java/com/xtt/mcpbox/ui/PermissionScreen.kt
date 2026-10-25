@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -83,8 +84,8 @@ import com.xtt.mcpbox.core.Rule
  * shell/rules        命令规则列表
  * shell/rules/<id>   命令规则编辑（new = 新建）
  * approval           审批（方式 / 时限）
- * access             连接与访问（SSH / 令牌 / 文件通道）
- * access/ssh         SSH 服务
+ * ssh                SSH 服务（首页直接进）
+ * access             访问令牌与文件通道
  * pack / pack:<id>   工具包编辑
  * ```
  *
@@ -98,10 +99,16 @@ fun PermissionScreen(
     scrollTopTick: Int = 0,
     /** 当前子页：空串 = 权限首页。 */
     page: String = "",
+    /**
+     * 预见式返回时底下露出来的那一页（= 路由栈里倒数第二项）。
+     * null 表示上一级在**别的 tab**（比如从主页点进来的 SSH），那边是另一棵树，不铺预览。
+     */
+    behindPage: String? = null,
     onPage: (String) -> Unit = {},
+    /** 返回：由外面统一出栈，**不再按页面 key 反推上一级**。 */
+    onBack: () -> Unit = {},
     onChanged: () -> Unit
 ) {
-    val back = { onPage(permParent(page)) }
 
     // 每页的滚动位置跟着页面 key 存下来，回来时不跳回顶部
     val pageStates = rememberSaveableStateHolder()
@@ -115,54 +122,31 @@ fun PermissionScreen(
     val approvalScroll = rememberScrollState()
     val accessScroll = rememberScrollState()
 
-    // 子页里按系统返回 → 回上一级（首页不接，交给外面/系统）。
+    // 子页里按系统返回 → 出栈（首页不接，交给外面/系统）。
+    val followBack = page.isNotEmpty() && behindPage != null && AppCore.prefs.predictiveBack
     PredictiveBackBox(
-        onBack = back,
+        onBack = onBack,
         handleBack = page.isNotEmpty(),
-        follow = page.isNotEmpty() && AppCore.prefs.predictiveBack,
-        behind = {
+        follow = followBack,
+        behind = if (!followBack) null else ({
             // 拖动时下面露出来的必须是**真正的上一级**，而且停在它自己的滚动位置。
             // 预览层只负责显示，回调全给空 lambda。
-            when (permParent(page)) {
-                "perm" -> ToolPermPage(
-                    ctx = ctx, revision = revision, onChanged = {}, onOpenPack = {},
-                    scroll = permScroll, onBack = {}
-                )
-                "files" -> FileScopePage(
-                    ctx = ctx, revision = revision, onChanged = {}, onOpenRules = {},
-                    scroll = filesScroll, onBack = {}
-                )
-                "shell" -> ShellPolicyPage(
-                    revision = revision, onChanged = {}, onOpenRules = {}, onJumpPerm = {},
-                    scroll = shellScroll, onBack = {}
-                )
-                "approval" -> ApprovalPolicyPage(
-                    revision = revision, onChanged = {}, scroll = approvalScroll, onBack = {}
-                )
-                "access" -> AccessPage(
-                    ctx = ctx, revision = revision, onChanged = {}, onOpenSsh = {},
-                    scroll = accessScroll, onBack = {}
-                )
-                // 规则编辑页底下露出来的是规则列表本身
-                "shell/rules" -> RulesSettingsPage(
-                    kind = RuleKind.COMMAND, revision = revision, onChanged = {}, onBack = {}
-                )
-                "files/rules" -> RulesSettingsPage(
-                    kind = RuleKind.PATH, revision = revision, onChanged = {}, onBack = {}
-                )
-                "access/ssh" -> SshSettingsPage(
-                    ctx = ctx, revision = revision, onChanged = {}, onBack = {}
-                )
-                else -> PermissionHomePage(
-                    scroll = homeScroll,
-                    ctx = ctx,
-                    revision = revision,
-                    scrollTopTick = scrollTopTick,
-                    onPage = onPage,
-                    onChanged = onChanged
-                )
-            }
-        }
+            PermPageContent(
+                key = behindPage.orEmpty(),
+                ctx = ctx,
+                revision = revision,
+                onChanged = {},
+                onPage = {},
+                onBack = {},
+                homeScroll = homeScroll,
+                permScroll = permScroll,
+                filesScroll = filesScroll,
+                shellScroll = shellScroll,
+                approvalScroll = approvalScroll,
+                accessScroll = accessScroll,
+                scrollTopTick = 0
+            )
+        })
     ) {
         // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用
         val commitDrag = LocalPredictiveCommitDrag.current
@@ -183,111 +167,136 @@ fun PermissionScreen(
             // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
             PageSurface(sub = current.isNotEmpty()) {
                 pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
-                    // 「编辑某条命令规则」的 key 是 `shell/rules/<id>`：整类归一到同一个分支
-                    val isRuleEdit = current.startsWith("shell/rules/")
-                    when (if (isRuleEdit) "shell/rule-edit" else current) {
-                        "" -> PermissionHomePage(
-                            scroll = homeScroll,
-                            ctx = ctx,
-                            revision = revision,
-                            scrollTopTick = scrollTopTick,
-                            onPage = onPage,
-                            onChanged = onChanged
-                        )
-                        "perm" -> ToolPermPage(
-                            ctx = ctx,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onOpenPack = { id -> onPage(if (id == null) "pack" else "pack:$id") },
-                            scroll = permScroll,
-                            onBack = back
-                        )
-                        "files" -> FileScopePage(
-                            ctx = ctx,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onOpenRules = { onPage("files/rules") },
-                            scroll = filesScroll,
-                            onBack = back
-                        )
-                        "files/rules" -> RulesSettingsPage(
-                            kind = RuleKind.PATH,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onBack = back
-                        )
-                        "shell" -> ShellPolicyPage(
-                            revision = revision,
-                            onChanged = onChanged,
-                            onOpenRules = { onPage("shell/rules") },
-                            onJumpPerm = { onPage("perm") },
-                            scroll = shellScroll,
-                            onBack = back
-                        )
-                        "shell/rules" -> RulesSettingsPage(
-                            kind = RuleKind.COMMAND,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onBack = back,
-                            onOpenNew = { onPage("shell/rules/new") },
-                            onOpenEdit = { id -> onPage("shell/rules/$id") }
-                        )
-                        "shell/rule-edit" -> CommandRuleEditPage(
-                            ctx = ctx,
-                            ruleId = current.removePrefix("shell/rules/").takeIf { it != "new" },
-                            revision = revision,
-                            onChanged = onChanged,
-                            onBack = back
-                        )
-                        "approval" -> ApprovalPolicyPage(
-                            revision = revision,
-                            onChanged = onChanged,
-                            scroll = approvalScroll,
-                            onBack = back
-                        )
-                        "access" -> AccessPage(
-                            ctx = ctx,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onOpenSsh = { onPage("access/ssh") },
-                            scroll = accessScroll,
-                            onBack = back
-                        )
-                        "access/ssh" -> SshSettingsPage(
-                            ctx = ctx,
-                            revision = revision,
-                            onChanged = onChanged,
-                            onBack = back
-                        )
-                        else -> PackEditPage(
-                            ctx = ctx,
-                            packId = if (current == "pack") null else current.removePrefix("pack:"),
-                            revision = revision,
-                            onChanged = onChanged,
-                            onBack = back
-                        )
-                    }
+                    PermPageContent(
+                        key = current,
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = onChanged,
+                        onPage = onPage,
+                        onBack = onBack,
+                        homeScroll = homeScroll,
+                        permScroll = permScroll,
+                        filesScroll = filesScroll,
+                        shellScroll = shellScroll,
+                        approvalScroll = approvalScroll,
+                        accessScroll = accessScroll,
+                        scrollTopTick = scrollTopTick
+                    )
                 }
             }
         }
     }
 }
 
+/**
+ * 渲染一个页面 key。真页面和预见式返回的预览层都走这里 ——
+ * 以前两处各写一份 `when`，加一个子页要改两次，漏一次就是「拖出来的是别的页」。
+ */
+@Composable
+private fun PermPageContent(
+    key: String,
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onPage: (String) -> Unit,
+    onBack: () -> Unit,
+    homeScroll: ScrollState,
+    permScroll: ScrollState,
+    filesScroll: ScrollState,
+    shellScroll: ScrollState,
+    approvalScroll: ScrollState,
+    accessScroll: ScrollState,
+    scrollTopTick: Int
+) {
+    // 「编辑某条命令规则」的 key 是 `shell/rules/<id>`：整类归一到同一个分支，
+    // 不然 when 里要列无数种 id
+    val isRuleEdit = key.startsWith("shell/rules/")
+    when (if (isRuleEdit) "shell/rule-edit" else key) {
+        "" -> PermissionHomePage(
+            scroll = homeScroll,
+            ctx = ctx,
+            revision = revision,
+            scrollTopTick = scrollTopTick,
+            onPage = onPage,
+            onChanged = onChanged
+        )
+        "perm" -> ToolPermPage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            onOpenPack = { id -> onPage(if (id == null) "pack" else "pack:$id") },
+            scroll = permScroll,
+            onBack = onBack
+        )
+        "files" -> FileScopePage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            onOpenRules = { onPage("files/rules") },
+            scroll = filesScroll,
+            onBack = onBack
+        )
+        "files/rules" -> RulesSettingsPage(
+            kind = RuleKind.PATH,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack
+        )
+        "shell" -> ShellPolicyPage(
+            revision = revision,
+            onChanged = onChanged,
+            onOpenRules = { onPage("shell/rules") },
+            onJumpPerm = { onPage("perm") },
+            scroll = shellScroll,
+            onBack = onBack
+        )
+        "shell/rules" -> RulesSettingsPage(
+            kind = RuleKind.COMMAND,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack,
+            onOpenNew = { onPage("shell/rules/new") },
+            onOpenEdit = { id -> onPage("shell/rules/$id") }
+        )
+        "shell/rule-edit" -> CommandRuleEditPage(
+            ctx = ctx,
+            ruleId = key.removePrefix("shell/rules/").takeIf { it != "new" },
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack
+        )
+        "approval" -> ApprovalPolicyPage(
+            revision = revision,
+            onChanged = onChanged,
+            scroll = approvalScroll,
+            onBack = onBack
+        )
+        "access" -> AccessPage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            scroll = accessScroll,
+            onBack = onBack
+        )
+        // SSH 从首页直接进（不再挂在「访问令牌」下面）
+        "ssh" -> SshSettingsPage(
+            ctx = ctx,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack
+        )
+        else -> PackEditPage(
+            ctx = ctx,
+            packId = if (key == "pack") null else key.removePrefix("pack:"),
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack
+        )
+    }
+}
+
 /** 层级 = 非空段数：首页 0，一级子页 1，规则列表 2，规则编辑 3。 */
 private fun permDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
-
-/**
- * 上一级页面。
- *
- * 三级（`shell/rules/<id>`）退到 `shell/rules`，二级（`shell/rules`）退到 `shell`，
- * 一级退到首页。别写成 `substringBeforeLast('/')` 一刀切：`shell/rules` 的上一级是
- * `shell` 而不是不存在的 `shell/rules` 前半截。
- */
-private fun permParent(page: String): String = when {
-    permDepth(page) >= 3 -> page.substringBeforeLast('/')
-    page.contains('/') -> page.substringBefore('/')
-    else -> ""
-}
 
 /**
  * 权限首页：预设会话 + 五个入口 + 全局限制。
@@ -347,7 +356,7 @@ private fun PermissionHomePage(
         )
 
         // ---------------------------------------------------------- 五个入口
-        GroupLabel(L("按问题找"))
+        GroupLabel(L("授权与连接"))
         CardGroup(
             listOf(
                 entrySpec(
@@ -383,15 +392,29 @@ private fun PermissionHomePage(
                             timeoutLabel(AppCore.config.approvalTimeoutMs)
                         ),
                     Icons.Filled.Notifications
-                ) { onPage("approval") },
+                ) { onPage("approval") }
+            )
+        )
+
+        // SSH 单独一组：它不是「AI 的权限」，是一台对外的服务器。
+        // 放在这里当入口，和首页那张卡片指向同一个开关。
+        GroupLabel(L("远程访问"))
+        CardGroup(
+            listOf(
                 entrySpec(
-                    L("连接与访问"),
-                    L("SSH %s · 访问令牌 %s")
-                        .format(
-                            if (AppCore.config.sshEnabled) L("已开启") else L("已关闭"),
-                            if (AppCore.config.tokenEnabled) L("已启用") else L("未启用")
-                        ),
+                    L("SSH 服务"),
+                    when {
+                        !AppCore.config.sshEnabled -> L("已关闭 · 端口 %s").format(AppCore.config.sshPort)
+                        AppCore.ssh.isRunning -> L("正在监听 · 端口 %s").format(AppCore.config.sshPort)
+                        else -> L("已开启，但没在监听 · 端口 %s").format(AppCore.config.sshPort)
+                    },
                     Icons.Filled.Person
+                ) { onPage("ssh") },
+                entrySpec(
+                    L("访问令牌"),
+                    L("客户端的连接凭据 · %s")
+                        .format(if (AppCore.config.tokenEnabled) L("已启用") else L("未启用")),
+                    Icons.Filled.Share
                 ) { onPage("access") }
             )
         )

@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -313,6 +314,30 @@ private fun LegalNoticeHost() {
 /** 底栏「再点一下当前 tab」的双击窗口。单击当前格没有动作，所以放宽一点没副作用。 */
 private const val DOUBLE_TAP_MS = 600L
 
+/** 底栏序号：桌面页只跳这两个有子页的 tab，别处不要再写数字。 */
+private const val PERMISSION_TAB = 2
+private const val SETTINGS_TAB = 4
+
+/**
+ * 路由：去哪一页。page 为空 = 那个 tab 的根页。
+ *
+ * 用字符串 key 而不是 sealed class：页面 key 本来就和 [PermissionScreen] /
+ * [SettingsScreen] 的 `when` 用的是同一套（`appearance/langpack`、`shell/rules/new`…），
+ * 多包一层枚举只会让两边对不上。
+ */
+private data class Route(val tab: Int, val page: String)
+
+/** 存进 rememberSaveable：编码成 `tab|page` 的列表，Bundle 里只有 String。 */
+private val RouteStackSaver = listSaver<List<Route>, String>(
+    save = { stack -> stack.map { "${it.tab}|${it.page}" } },
+    restore = { saved ->
+        saved.mapNotNull { raw ->
+            val cut = raw.indexOf('|')
+            if (cut <= 0) null else Route(raw.substring(0, cut).toIntOrNull() ?: return@mapNotNull null, raw.substring(cut + 1))
+        }.ifEmpty { listOf(Route(0, "")) }
+    }
+)
+
 /** 两次自动补齐之间至少隔这么久：切来切去（onStart 频繁触发）时别反复开 shell。 */
 private const val AUTO_GRANT_MIN_GAP_MS = 4_000L
 
@@ -328,13 +353,40 @@ fun AppRoot(
     langRev: Int = 0
 ) {
     val ctx = LocalContext.current
-    var tab by rememberSaveable { mutableStateOf(0) }
-    // 两个「有子页」的 tab，各自一个页面栈。**故意放在 key(langRev) 之外**：
-    // 切语言/主题会重建整棵树，状态放在里面的话用户会被从子页甩回首页。
-    //   设置 tab：外观与语言 / 网络与访问 / 终端与命令 / 规则 / 工具管理 / 记忆库 / 备份与恢复 / 关于
-    //   权限 tab：工具包编辑页
-    var settingsPage by rememberSaveable { mutableStateOf("") }
-    var permPage by rememberSaveable { mutableStateOf("") }
+    // 全局路由栈：每项是 (tab, 页面 key)。**所有**跳转都入栈，返回就是出栈 ——
+    // 子页「从哪来就回哪去」，不靠「从页面 key 的前缀反推上一级」那种硬编码：
+    // 主页跳到 SSH、命令与执行跳到工具权限，这两个的上一级根本不是同一页。
+    //
+    // **故意放在 key(langRev) 之外**：切语言 / 主题会重建整棵树，栈放在里面的话
+    // 用户会被从子页甩回首页。
+    var navStack by rememberSaveable(stateSaver = RouteStackSaver) {
+        mutableStateOf(listOf(Route(0, "")))
+    }
+    val route = navStack.last()
+    val tab = route.tab
+    // 设置 / 权限两个 tab 的当前子页都从栈顶取；不在本 tab 时算作根页
+    val settingsPage = if (tab == SETTINGS_TAB) route.page else ""
+    val permPage = if (tab == PERMISSION_TAB) route.page else ""
+    // 预见式返回时底下要露出来的那一页：栈里倒数第二项。
+    // 上一级在**别的 tab**（主页 → SSH）时给 null —— 那边是另一棵树，不铺预览、只接返回键。
+    val behindPage: String? =
+        navStack.getOrNull(navStack.lastIndex - 1)?.takeIf { it.tab == tab }?.page
+
+    /**
+     * 跳到某个位置。
+     *
+     * 目标页是**根页**（page 为空）= 切 tab：栈清空只留它，避免「切走再切回来还在子页」。
+     * 有页面 key = 入栈，返回时回到刚才那一页（跨 tab 也一样）。
+     */
+    fun go(target: Route) {
+        if (navStack.last() == target) return
+        navStack = if (target.page.isEmpty()) listOf(target) else navStack + target
+    }
+
+    /** 返回：出栈。栈里只剩根页时交给系统（退出应用）。 */
+    fun goBack() {
+        if (navStack.size > 1) navStack = navStack.dropLast(1)
+    }
     var revision by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf(AppCore.server.status()) }
     var logs by remember { mutableStateOf<List<LogEntry>>(emptyList()) }
@@ -411,7 +463,7 @@ fun AppRoot(
     // 所以底栏是**滑动收起**的（AnimatedVisibility）；页面栈和返回键也由各自的宿主统一接。
     // 以前那套「另起一个全屏 Scaffold」的路子已经删掉了 —— 底栏只会瞬间消失，
     // 而且返回键得每个页面自己接（漏一个就没反应）。
-    val inSubPage = (tab == 4 && settingsPage.isNotEmpty()) || (tab == 2 && permPage.isNotEmpty())
+    val inSubPage = navStack.size > 1
 
     // 输入法弹出来的时候底栏也得收起来。
     //
@@ -500,14 +552,21 @@ fun AppRoot(
                     pending = pending,
                     host = AppCore.host,
                     onToggleService = { on ->
-                        // 首页这个开关只管 MCP 服务；SSH 是设置里另一个独立开关
+                        // 首页这个开关只管 MCP 服务；SSH 是它下面那张独立的卡片
                         McpService.setMcpEnabled(ctx, on)
                         revision++
                     },
                     onRestartService = { McpService.restart(ctx) },
+                    // SSH 卡片：开关和「权限 → SSH 服务」页里那个是同一个值（ssh_enabled），
+                    // 两边都能改，改完互相看得见
+                    sshEnabled = AppCore.config.sshEnabled,
+                    sshRunning = AppCore.ssh.isRunning,
+                    sshPort = AppCore.config.sshPort,
+                    onToggleSsh = { on -> McpService.setSshEnabled(ctx, on); revision++ },
+                    onOpenSsh = { go(Route(PERMISSION_TAB, "ssh")) },
                     onPermNeed = requestPermission,
                     onAutoGrant = onAutoGrant,
-                    onOpenPermissions = { tab = 1 },
+                    onOpenPermissions = { go(Route(PERMISSION_TAB, "")) },
                     scrollTopTick = scrollTopTick
                 )
                 1 -> TerminalScreen(
@@ -522,7 +581,9 @@ fun AppRoot(
                     revision = revision,
                     scrollTopTick = scrollTopTick,
                     page = permPage,
-                    onPage = { permPage = it }
+                    behindPage = behindPage,
+                    onPage = { go(Route(PERMISSION_TAB, it)) },
+                    onBack = ::goBack
                 ) { revision++ }
                 3 -> LogScreen(ctx, logs, scrollTopTick) { revision++ }
                 else -> SettingsScreen(
@@ -531,7 +592,9 @@ fun AppRoot(
                     status = status,
                     revision = revision,
                     page = settingsPage,
-                    onPage = { settingsPage = it },
+                    behindPage = behindPage,
+                    onPage = { go(Route(SETTINGS_TAB, it)) },
+                    onBack = ::goBack,
                     onThemeChanged = onThemeChanged,
                     onLangChanged = onLangChanged,
                     onPreviewUpdate = { previewUpdate = it },
@@ -558,7 +621,7 @@ fun AppRoot(
                 BottomPillNav(navItems, tab, barStyle, onHeight = { barHeightDp = it }) { index ->
                     if (index != tab) {
                         // 切页面：切走就清掉双击计数（点 A → 点 B → 再点 A 不算双击）
-                        tab = index
+                        go(Route(index, ""))
                         lastTapTab = -1
                     } else {
                         // 当前这一格：双击才回顶（终端是回底）

@@ -10,7 +10,7 @@ address, and turning one off does not affect the other.
 
 ## 1. Turning it on
 
-Permissions → **Connections** → SSH:
+Permissions → **SSH service**:
 
 | Item | Meaning |
 |---|---|
@@ -21,7 +21,7 @@ Permissions → **Connections** → SSH:
 | User name | Fixed to `mcpbox` |
 | Password login | User name + password generated in the app; can be regenerated |
 | Public key login | The app generates a key pair — copy the **private** key into the client, or paste your own public keys under "Extra public keys" |
-| Allow running commands | Off by default. When off the client can only use SFTP, no exec / shell |
+| Allow running commands | Off by default. When off the client can only use SFTP, no exec / shell. **This is the only thing SSH gates on** |
 | Run as | Auto (follow global) / app sandbox / Root / Shizuku (falls back to the app sandbox without privileges) |
 
 When both switches are off (including MCP) the foreground service shuts itself down; with one of

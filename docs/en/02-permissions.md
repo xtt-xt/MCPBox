@@ -15,8 +15,9 @@ answered, instead of one page with every control on it:
 | Tool permissions | The 9 switches (grouped **files / system / network**, allow-by-default ones last in each group), tool packs and session isolation |
 | File scope | Allowed folders, path rules, private-directory level |
 | Commands | Command permission (jump), execution identity, command rules, command timeout |
-| Approvals | Presentation (overlay / notification), whether it expires, timeout seconds |
-| Connections | SSH service, access token, file in/out channel |
+| Approvals | Presentation (overlay / notification), whether it expires, timeout seconds (AI tools only) |
+| Remote access | SSH service, access token |
+| File channel | Web upload / download |
 | Global limits (top card) | Read-only, unrestricted folders, delete to trash |
 
 Approvals used to live in Settings → Security & approvals, command and path rules in

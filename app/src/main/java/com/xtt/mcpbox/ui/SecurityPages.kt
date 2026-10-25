@@ -414,7 +414,7 @@ internal fun ApprovalPolicyPage(
 
     SettingsPageShell(
         title = L("审批"),
-        subtitle = L("AI 和 SSH 请求权限时怎么问你"),
+        subtitle = L("AI 请求权限时怎么问你"),
         onBack = onBack,
         scroll = scroll
     ) {
@@ -486,7 +486,7 @@ internal fun ApprovalPolicyPage(
                 ),
                 RowSpec(
                     title = L("说明"),
-                    subtitle = L("审批只认「这一次连接」：SSH 在握手时认证一次，之后每个写操作和各条命令分别算一次。"),
+                    subtitle = L("只对 AI 工具的调用生效。SSH 不走审批：那边只有「是否可执行命令」一个开关。"),
                     subtitleMaxLines = 3,
                     icon = Icons.Filled.Info
                 )
@@ -502,36 +502,17 @@ internal fun AccessPage(
     ctx: Context,
     revision: Int,
     onChanged: () -> Unit,
-    onOpenSsh: () -> Unit,
     scroll: ScrollState,
     onBack: () -> Unit
 ) {
     var showToken by remember { mutableStateOf(false) }
-    val sshEnabled = remember(revision) { AppCore.config.sshEnabled }
-    val sshRunning = remember(revision) { AppCore.ssh.isRunning }
 
     SettingsPageShell(
-        title = L("连接与访问"),
-        subtitle = L("外部程序怎么连进来"),
+        title = L("访问令牌"),
+        subtitle = L("AI 客户端连进来时要带的凭据"),
         onBack = onBack,
         scroll = scroll
     ) {
-        GroupLabel(L("SSH / SFTP"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("SSH 服务"),
-                    subtitle = when {
-                        !sshEnabled -> L("已关闭 · 端口 %s").format(AppCore.config.sshPort)
-                        sshRunning -> L("正在监听 · 端口 %s").format(AppCore.config.sshPort)
-                        else -> L("已开启，但没在监听 · 端口 %s").format(AppCore.config.sshPort)
-                    },
-                    icon = Icons.Filled.Person,
-                    onClick = onOpenSsh
-                )
-            )
-        )
-
         GroupLabel(L("访问令牌"))
         CardGroup(
             listOf(
