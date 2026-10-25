@@ -4,6 +4,26 @@
 
 MCPBox's default philosophy: **what the AI may do is decided on the phone**. Enforcement happens server-side (permission matrix + rules + per-tool policy) and does not rely on the client being well-behaved — the client can be any MCP client.
 
+## What the Permissions tab looks like
+
+The bottom-bar **Permissions** tab is a security hub (entry page) grouped by the question being
+answered, instead of one page with every control on it:
+
+| Entry | What is inside |
+|---|---|
+| Preset (top dropdown) | Sets all 9 switches at once |
+| Tool permissions | The 9 switches (grouped **files / system / network**, allow-by-default ones last in each group), tool packs and session isolation |
+| File scope | Allowed folders, path rules, private-directory level |
+| Commands | Command permission (jump), execution identity, command rules, command timeout |
+| Approvals | Presentation (overlay / notification), whether it expires, timeout seconds |
+| Connections | SSH service, access token, file in/out channel |
+| Global limits (top card) | Read-only, unrestricted folders, delete to trash |
+
+Approvals used to live in Settings → Security & approvals, command and path rules in
+Settings → Terminal & commands, and SSH on its own page: adjusting "may the AI run commands" meant
+visiting three pages. All three are now inside Permissions, and Settings only keeps items unrelated
+to authorisation (port, browser behaviour, appearance…).
+
 ## The permission matrix: 9 keys × three states
 
 Every permission key has three states: **allow** / **ask** / **deny**.
@@ -20,7 +40,8 @@ Every permission key has three states: **allow** / **ask** / **deny**.
 | `system.info` | allow | Device info, storage info, server status, fetching the token |
 | `memory` | allow | Memory read/write (turning the master switch off removes memory tools from `tools/list`) |
 
-At the top of the app's **Permissions** page you can switch a **preset session** in one tap:
+At the top of the app's **Permissions** page you can switch a **preset session** in one tap
+(it stays on the home page; the switches themselves live under *Tool permissions*):
 
 | Preset | Effect |
 |---|---|
@@ -49,14 +70,14 @@ Beyond the global matrix, **each tool** can have its own policy (Settings → To
 
 ## Rules: finer than switches
 
-Rules can override the switch verdict (both live under **Settings → Terminal & commands**, each on its own sub-page):
+Rules can override the switch verdict (both live under **Permissions**: path rules under *File scope*, command rules under *Commands*):
 
 | Rule | Matching | Example |
 |---|---|---|
 | **Path rules** | Longest prefix wins | Allow writes under `/data/data/me.rerere.rikkahub/` without opening `fs.write` globally |
 | **Command rules** | Prefix / exact / regex, **first match in order** wins | `pm list packages` prefix → allow; `rm -rf` regex → deny |
 
-Whenever you hit "always allow / always deny" in an approval dialog, MCPBox **creates the matching rule automatically**, so the same kind of operation stops bothering you. The entry rows in Settings show how many rules exist (e.g. "Path rules · 3").
+Whenever you hit "always allow / always deny" in an approval dialog, MCPBox **creates the matching rule automatically**, so the same kind of operation stops bothering you. The entry rows under Permissions show how many rules exist (e.g. "Path rules · 3").
 
 ## Approvals: overlay or notification
 
@@ -76,7 +97,7 @@ Whenever you hit "always allow / always deny" in an approval dialog, MCPBox **cr
 | Approval timeout | **120 s** (auto-deny) | 15–600 s slider | The dialog never expires; the AI waits for your answer (value stored as 0) |
 | Default command timeout | **60 s** | 10–300 s slider | Commands run until they finish on their own |
 
-- The two "unlimited" switches live in **Settings → Security & approvals** (approval) and **Settings → Terminal & commands** (commands).
+- The two "unlimited" switches both live under **Permissions**: approval under *Approvals*, commands under *Commands*.
 - The number of seconds used before switching to unlimited is remembered and restored when you switch back.
 - `run_shell` and custom tools also accept `timeoutMs = 0` meaning no limit.
 

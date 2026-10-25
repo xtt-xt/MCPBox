@@ -38,6 +38,12 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 - SSH 与 MCP 是两个独立开关，关掉一个不影响另一个；两个都关时前台服务才退出
 - SSH 的路径复用「允许访问的目录」，越界与只读模式照旧生效
 
+### 界面
+
+- 权限页改成安全中心：预设 + 工具权限 / 文件范围 / 命令与执行 / 审批 / 连接与访问 / 全局限制
+- 9 个权限开关按文件、系统、网络分组，默认允许的排在后面
+- 设置里的「安全与审批」「终端与命令」「SSH 服务」并进权限页，设置只留和授权无关的项
+
 ### 修复
 
 - 客户端文件页停在根目录报权限拒绝：路径现在按「以工作目录为根」解析
@@ -58,6 +64,12 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 - SSH and MCP are separate switches; turning one off does not affect the other, and the foreground service only exits when both are off
 - SSH paths reuse the allowed roots, and out-of-range paths and read-only mode apply as before
+
+### Interface
+
+- The Permissions tab is now a security hub: preset plus Tool permissions / File scope / Commands / Approvals / Connections / Global limits
+- The 9 permission switches are grouped by files, system and network, with allow-by-default ones last
+- Security & approvals, Terminal & commands and SSH service moved into Permissions; Settings keeps only non-authorisation items
 
 ### Fixes
 

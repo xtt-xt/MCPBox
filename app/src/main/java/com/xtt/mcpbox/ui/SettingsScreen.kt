@@ -117,7 +117,6 @@ fun SettingsScreen(
     // 拖动时露出来的那一页也得停在当前位置（不能每次从顶部开始）；而且必须**真的**
     // 渲染上一级那一页 —— 以前统一露设置首页，松手后再跳到上一级，看着像「关闭后跳了一下」。
     val appearanceScroll = rememberScrollState()
-    val shellScroll = rememberScrollState()
 
     // 子页里按系统返回 → 回上一级（顶层不接，交给系统退出应用）。
     // 开了「预见式返回动画」时手指从边缘拖着走、松手才决定回不回；拖动时下面露出来的就是设置首页。
@@ -142,20 +141,6 @@ fun SettingsScreen(
                     onOpenIcon = {},
                     onBack = {},
                     scroll = appearanceScroll
-                )
-                "shell" -> ShellSettingsPage(
-                    revision = revision,
-                    onChanged = {},
-                    onOpenRules = {},
-                    onBack = {},
-                    scroll = shellScroll
-                )
-                // 编辑命令规则时，底下露出来的那一页是「命令规则」列表本身
-                "shell/rules/command" -> RulesSettingsPage(
-                    kind = RuleKind.COMMAND,
-                    revision = revision,
-                    onChanged = {},
-                    onBack = {}
                 )
                 else -> SettingsHomePage(
                     scroll = homeScroll,
@@ -192,11 +177,7 @@ fun SettingsScreen(
         PageSurface(sub = current.isNotEmpty()) {
         // 顶层是空串，给它一个固定名字当 key
         pageStates.SaveableStateProvider(current.ifEmpty { "root" }) {
-            // 「编辑某条命令规则」的 key 是 `shell/rules/command/<id>`：把这一整类归一
-            // 成同一个分支（id 从 originalKey 里取），不然 when 里要列无数种 id。
-            val isRuleEdit = current.startsWith("shell/rules/command/") &&
-                current != "shell/rules/command/new"
-            when (if (isRuleEdit) "shell/rules/command/edit" else current) {
+            when (current) {
                 "appearance" -> AppearanceSettingsPage(
                     ctx = ctx,
                     revision = revision,
@@ -218,12 +199,6 @@ fun SettingsScreen(
                         passwordText = AppCore.config.consolePassword
                         showPassword = true
                     },
-                    onBack = back
-                )
-                "security" -> SecuritySettingsPage(
-                    ctx = ctx,
-                    revision = revision,
-                    onChanged = onChanged,
                     onBack = back
                 )
                 // ---- 原来挂在 subScreen（另起全屏 Scaffold）上的四页，现在都并进设置栈：
@@ -257,48 +232,6 @@ fun SettingsScreen(
                     onUpdateFound = onUpdateFound,
                     // 开发者模式一开一关，「背景」子页里有没有「视频」要跟着变
                     onDevModeChanged = onChanged,
-                    onBack = back
-                )
-                "shell/rules/path" -> RulesSettingsPage(
-                    kind = RuleKind.PATH,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                "shell/rules/command" -> RulesSettingsPage(
-                    kind = RuleKind.COMMAND,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back,
-                    onOpenNew = { onPage("shell/rules/command/new") },
-                    onOpenEdit = { id -> onPage("shell/rules/command/$id") }
-                )
-                "shell/rules/command/edit" -> CommandRuleEditPage(
-                    ctx = ctx,
-                    ruleId = current.removePrefix("shell/rules/command/"),
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                // 命令规则的编辑页（新增用同一个页面，id 是 "new"）
-                "shell/rules/command/new" -> CommandRuleEditPage(
-                    ctx = ctx,
-                    ruleId = null,
-                    revision = revision,
-                    onChanged = onChanged,
-                    onBack = back
-                )
-                "shell" -> ShellSettingsPage(
-                    revision = revision,
-                    onChanged = onChanged,
-                    onOpenRules = { onPage("shell/rules/$it") },
-                    onBack = back,
-                    scroll = shellScroll
-                )
-                "ssh" -> SshSettingsPage(
-                    ctx = ctx,
-                    revision = revision,
-                    onChanged = onChanged,
                     onBack = back
                 )
                 "browser" -> BrowserSettingsPage(
@@ -604,28 +537,10 @@ private fun SettingsHomePage(
                     Icons.Filled.Share
                 ) { onPage("network") },
                 entrySpec(
-                    L("安全与审批"),
-                    L("访问令牌、审批超时"),
-                    Icons.Filled.Lock
-                ) { onPage("security") },
-                entrySpec(
-                    L("终端与命令"),
-                    L("命令后端优先级、命令规则、默认超时"),
-                    Icons.Filled.Build
-                ) { onPage("shell") },
-                entrySpec(
                     L("浏览器"),
                     L("内置 WebView：内网限制、页面数、搜索引擎、cookie 与 User-Agent"),
                     Icons.Filled.Search
-                ) { onPage("browser") },
-                entrySpec(
-                    L("SSH 服务"),
-                    L("内置 SSH / SFTP：让客户端的「SSH 工作区」直接读写手机文件")
-                        .let { base ->
-                            if (AppCore.config.sshEnabled) base + L(" · 已开启") else base
-                        },
-                    Icons.Filled.Person
-                ) { onPage("ssh") }
+                ) { onPage("browser") }
             )
         )
 
@@ -733,7 +648,7 @@ private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRa
 /* ------------------------------------------------------------ 子页路由 */
 
 /**
- * 设置页的层级：首页 0 / 一级子页（外观、终端与命令…）1 / 二级子页（路径规则、命令规则）3。
+ * 设置页的层级：首页 0 / 一级子页（外观、网络、浏览器…）1 / 二级子页（`appearance/…`）2。
  *
  * 用**非空段数**算，别写成 `split('/').size - 1` —— 那样一级子页会算成 0、跟首页一样深，
  * 从规则页返回时就分不出「往里进」还是「往回退」，动画会反过来。
@@ -741,15 +656,14 @@ private fun SeedSlider(label: String, value: Float, range: ClosedFloatingPointRa
 private fun settingsDepth(page: String): Int = page.split('/').count { it.isNotEmpty() }
 
 /**
- * 上一级页面：规则页（`shell/rules/path`）退到「终端与命令」（`shell`），一级子页退到设置首页（空串）。
+ * 上一级页面：`appearance/langpack` 退到 `appearance`，一级子页退到设置首页（空串）。
  *
- * 二级页只取**第一段**是有意的：拿 `substringBeforeLast('/')` 会得到 `shell/rules`，
- * 那不是一个有效页面，会掉进兜底分支 → 看起来就是「一返回就跳回设置首页」。
+ * 只取**第一段**是有意的：拿 `substringBeforeLast('/')` 会得到不存在的路径，
+ * 掉进兜底分支 → 看起来就是「一返回就跳回设置首页」。
+ *
+ * 命令规则 / 路径规则 / SSH 都已经搬到「权限」tab 的页面栈里，那边有自己的层级函数。
  */
 private fun parentPage(page: String): String = when {
-    // 四级（命令规则编辑页 `shell/rules/command/<id>`）退到它真正的上一级，
-    // 也就是「命令规则」页；三级页（`shell/rules/path`）仍然退到「终端与命令」。
-    page.split('/').count { it.isNotEmpty() } >= 4 -> page.substringBeforeLast('/')
     page.contains('/') -> page.substringBefore('/')
     else -> ""
 }

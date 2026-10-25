@@ -420,251 +420,6 @@ internal fun NetworkSettingsPage(
     }
 }
 
-/* ------------------------------------------------------------ 安全与审批 */
-
-@Composable
-internal fun SecuritySettingsPage(
-    ctx: Context,
-    revision: Int,
-    onChanged: () -> Unit,
-    onBack: () -> Unit
-) {
-    var showToken by remember { mutableStateOf(false) }
-    val approvalUnlimited = AppCore.config.approvalTimeoutMs <= 0L
-    // 「不限时」时 timeoutMs = 0，滑块要拿上次的有限值来显示，否则滑块会落到范围外面
-    var timeoutState by remember(revision) {
-        mutableStateOf(
-            (AppCore.config.approvalTimeoutMs / 1000).takeIf { it > 0L }
-                ?: AppCore.prefs.approvalTimeoutLastSec
-        )
-    }
-
-    SettingsPageShell(L("安全与审批"), L("访问令牌与审批超时"), onBack) {
-        GroupLabel(L("访问令牌"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("启用访问令牌"),
-                    subtitle = if (AppCore.config.tokenEnabled) L("客户端需要带 token 才能连接")
-                    else L("任何设备都能连（不推荐）"),
-                    icon = Icons.Filled.Lock,
-                    checked = AppCore.config.tokenEnabled
-                ) {
-                    AppCore.config.tokenEnabled = it
-                    AppCore.saveConfig()
-                    onChanged()
-                }
-            )
-        )
-        Spacer(Modifier.height(7.dp))
-        CardColumn {
-            CardBox {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(L("访问令牌"), color = MaterialTheme.colorScheme.onSurface, fontSize = 15.5.sp)
-                        Text(
-                            if (showToken) AppCore.config.token else "•".repeat(14),
-                            color = if (showToken) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                    RowIconButton(
-                        onClick = { showToken = !showToken },
-                        icon = Icons.Filled.Star,
-                        desc = if (showToken) L("隐藏") else L("显示")
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
-                    PillButton(
-                        L("复制"), Modifier.weight(1f), outlined = true,
-                        color = MaterialTheme.colorScheme.primary, compact = true
-                    ) {
-                        copyText(ctx, AppCore.config.token, L("令牌已复制"))
-                    }
-                    PillButton(
-                        L("重置"), Modifier.weight(1f), outlined = true, color = Sem.warn, compact = true
-                    ) {
-                        AppCore.config.newToken()
-                        AppCore.saveConfig()
-                        onChanged()
-                        toast(ctx, L("已生成新令牌，旧配置需要更新"))
-                    }
-                }
-            }
-        }
-
-        GroupLabel(L("审批"))
-        Spacer(Modifier.height(0.dp))
-        // 开关放上面：打开「不限时」后下面的秒数行会带动画收起来
-        val presentation = remember(revision) {
-            ApprovalPresentation.of(AppCore.prefs.approvalPresentation)
-        }
-        CardGroup(
-            listOf(
-                dropdownSpec(
-                    title = L("审批方式"),
-                    subtitle = when (presentation) {
-                        ApprovalPresentation.OVERLAY -> L("AI 请求权限时弹悬浮窗；没权限时自动改用通知栏")
-                        ApprovalPresentation.NOTIFY -> L("只发通知栏提醒（带允许 / 拒绝按钮），不弹悬浮窗")
-                    },
-                    icon = Icons.Filled.Notifications,
-                    options = listOf(L("悬浮窗"), L("通知栏")),
-                    selectedIndex = if (presentation == ApprovalPresentation.NOTIFY) 1 else 0
-                ) { index ->
-                    AppCore.prefs.approvalPresentation =
-                        if (index == 1) ApprovalPresentation.NOTIFY.id else ApprovalPresentation.OVERLAY.id
-                    AppCore.log.add(
-                        LogKind.SYSTEM,
-                        message = L("审批方式改为：%s").format(L(if (index == 1) "通知栏" else "悬浮窗"))
-                    )
-                    onChanged()
-                },
-                switchSpec(
-                    title = L("审批不限时"),
-                    subtitle = L("打开后审批弹窗不会自动消失，AI 会一直等你答复"),
-                    icon = Icons.Filled.Warning,
-                    checked = approvalUnlimited
-                ) { on ->
-                    if (on) {
-                        if (AppCore.config.approvalTimeoutMs > 0L) {
-                            AppCore.prefs.approvalTimeoutLastSec =
-                                AppCore.config.approvalTimeoutMs / 1000
-                        }
-                        AppCore.config.approvalTimeoutMs = 0L
-                    } else {
-                        timeoutState = AppCore.prefs.approvalTimeoutLastSec.coerceIn(15L, 600L)
-                        AppCore.config.approvalTimeoutMs = timeoutState * 1000
-                    }
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("审批超时"),
-                    subtitle = L("%s 秒 · 超时自动拒绝").format(timeoutState),
-                    visible = !approvalUnlimited,
-                    content = {
-                        Slider(
-                            value = timeoutState.toFloat(),
-                            onValueChange = { timeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.approvalTimeoutMs = timeoutState * 1000
-                                AppCore.prefs.approvalTimeoutLastSec = timeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 15f..600f,
-                            steps = 38
-                        )
-                    }
-                )
-            )
-        )
-    }
-}
-
-/* ------------------------------------------------------------ 终端与命令 */
-
-@Composable
-internal fun ShellSettingsPage(
-    revision: Int,
-    onChanged: () -> Unit,
-    onOpenRules: (String) -> Unit,
-    onBack: () -> Unit,
-    /** 滚动位置由外面持有：预览层要和真页面共用同一份（见 [SettingsPageShell]）。 */
-    scroll: ScrollState = rememberScrollState()
-) {
-    val shellUnlimited = AppCore.config.shellTimeoutMs <= 0L
-    var shellTimeoutState by remember(revision) {
-        mutableStateOf(
-            (AppCore.config.shellTimeoutMs / 1000).takeIf { it > 0L }
-                ?: AppCore.prefs.shellTimeoutLastSec
-        )
-    }
-
-    SettingsPageShell(L("终端与命令"), L("命令后端、规则与默认超时"), onBack, scroll) {
-        GroupLabel(L("命令执行"))
-        CardGroup(
-            listOf(
-                dropdownSpec(
-                    title = L("命令后端优先级"),
-                    subtitle = L("auto 时依次尝试；Shizuku 要先去「终端」页授权"),
-                    icon = Icons.Filled.Share,
-                    options = listOf(L("Shizuku→Root→应用"), L("Root→Shizuku→应用"), L("只用应用沙箱")),
-                    selectedIndex = listOf("shizuku,root,app", "root,shizuku,app", "app")
-                        .indexOf(AppCore.config.shellPreference).coerceAtLeast(0)
-                ) { index ->
-                    AppCore.config.shellPreference =
-                        listOf("shizuku,root,app", "root,shizuku,app", "app")[index]
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("路径规则"),
-                    subtitle = L("%s 条 · 给目录单独定允许 / 询问 / 拒绝")
-                        .format(remember(revision) { AppCore.permissions.pathRules().size }),
-                    icon = Icons.Filled.Place,
-                    onClick = { onOpenRules("path") }
-                ),
-                RowSpec(
-                    title = L("命令规则"),
-                    subtitle = L("%s 条 · 给命令定允许 / 询问 / 拒绝")
-                        .format(remember(revision) { AppCore.permissions.commandRules().size }),
-                    icon = Icons.Filled.Lock,
-                    onClick = { onOpenRules("command") }
-                )
-            )
-        )
-
-        GroupLabel(L("超时"))
-        CardGroup(
-            listOf(
-                switchSpec(
-                    title = L("命令不限时"),
-                    subtitle = L("打开后 AI 执行的命令会一直跑到自己结束，不会中途被掐断"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Warning,
-                    checked = shellUnlimited
-                ) { on ->
-                    if (on) {
-                        if (AppCore.config.shellTimeoutMs > 0L) {
-                            AppCore.prefs.shellTimeoutLastSec = AppCore.config.shellTimeoutMs / 1000
-                        }
-                        AppCore.config.shellTimeoutMs = 0L
-                    } else {
-                        shellTimeoutState = AppCore.prefs.shellTimeoutLastSec.coerceIn(10L, 300L)
-                        AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
-                    }
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("命令默认超时"),
-                    subtitle = L("%s 秒 · AI 调用 run_shell 时的上限").format(shellTimeoutState),
-                    visible = !shellUnlimited,
-                    content = {
-                        Slider(
-                            value = shellTimeoutState.toFloat(),
-                            onValueChange = { shellTimeoutState = it.toLong() },
-                            onValueChangeFinished = {
-                                AppCore.config.shellTimeoutMs = shellTimeoutState * 1000
-                                AppCore.prefs.shellTimeoutLastSec = shellTimeoutState
-                                AppCore.saveConfig()
-                                onChanged()
-                            },
-                            valueRange = 10f..300f,
-                            steps = 28
-                        )
-                    }
-                )
-            )
-        )
-    }
-}
-
 /* ------------------------------------------------------------ 浏览器 */
 
 /**
@@ -1682,6 +1437,13 @@ internal fun WallpaperSettingsPage(
 
 /* ------------------------------------------------------------ SSH 服务 */
 
+/** 「Shizuku→Root→应用」这类顺序的显示文案。 */
+internal fun identityText(pref: String): String = when (pref) {
+    "root,shizuku,app" -> "Root→Shizuku→应用"
+    "app" -> "只用应用沙箱"
+    else -> "Shizuku→Root→应用"
+}
+
 /**
  * 内置 SSH / SFTP 服务（客户端「SSH 工作区」接的那一头）。
  *
@@ -1890,9 +1652,12 @@ internal fun SshSettingsPage(
                 },
                 dropdownSpec(
                     title = L("执行身份"),
-                    subtitle = L("没有 Root / Shizuku 时只会用应用沙箱"),
+                    // 「自动」就是跟着「权限 → 命令与执行」里那个优先顺序走，不是另一套；
+                    // 这里显式把解析结果写出来，省得用户以为两处各管一套。
+                    subtitle = L("自动 = 跟随全局（当前 %s）；也可以给 SSH 单独指定一个")
+                        .format(identityText(config.shellPreference)),
                     icon = Icons.Filled.Person,
-                    options = listOf(L("自动"), L("应用沙箱"), L("Root"), "Shizuku"),
+                    options = listOf(L("自动（跟随全局）"), L("应用沙箱"), L("Root"), "Shizuku"),
                     selectedIndex = listOf("auto", "app", "root", "shizuku")
                         .indexOf(config.sshShellBackend).coerceAtLeast(0)
                 ) { index ->

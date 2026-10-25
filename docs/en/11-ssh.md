@@ -10,7 +10,7 @@ address, and turning one off does not affect the other.
 
 ## 1. Turning it on
 
-Settings → **SSH service**:
+Permissions → **Connections** → SSH:
 
 | Item | Meaning |
 |---|---|
@@ -22,7 +22,7 @@ Settings → **SSH service**:
 | Password login | User name + password generated in the app; can be regenerated |
 | Public key login | The app generates a key pair — copy the **private** key into the client, or paste your own public keys under "Extra public keys" |
 | Allow running commands | Off by default. When off the client can only use SFTP, no exec / shell |
-| Run as | Auto / app sandbox / Root / Shizuku (falls back to the app sandbox without privileges) |
+| Run as | Auto (follow global) / app sandbox / Root / Shizuku (falls back to the app sandbox without privileges) |
 
 When both switches are off (including MCP) the foreground service shuts itself down; with one of
 them on it stays alive just for that one.
@@ -56,8 +56,10 @@ ssh  -i key -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
   anything outside (e.g. `/data/local/tmp`) returns `permission denied` and is logged as
   "SSH blocked a path outside the allowed roots". The allowed roots, unlimited-directory mode and
   the private-directory level all apply exactly as they do for the AI tools.
-- **Read-only mode** (Settings → Security → "read only") also applies here: writes, attribute
-  changes, mkdir, rename and delete are refused; reads are unaffected.
+- **Read-only mode** (Permissions → Global limits → "read only") also applies here: writes,
+  attribute changes, mkdir, rename and delete are refused; reads are unaffected.
+- **Run as** follows the order set in Permissions → Commands by default ("Auto"); pick an
+  explicit backend on the SSH page to give SSH its own identity.
 - **Command execution is a separate switch**, off by default — when off, no command factory is
   installed at all and the client's exec is rejected. When on, commands use the same backends as
   the AI's `run_shell` (app sandbox / Root / Shizuku), picked by "Run as".
