@@ -22,34 +22,25 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
-## 未发布
+## v1.4.0 · 2026-10-25
 
 <details open>
 <summary><b>中文</b></summary>
 
 ### 新增
 
-- **SSH 服务**：内置 SSH / SFTP 服务端，客户端的「SSH 工作区」可以直接连进来读写手机文件
-- **SSH 认证**：密码登录与公钥登录各有开关，密钥对在 App 里生成，可复制或被重新生成
-- **SSH 命令执行**：默认关闭的独立开关，打开后可选应用沙箱 / Root / Shizuku 身份
+- **SSH 服务**：兼容 RikkaHub 的「SSH 远程工作区」，内置 SSH / SFTP 服务端，能直接连进来读写手机文件和执行命令（其他客户端暂未测试）
 
-### 服务
+### SSH 服务
 
-- SSH 与 MCP 是两个独立开关，关掉一个不影响另一个；两个都关时前台服务才退出
-- SSH 的路径复用「允许访问的目录」，越界与只读模式照旧生效
+- 和 MCP 是两个独立开关，关掉一个不影响另一个；两个都关前台服务才退出
+- 路径复用「允许访问的目录」，越界与只读模式照旧生效
+- 首页「服务」下加了开关卡片，和 MCP 连成一组，点卡片直接开关
+- 命令执行只有「允许执行命令」一个开关，服务端不逐条拦截、不弹审批；连上之后的权限请在客户端一侧管理
 
-### 界面
+### 优化
 
-- 权限页改成安全中心：预设 + 工具权限 / 文件范围 / 命令与执行 / 审批 / 远程访问 / 全局限制
-- 9 个权限开关按文件、系统、网络分组，默认允许的排在后面
-- 设置里的「安全与审批」「终端与命令」「SSH 服务」并进权限页，设置只留和授权无关的项
-- 首页「服务」下面加了 SSH 开关卡片，和 MCP 连成一组，点卡片直接开关
-- 子页按实际来路返回：从首页进的 SSH 退回首页，从命令与执行进的工具权限退回命令与执行
-
-### 修复
-
-- 客户端文件页停在根目录报权限拒绝：路径现在按「以工作目录为根」解析
-- SSH 服务偶发连上却无响应时自动重启
+- 优化权限页布局
 
 </details>
 
@@ -58,27 +49,18 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ### New
 
-- **SSH service**: a built-in SSH / SFTP server so a client's SSH workspace can connect and read or write phone files
-- **SSH authentication**: separate switches for password and public-key login; the key pair is generated in the app and can be copied or regenerated
-- **SSH command execution**: an independent switch, off by default, with app sandbox / Root / Shizuku identities
+- **SSH service**: works with RikkaHub's SSH remote workspace. A built-in SSH / SFTP server — connect and read, write phone files or run commands directly (other clients not tested yet)
 
-### Service
+### SSH service
 
 - SSH and MCP are separate switches; turning one off does not affect the other, and the foreground service only exits when both are off
-- SSH paths reuse the allowed roots, and out-of-range paths and read-only mode apply as before
+- Paths reuse the allowed roots, and out-of-range paths and read-only mode apply as before
+- The Home services section has its own switch card, joined to the MCP one; tapping the row toggles it
+- Command execution is a single switch. The server does not intercept or ask for approval per action — manage permissions on the client side
 
-### Interface
+### Improvements
 
-- The Permissions tab is now a security hub: preset plus Tool permissions / File scope / Commands / Approvals / Remote access / Global limits
-- The 9 permission switches are grouped by files, system and network, with allow-by-default ones last
-- Security & approvals, Terminal & commands and SSH service moved into Permissions; Settings keeps only non-authorisation items
-- The Home services section gained an SSH switch card joined to the MCP one; tapping the row toggles it
-- Sub-pages return where they came from: SSH opened from Home goes back to Home, Tool permissions opened from Commands goes back to Commands
-
-### Fixes
-
-- The client's file page no longer fails with permission denied at the root directory: paths resolve relative to the working directory
-- The SSH service restarts itself when it stops answering
+- Reworked the Permissions tab layout
 
 </details>
 
