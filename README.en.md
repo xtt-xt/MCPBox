@@ -133,3 +133,7 @@ Please read the [Terms of Use](docs/en/09-terms.md) and the [Privacy Policy](doc
 In one sentence: files, memory, statistics and tokens stay on your own phone. There is no account, no developer server and no telemetry.
 
 Copyright (C) 2026 xtt · Released under the **GNU General Public License v3.0** — see [LICENSE](LICENSE). All dependencies use permissive licenses (Apache-2.0 / MIT: AndroidX, Jetpack Compose, Kotlin, kotlinx-coroutines, Shizuku) and are compatible with GPL-3.0.
+
+## Star history
+
+<a href="https://star-history.com/#xtt-xt/MCPBox&Date"><img width="600" alt="Star history" src="https://api.star-history.com/svg?repos=xtt-xt/MCPBox&type=Date"></a>

@@ -133,3 +133,7 @@ AI 客户端 ──HTTP(MCP)──▶ 手机上的 MCPBox ──▶ 文件 / 终
 一句话版本：文件、记忆、统计、令牌都只留在你自己的手机上；没有账号、没有开发者服务器、没有任何上报组件。
 
 Copyright (C) 2026 xtt · 本项目以 **GNU General Public License v3.0** 发布，完整条款见 [LICENSE](LICENSE)。依赖均为 Apache-2.0 / MIT 等宽松许可（AndroidX、Jetpack Compose、Kotlin、kotlinx-coroutines、Shizuku），与 GPL-3.0 兼容。
+
+## Star 历史
+
+<a href="https://star-history.com/#xtt-xt/MCPBox&Date"><img width="600" alt="Star 历史" src="https://api.star-history.com/svg?repos=xtt-xt/MCPBox&type=Date"></a>
