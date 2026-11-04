@@ -21,8 +21,13 @@ data class BarStyle(
     /** 模糊半径（dp），0 = 不模糊。 */
     val blur: Float = 0f
 ) {
-    /** 要不要走毛玻璃这一层（全不透明又不模糊时直接用原来的纯色底，省一次离屏绘制）。 */
-    val usesHaze: Boolean get() = alpha < 0.999f || blur > 0.5f
+    /**
+     * 要不要走毛玻璃这一层。
+     *
+     * **只看模糊**：半透明不用离屏绘制，底色直接乘上 alpha 画就行；
+     * 反过来开了模糊又不透明时，糊出来的东西被底色完全盖住，纯属白算一遍。
+     */
+    val usesHaze: Boolean get() = blur > 0.5f && alpha < 0.999f
 
     companion object {
         val Opaque = BarStyle()

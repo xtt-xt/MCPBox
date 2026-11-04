@@ -181,7 +181,6 @@ internal fun FileScopePage(
     onBack: () -> Unit
 ) {
     var showAddRoot by remember { mutableStateOf(false) }
-    val privateMode = AppCore.config.privateAccess
 
     SettingsPageShell(
         title = L("文件范围"),
@@ -235,35 +234,6 @@ internal fun FileScopePage(
                     subtitleMaxLines = 2,
                     icon = Icons.Filled.Place,
                     onClick = onOpenRules
-                )
-            )
-        )
-
-        GroupLabel(L("应用私有目录"))
-        CardGroup(
-            listOf(
-                dropdownSpec(
-                    title = L("私有目录访问"),
-                    subtitle = when (privateMode) {
-                        "read" -> L("只能读 /data/data 里的内容")
-                        "full" -> L("读、写、删都可以（危险）")
-                        else -> L("已禁止，AI 看不到应用私有数据")
-                    },
-                    icon = Icons.Filled.Lock,
-                    options = listOf(L("禁止"), L("只读"), L("可读写")),
-                    selectedIndex = listOf("off", "read", "full").indexOf(privateMode).coerceAtLeast(0)
-                ) { index ->
-                    AppCore.config.privateAccess = listOf("off", "read", "full")[index]
-                    AppCore.saveConfig()
-                    onChanged()
-                },
-                RowSpec(
-                    title = L("怎么生效"),
-                    subtitle = L("应用自己读不了别家私有目录，所以开启后会通过 ") +
-                        AppCore.server.bridge.privilegedLabel +
-                        L(" 转发；想只放开某一个应用，可以在上面加一条路径规则（例：/data/data/包名）。"),
-                    subtitleMaxLines = 3,
-                    icon = Icons.Filled.Info
                 )
             )
         )

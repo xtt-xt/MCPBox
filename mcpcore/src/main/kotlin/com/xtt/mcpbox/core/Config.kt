@@ -71,7 +71,6 @@ class Config(private val src: SettingsSource) {
         const val PERMISSIONS = "permissions_json"
         const val LOG_ENABLED = "log_enabled"
         const val CUSTOM_TOOLS = "custom_tools_json"
-        const val PRIVATE_ACCESS = "private_access"
         const val MAX_UPLOAD_MB = "max_upload_mb"
         const val CONSOLE_LOCAL_ONLY = "console_local_only"
         const val CONSOLE_AUTH = "console_auth"
@@ -135,12 +134,6 @@ class Config(private val src: SettingsSource) {
     /** 内置终端默认用哪个后端 */
     @Volatile var terminalBackend: String = "auto"
     @Volatile var terminalCwd: String = ""
-    /**
-     * 应用私有目录（/data/data/<包名> 之类）的开放程度：
-     * off = 禁止；read = 只允许读；full = 读写都行。
-     * 应用自己没权限读别人家私有目录，所以实际由 root / Shizuku 转发。
-     */
-    @Volatile var privateAccess: String = PRIVATE_OFF
     /** 网页 / HTTP 上传单次大小上限（MB）。 */
     @Volatile var maxUploadMb: Int = 512
     /** 只允许来自 localhost（127.0.0.1 / ::1）的请求，其它来源一律拒绝。 */
@@ -215,12 +208,6 @@ class Config(private val src: SettingsSource) {
     @Volatile var sshShellBackend: String = "auto"
     @Volatile var revision: Long = 0
 
-    companion object {
-        const val PRIVATE_OFF = "off"
-        const val PRIVATE_READ = "read"
-        const val PRIVATE_FULL = "full"
-    }
-
     init {
         reload()
         if (token.isBlank()) {
@@ -251,7 +238,6 @@ class Config(private val src: SettingsSource) {
         shellPreference = src.getString(Keys.SHELL_PREFERENCE, "shizuku,root,app") ?: "shizuku,root,app"
         terminalBackend = src.getString(Keys.TERMINAL_BACKEND, "auto") ?: "auto"
         terminalCwd = src.getString(Keys.TERMINAL_CWD, "") ?: ""
-        privateAccess = src.getString(Keys.PRIVATE_ACCESS, PRIVATE_OFF) ?: PRIVATE_OFF
         maxUploadMb = src.getInt(Keys.MAX_UPLOAD_MB, 512).coerceIn(1, 4096)
         consoleLocalOnly = src.getBoolean(Keys.CONSOLE_LOCAL_ONLY, false)
         consoleAuthEnabled = src.getBoolean(Keys.CONSOLE_AUTH, false)
@@ -300,7 +286,6 @@ class Config(private val src: SettingsSource) {
         src.putString(Keys.SHELL_PREFERENCE, shellPreference)
         src.putString(Keys.TERMINAL_BACKEND, terminalBackend)
         src.putString(Keys.TERMINAL_CWD, terminalCwd)
-        src.putString(Keys.PRIVATE_ACCESS, privateAccess)
         src.putInt(Keys.MAX_UPLOAD_MB, maxUploadMb)
         src.putBoolean(Keys.CONSOLE_LOCAL_ONLY, consoleLocalOnly)
         src.putBoolean(Keys.CONSOLE_AUTH, consoleAuthEnabled)

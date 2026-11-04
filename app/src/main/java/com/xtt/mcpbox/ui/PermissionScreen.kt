@@ -331,6 +331,13 @@ private fun PermissionHomePage(
 
         // ---------------------------------------------------------- 预设会话
         // 选前三个会把下面的开关统一成同一个值并**锁住**，想单独调必须先切到「自定义」。
+        // 第二行直接给出客户端该填的地址：跟「我在看哪个会话」是同一件事，凑在一组里。
+        val viewProfile = AppCore.prefs.packProfileView
+        val sessionUrl = sessionAddress(viewProfile)
+        val copyableUrl = run {
+            val token = if (AppCore.config.tokenEnabled) AppCore.config.token else ""
+            if (token.isNotBlank()) "$sessionUrl?token=$token" else sessionUrl
+        }
         CardGroup(
             listOf(
                 RowSpec(
@@ -354,6 +361,19 @@ private fun PermissionHomePage(
                             onChanged()
                         }
                     }
+                ),
+                RowSpec(
+                    title = L("会话「%s」的地址").format(viewProfile),
+                    subtitle = sessionUrl,
+                    subtitleMaxLines = 1,
+                    icon = Icons.Filled.Share,
+                    onClick = { copyText(ctx, copyableUrl, L("地址已复制")) },
+                    trailing = {
+                        PillButton(
+                            L("复制"), outlined = true,
+                            color = MaterialTheme.colorScheme.primary, compact = true
+                        ) { copyText(ctx, copyableUrl, L("地址已复制")) }
+                    }
                 )
             )
         )
@@ -369,10 +389,9 @@ private fun PermissionHomePage(
                 ) { onPage("perm") },
                 entrySpec(
                     L("文件范围"),
-                    L("%s 个目录 · 私有目录 %s · 路径规则 %s 条")
+                    L("%s 个目录 · 路径规则 %s 条")
                         .format(
                             AppCore.config.roots.size,
-                            privateLabel(AppCore.config.privateAccess),
                             remember(revision) { AppCore.permissions.pathRules().size }
                         ),
                     Icons.Filled.Place
@@ -465,6 +484,19 @@ private fun PermissionHomePage(
     }
 }
 
+/**
+ * 某个会话该填进客户端的地址（不含令牌）。
+ *
+ * default 就是 /mcp，其它会话走 /mcp/p/<名字>；名字里可能有中文，要 URL 编码。
+ */
+internal fun sessionAddress(profile: String): String {
+    val ip = com.xtt.mcpbox.core.LocalNet.primary() ?: "127.0.0.1"
+    val port = AppCore.config.port
+    val path = if (profile == "default") "/mcp"
+    else "/mcp/p/" + runCatching { java.net.URLEncoder.encode(profile, "UTF-8") }.getOrDefault(profile)
+    return "http://$ip:$port$path"
+}
+
 /* ------------------------------------------------------------ 摘要文案 */
 
 /** 「写入 询问 · 删除 询问 · 命令 询问」里取最需要知道的那几个：一共有几个「询问」。 */
@@ -472,12 +504,6 @@ private fun summaryOf(switches: Map<String, PermAction>): String {
     val ask = PermKey.entries.count { (switches[it.id] ?: it.default) == PermAction.ASK }
     val deny = PermKey.entries.count { (switches[it.id] ?: it.default) == PermAction.DENY }
     return L("%s 个询问、%s 个拒绝").format(ask, deny)
-}
-
-private fun privateLabel(mode: String): String = when (mode) {
-    "read" -> L("只读")
-    "full" -> L("可读写")
-    else -> L("已禁止")
 }
 
 private fun identityLabel(pref: String): String = L(identityText(pref))

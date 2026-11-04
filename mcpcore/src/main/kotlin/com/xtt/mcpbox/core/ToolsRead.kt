@@ -210,7 +210,7 @@ object ToolsRead {
         val f = ctx.path(mustExist = false)
         val fStat = ctx.bridge.stat(f)
             ?: ctx.fail(
-                L("文件不存在，或者读不到：%s\n(私有目录要在 设置 → 权限 → 应用私有目录 里开放，并且需要 root 或 Shizuku)").format(f.path)
+                L("文件不存在，或者读不到：%s\n(别的应用的私有目录要先在 权限 → 文件范围 里加进允许访问的目录，并且需要 root 或 Shizuku)").format(f.path)
             )
         if (fStat.dir) ctx.fail(L("这是目录，请用 list_dir：%s").format(f.path))
         ctx.guard(

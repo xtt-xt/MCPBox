@@ -76,11 +76,6 @@ class FileGateway(
         } catch (e: Exception) {
             return json(400, false, e.message ?: L("路径不合法"))
         }
-        try {
-            sandbox.assertWritable(file)
-        } catch (e: Exception) {
-            return json(403, false, e.message ?: L("当前模式下不允许写入"))
-        }
 
         val bytes = req.body
         if (bytes.isEmpty()) {
@@ -262,11 +257,6 @@ class FileGateway(
         }
         if (bridge.exists(dir) && bridge.stat(dir)?.dir != true) {
             return json(400, false, L("解压需要一个目录，但 path 指向的是文件：%s").format(dir.path))
-        }
-        try {
-            sandbox.assertWritable(dir)
-        } catch (e: Exception) {
-            return json(403, false, e.message ?: L("当前模式下不允许写入"))
         }
 
         val bytes = req.body

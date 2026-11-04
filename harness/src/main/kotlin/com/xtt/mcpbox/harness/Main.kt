@@ -650,37 +650,30 @@ fun main() {
         check("被判定为超时", slowResult.timedOut, slowResult.toText())
         check("仍然拿到了输出", slowResult.stdout.contains("hello-from-remote"), slowResult.stdout)
         check("退出码是兜底的 -1", slowResult.exitCode == -1, slowResult.exitCode.toString())
-        println("\n[23] 应用私有目录的权限（默认禁止 / 只读 / 可读写）")
+        println("\n[23] 私有目录（白名单目录 + 经特权转发）")
+        // 应用私有目录不再单独开关：能不能访问由「允许访问的目录」决定，
+        // 私有路径只影响「要不要经 root / Shizuku 转发」。
         val privatePath = "/data/data/com.example.app/files/secret.txt"
-        config.privateAccess = Config.PRIVATE_OFF
         check(
-            "默认禁止访问私有目录",
+            "默认不在白名单里的私有目录被拒",
             runCatching { server.sandbox.resolve(privatePath) }.isFailure
         )
         check("系统目录依然受保护", runCatching { server.sandbox.resolve("/proc/self/maps") }.isFailure)
+        check("私有路径判定正确", server.sandbox.isPrivatePath(File(privatePath)))
+        check("普通路径不算私有路径", !server.sandbox.isPrivatePath(File(root, "docs/hello.txt")))
 
-        config.privateAccess = Config.PRIVATE_READ
+        val savedRoots = config.roots
+        config.roots = savedRoots + "/data/data/com.example.app"
         check(
-            "只读模式下放行私有目录",
+            "把该应用目录加成根目录后可以解析",
             runCatching { server.sandbox.resolve(privatePath) }.isSuccess,
             runCatching { server.sandbox.resolve(privatePath) }.exceptionOrNull()?.message ?: ""
         )
-        check("私有路径判定正确", server.sandbox.isPrivatePath(File(privatePath)))
+        config.roots = savedRoots
         check(
-            "只读模式下写入被拒绝",
-            runCatching { server.sandbox.assertWritable(File(privatePath)) }.isFailure
+            "去掉根目录后又回到拒绝",
+            runCatching { server.sandbox.resolve(privatePath) }.isFailure
         )
-        check(
-            "普通路径在只读模式下不受影响",
-            runCatching { server.sandbox.assertWritable(File(root, "docs/hello.txt")) }.isSuccess
-        )
-
-        config.privateAccess = Config.PRIVATE_FULL
-        check(
-            "可读写模式下写入放行",
-            runCatching { server.sandbox.assertWritable(File(privatePath)) }.isSuccess
-        )
-        config.privateAccess = Config.PRIVATE_OFF
 
         println("\n[24] HTTP 文件网关（上传 / 下载）")
         val uploadText = "hello-from-outside"

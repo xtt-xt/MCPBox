@@ -319,7 +319,7 @@ fun PageScaffold(
     // 同一个绘制树里自己抓自己是抓不到的，haze 直接画成透明：
     // 于是「不透明度开到 100 还是透明的」。这里在页面内自建一份，源和矮栏是兄弟节点，正常。
     val pageHaze = remember { dev.chrisbanes.haze.HazeState() }
-    val useHaze = barStyle.usesHaze
+    val useHaze = barStyle.usesHaze && android.os.Build.VERSION.SDK_INT >= 31
     // 预见式返回的拖动进度（0..1）。取的是 lambda，在 graphicsLayer 里读 ——
     // 每帧只是重绘，不会让整页重组。
     val backProgress = LocalPredictiveDrag.current
@@ -348,8 +348,8 @@ fun PageScaffold(
         }
 
         // 顶上那条矮栏：滚过大标题之后出现。
-        // 写法就是最普通的那种 —— 一整条铺满（铺到屏幕最顶）、内部再避开状态栏，
-        // 末尾一条发丝线。不透明时是实色；半透明 / 有模糊时才走 haze。
+        // 写法就是最普通的那种 —— 一整条铺满（铺到屏幕最顶）、内部再避开状态栏。
+        // 不画分割线：栏和内容之间不留任何一条线，只靠底色差分开。
         // 作为「露出来的上一页」渲染时不画矮栏：它自己的滚动位置可能早就过了阈值，
         // 画出来就会在拖动过程中凭空多出一条 —— 用户要的是「直接没有」。
         if (!LocalPredictiveBehind.current && appear > 0.001f) {
@@ -364,22 +364,20 @@ fun PageScaffold(
                         translationY = -(1f - appear) * 10.dp.toPx() -
                             backProgress() * barHeightPx
                     }
+                    // 毛玻璃只负责「糊下面的内容」，底色和透明度由下面这层背景自己画。
+                    // 之前把透明度交给 haze 的 alpha：那只是给 scrim 做 saveLayer 用的，
+                    // 而底色是靠 tint 画的 —— 没给 tint 时整层什么都不画，
+                    // 于是「只要不是 100% 就整条看不见」。
                     .then(
                         if (useHaze) {
                             Modifier.hazeEffect(pageHaze) {
                                 blurRadius = barStyle.blur.dp
-                                blurEnabled = barStyle.blur > 0.5f
-                                backgroundColor = base
-                                // tint 的不透明度跟着动画走：整条是「渐显」而不是「啪」地跳出来
-                                alpha = barStyle.alpha * appear
+                                blurEnabled = true
                                 noiseFactor = 0.06f
                             }
-                        } else {
-                            Modifier.background(
-                                base.copy(alpha = base.alpha * barStyle.alpha * appear)
-                            )
-                        }
+                        } else Modifier
                     )
+                    .background(base.copy(alpha = base.alpha * barStyle.alpha * appear))
             ) {
                 Row(
                     Modifier
@@ -410,7 +408,6 @@ fun PageScaffold(
                     )
                     actions()
                 }
-                Hairline(0.6f * (if (useHaze) barStyle.alpha else 1f) * appear)
             }
         }
     }
@@ -420,9 +417,9 @@ fun PageScaffold(
  * 浮在内容上的一条栏 —— 底栏与全选工具条共用同一份实现。
  *
  * 底色固定用 surfaceContainerLow（和顶栏同色，两条栏看起来是一条体系）；
- * 半透明 / 模糊由 [style] 决定（各自一份参数）：
- *  · 不透明度 1 + 模糊 0 → 纯色底，不额外离屏绘制；
- *  · 其余情况 → hazeEffect 抓下面划过去的内容做毛玻璃，tint 的 alpha 就是不透明度。
+ * 半透明 / 模糊由 [style] 决定（各自一份参数），两件事分开做：
+ *  · 不透明度 → 直接给底色乘 alpha（任何值都准，100% 就是纯色）；
+ *  · 模糊 → 另开一层 hazeEffect 糊从栏下面划过的内容，只在「模糊开着且不是全不透明」时才有意义。
  *
  * 注意：调用方**不要**在这层外面再套 `graphicsLayer { alpha = … }` 做淡入 ——
  * alpha 图层会让 hazeEffect 画不出来，表现就是「调多实都是透的」。
@@ -431,12 +428,12 @@ fun PageScaffold(
 fun FloatingBar(
     style: BarStyle,
     modifier: Modifier = Modifier,
-    hairlineTop: Boolean = false,
-    hairlineBottom: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val hazeState = LocalHazeState.current
-    val hazeOn = style.usesHaze && hazeState != null
+    // 毛玻璃只用来糊下面的内容；栏本身的底色 / 透明度一律自己画，
+    // 否则 haze 在没有 tint 时整层透明，看起来就是「除了 100% 全透明」。
+    val hazeOn = style.usesHaze && hazeState != null && android.os.Build.VERSION.SDK_INT >= 31
     val base = MaterialTheme.colorScheme.surfaceContainerLow
     Column(
         modifier
@@ -445,33 +442,16 @@ fun FloatingBar(
                 if (hazeOn) {
                     Modifier.hazeEffect(hazeState!!) {
                         blurRadius = style.blur.dp
-                        blurEnabled = style.blur > 0.5f
-                        backgroundColor = base
-                        alpha = style.alpha
+                        blurEnabled = true
                         // 深色主题里 blur 需要一点噪声，否则糊成一片
                         noiseFactor = 0.06f
                     }
                 } else Modifier
             )
-            // 不走 haze 时底色乘上不透明度（100% 就是纯色，和以前完全一样）
-            .background(if (hazeOn) Color.Transparent else base.copy(alpha = base.alpha * style.alpha))
+            .background(base.copy(alpha = base.alpha * style.alpha))
     ) {
-        val lineAlpha = 0.6f * (if (hazeOn) style.alpha else 1f)
-        if (hairlineTop) Hairline(lineAlpha)
         content()
-        if (hairlineBottom) Hairline(lineAlpha)
     }
-}
-
-/** 一条 1dp 发丝线：和内容分开，深浅两套主题下都看得见。 */
-@Composable
-private fun Hairline(alpha: Float) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha))
-    )
 }
 
 
@@ -1288,7 +1268,6 @@ fun BottomPillNav(
     val density = LocalDensity.current
     FloatingBar(
         style = style,
-        hairlineTop = true,
         modifier = Modifier.onSizeChanged { onHeight(with(density) { it.height.toDp().value }) }
     ) {
         Row(
@@ -1512,8 +1491,7 @@ fun PressCardBox(
  * 选择型页面（备份 / 恢复）的底栏：
  * 左边「全选 / 全不选」两个圆形按钮，右边一个主操作胶囊。
  *
- * 和 [BottomPillNav] 同款：底色比页面低一档 + 顶部一条细分割线，
- * 让底栏看起来是「浮在内容上面的一层」，而不是页面里的一块。
+ * 和 [BottomPillNav] 同款：底色比页面低一档，浮在内容上面的一层，不画分割线。
  */
 @Composable
 fun SelectionBar(
@@ -1528,31 +1506,7 @@ fun SelectionBar(
 ) {
     // 和底部导航栏共用同一套样式：它是浮在列表上的工具条，透出来的是列表内容
     val style = LocalBarStyle.current
-    val hazeState = LocalHazeState.current
-    val hazeOn = style.usesHaze && hazeState != null
-    val barBase = MaterialTheme.colorScheme.surfaceContainerLow
-    val hazeMod = if (hazeOn) {
-        Modifier.hazeEffect(hazeState!!) {
-            blurRadius = style.blur.dp
-            blurEnabled = style.blur > 0.5f
-            backgroundColor = barBase
-            alpha = style.alpha
-            noiseFactor = 0.06f
-        }
-    } else Modifier
-    val plainColor = if (hazeOn) Color.Transparent else barColor(barBase)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .then(hazeMod)
-            .background(plainColor)
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-        )
+    FloatingBar(style = style) {
         Row(
             Modifier
                 .fillMaxWidth()

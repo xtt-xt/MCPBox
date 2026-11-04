@@ -60,7 +60,12 @@ class PathSandbox(private val config: Config) {
         return path
     }
 
-    /** 应用私有目录：只有开了「私有目录访问」才放行，而且可以单独设成只读。 */
+    /**
+     * 应用私有目录（/data/data、/data/local/tmp 之类）。
+     *
+     * 这张表只用来决定「读写要不要经 root / Shizuku 转发」——App 自己没权限读别家私有目录。
+     * 能不能访问由白名单目录（roots）管：要放开某个应用就把它的目录加成根目录。
+     */
     private val privateRoots = listOf(
         "/data/data",
         "/data/user/0",
@@ -77,37 +82,16 @@ class PathSandbox(private val config: Config) {
         return privateRoots.any { p == it || p.startsWith("$it/") }
     }
 
-    fun privateAccess(): String = config.privateAccess
-
-    /** 私有目录处于「只读」模式时，写/删直接拒绝。 */
-    fun assertWritable(file: File) {
-        if (config.privateAccess == Config.PRIVATE_READ && isPrivatePath(file)) {
-            throw SandboxException(
-                L("应用私有目录当前是「只读」模式，不能修改：%s\n").format(file.path) +
-                    L("（要写入请到 设置 → 权限 → 应用私有目录 改成「可读写」）")
-            )
-        }
-    }
-
     private fun checkBounds(path: File, raw: String) {
         if (isProtected(path)) throw SandboxException(L("系统目录受保护，禁止访问：%s").format(path.path))
         if (config.fullAccess) return
-        if (isPrivatePath(path)) {
-            if (config.privateAccess == Config.PRIVATE_OFF) {
-                throw SandboxException(
-                    L("应用私有目录没有开放：%s\n").format(path.path) +
-                        L("（到 设置 → 权限 → 应用私有目录 里选「只读」或「可读写」；需要 root 或 Shizuku）")
-                )
-            }
-            return
-        }
         val roots = roots()
         val inside = roots.any { root -> isInside(root, path) }
         if (!inside) {
             val allowed = roots.joinToString("、") { it.path }
             throw SandboxException(
                 L("路径超出允许范围：%s\n当前允许的根目录只有：%s\n").format(path.path, allowed) +
-                    L("（需要在 App 的「设置 → 允许访问的目录」里添加，或把「不限制目录」打开）")
+                    L("（到 权限 → 文件范围 里把它加进允许访问的目录，或把「不限制目录」打开）")
             )
         }
     }

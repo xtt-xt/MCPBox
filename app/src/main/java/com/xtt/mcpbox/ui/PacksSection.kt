@@ -31,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -166,38 +165,6 @@ fun PacksSection(
             )
         )
     )
-
-    // 直接给出该填进客户端的地址，省得自己拼。
-    // 复制出来的是**带令牌的完整地址**（?token=…），粘进客户端就能用，不用再配请求头。
-    Spacer(Modifier.height(7.dp))
-    val lanIp = remember { com.xtt.mcpbox.core.LocalNet.primary() ?: "127.0.0.1" }
-    val port = AppCore.config.port
-    val profilePath = if (profile == "default") "/mcp"
-    else "/mcp/p/" + runCatching { java.net.URLEncoder.encode(profile, "UTF-8") }.getOrDefault(profile)
-    val fullUrl = "http://$lanIp:$port$profilePath"
-    val token = if (AppCore.config.tokenEnabled) AppCore.config.token else ""
-    val copyableUrl = if (token.isNotBlank()) "$fullUrl?token=$token" else fullUrl
-    CardColumn {
-        CardBox {
-            Text(
-                L("会话「%s」的地址").format(profile),
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 15.5.sp
-            )
-            Text(
-                fullUrl,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-            Spacer(Modifier.height(10.dp))
-            PillButton(
-                L("复制地址"), Modifier.fillMaxWidth(), outlined = true,
-                color = MaterialTheme.colorScheme.primary, compact = true
-            ) { copyText(ctx, copyableUrl, L("地址已复制")) }
-        }
-    }
 
     Spacer(Modifier.height(7.dp))
     CardGroup(

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -60,6 +61,9 @@ fun TerminalScreen(
 ) {
     val term = AppCore.terminal
     val text by term.text.collectAsState()
+    // 只把末尾这一截交给 Text：整段输出可能有几十万字（缓冲区上限 40 万），
+    // 全塞进去光测量就要好几帧，切到终端 tab 时会明显卡一下。
+    val shown = remember(text) { tailForDisplay(text) }
     val running by term.running.collectAsState()
     val backendLabel by term.backendLabel.collectAsState()
 
@@ -131,13 +135,16 @@ fun TerminalScreen(
                     .verticalScroll(outScroll)
                     .padding(14.dp)
             ) {
-                Text(
-                    text.ifBlank { L("（还没有输出。输入命令后回车执行）") },
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 17.sp
-                )
+                // 可长按选中复制：命令和输出都能直接抠出来
+                SelectionContainer {
+                    Text(
+                        shown.ifBlank { L("（还没有输出。输入命令后回车执行）") },
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 17.sp
+                    )
+                }
             }
         }
 
@@ -188,4 +195,19 @@ fun TerminalScreen(
         }
 
     }
+}
+
+/**
+ * 取输出的末尾一截给界面渲染（从换行处切开）。
+ *
+ * 为什么要有：一个命令刷出几万行时，整段字符串交给 Compose 的 Text 测量、
+ * 排版一次就是十几到几十毫秒，而且每 90ms 的节流刷新都会重来一遍 ——
+ * 表现就是「历史一多，切到终端 tab 就卡」。终端真正要看的是最近这几百行。
+ */
+private fun tailForDisplay(text: String, maxChars: Int = 24_000): String {
+    if (text.length <= maxChars) return text
+    val start = text.length - maxChars
+    val nl = text.indexOf('\n', start)
+    val cut = if (nl in 0 until text.length - 1) nl + 1 else start
+    return "…\n" + text.substring(cut)
 }

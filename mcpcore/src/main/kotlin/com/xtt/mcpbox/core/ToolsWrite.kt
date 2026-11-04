@@ -54,11 +54,6 @@ object ToolsWrite {
             L("目标：%s\n内容预览：%s").format(f.path, preview(content)),
             bytes.size.toLong()
         )
-        try {
-            ctx.sandbox.assertWritable(f)
-        } catch (e: Exception) {
-            ctx.fail(e.message ?: L("当前模式下不允许写入"))
-        }
         val parent = f.parentFile
         if (ctx.args.boolOr("createDirs", true)) {
             parent?.let { ctx.bridge.mkdirs(it) }
@@ -137,11 +132,6 @@ object ToolsWrite {
             L("文件：%s\n匹配到 %s 处，将替换 %s 处").format(f.path, occurrences, willReplace),
             result.length.toLong()
         )
-        try {
-            ctx.sandbox.assertWritable(f)
-        } catch (e: Exception) {
-            ctx.fail(e.message ?: L("当前模式下不允许写入"))
-        }
         if (!ctx.bridge.writeBytes(f, result.toByteArray(Charsets.UTF_8))) {
             ctx.fail(L("写入失败：应用自己没有权限，而且没有可用的 root / Shizuku"))
         }
@@ -183,11 +173,6 @@ object ToolsWrite {
             else ctx.fail(L("同名文件已存在：%s").format(f.path))
         }
         ctx.guard(PermKey.WRITE, f, L("新建目录 %s").format(f.path))
-        try {
-            ctx.sandbox.assertWritable(f)
-        } catch (e: Exception) {
-            ctx.fail(e.message ?: L("当前模式下不允许写入"))
-        }
         val parents = ctx.args.boolOr("parents", true)
         val ok = if (parents) {
             ctx.bridge.mkdirs(f)
@@ -234,11 +219,6 @@ object ToolsWrite {
             L("源：%s\n目标：%s\n大小：%s").format(src.path, dst.path, ctx.sandbox.humanSize(size)),
             size
         )
-        try {
-            ctx.sandbox.assertWritable(dst)
-        } catch (e: Exception) {
-            ctx.fail(e.message ?: L("当前模式下不允许写入"))
-        }
         if (dstExists) ctx.bridge.delete(dst, recursive = true)
         val (ok, how) = ctx.bridge.copy(src, dst)
         if (!ok) ctx.fail(L("复制失败：%s").format(how))
@@ -287,12 +267,6 @@ object ToolsWrite {
             L("源：%s\n目标：%s").format(src.path, dst.path),
             srcStat.size
         )
-        try {
-            ctx.sandbox.assertWritable(dst)
-            ctx.sandbox.assertWritable(src)
-        } catch (e: Exception) {
-            ctx.fail(e.message ?: L("当前模式下不允许写入"))
-        }
         if (dstExists) ctx.bridge.delete(dst, recursive = true)
         val (ok, how) = ctx.bridge.move(src, dst)
         if (!ok) ctx.fail(L("移动失败：%s → %s（%s）").format(src.path, dst.path, how))
