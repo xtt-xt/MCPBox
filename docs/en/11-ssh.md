@@ -55,8 +55,8 @@ ssh  -i key -p 8722 mcpbox@127.0.0.1 'ls /storage/emulated/0'
 
 - **Paths go through the same allow-list**: every SFTP path resolution passes `PathSandbox`, so
   anything outside (e.g. `/data/local/tmp`) returns `permission denied` and is logged as
-  "SSH blocked a path outside the allowed roots". The allowed roots, unlimited-directory mode and
-  the private-directory level all apply exactly as they do for the AI tools.
+  "SSH blocked a path outside the allowed roots". The allowed roots and unlimited-directory
+  mode apply exactly as they do for the AI tools.
 - **Read-only mode** (Permissions → Global limits → "read only") also applies here: writes,
   attribute changes, mkdir, rename and delete are refused; reads are unaffected.
 - **Run as** follows the order set in Permissions → Commands by default ("Auto"); pick an

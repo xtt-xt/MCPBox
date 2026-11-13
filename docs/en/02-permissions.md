@@ -12,8 +12,9 @@ answered, instead of one page with every control on it:
 | Entry | What is inside |
 |---|---|
 | Preset (top dropdown) | Sets all 9 switches at once |
-| Tool permissions | The 9 switches (grouped **files / system / network**, allow-by-default ones last in each group), tool packs and session isolation |
-| File scope | Allowed folders, path rules, private-directory level |
+| Custom permissions (only when preset = Custom) | The 9 switches, grouped **files / system / network**, allow-by-default ones last in each group |
+| Tool permissions | Tool packs and session isolation, per-tool override notes |
+| File scope | Allowed folders, path rules |
 | Commands | Command permission (jump), execution identity, command rules, command timeout |
 | Approvals | Presentation (overlay / notification), whether it expires, timeout seconds (AI tools only) |
 | Remote access | SSH service, access token |
@@ -42,7 +43,8 @@ Every permission key has three states: **allow** / **ask** / **deny**.
 | `memory` | allow | Memory read/write (turning the master switch off removes memory tools from `tools/list`) |
 
 At the top of the app's **Permissions** page you can switch a **preset session** in one tap
-(it stays on the home page; the switches themselves live under *Tool permissions*):
+(it stays on the home page). When the preset is Custom, an entry for *Custom permissions* sits right
+below it in the same card — tap it to change the 9 switches one by one:
 
 | Preset | Effect |
 |---|---|

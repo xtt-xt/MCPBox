@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
@@ -77,7 +78,8 @@ import com.xtt.mcpbox.core.Rule
  * 页面 key：
  * ```
  * ""                 首页（预设 + 5 个入口 + 全局限制）
- * perm               工具权限（9 个开关，按 文件 / 系统 / 网络 分组）
+ * perm               工具权限（工具包 / 单个工具覆盖）
+ * perm/custom        自定义权限（9 个开关，按 文件 / 系统 / 网络 分组）
  * files              文件范围（目录 / 路径规则 / 私有目录）
  * files/rules        路径规则列表
  * shell              命令与执行（身份 / 规则 / 超时）
@@ -122,6 +124,7 @@ fun PermissionScreen(
     // 否则预见式返回拖动时露出来的那一页永远停在最顶部。
     val homeScroll = rememberScrollState()
     val permScroll = rememberScrollState()
+    val customScroll = rememberScrollState()
     val filesScroll = rememberScrollState()
     val shellScroll = rememberScrollState()
     val approvalScroll = rememberScrollState()
@@ -145,6 +148,7 @@ fun PermissionScreen(
                 onBack = {},
                 homeScroll = homeScroll,
                 permScroll = permScroll,
+                customScroll = customScroll,
                 filesScroll = filesScroll,
                 shellScroll = shellScroll,
                 approvalScroll = approvalScroll,
@@ -182,6 +186,7 @@ fun PermissionScreen(
                         onBack = onBack,
                         homeScroll = homeScroll,
                         permScroll = permScroll,
+                        customScroll = customScroll,
                         filesScroll = filesScroll,
                         shellScroll = shellScroll,
                         approvalScroll = approvalScroll,
@@ -208,6 +213,7 @@ private fun PermPageContent(
     onBack: () -> Unit,
     homeScroll: ScrollState,
     permScroll: ScrollState,
+    customScroll: ScrollState,
     filesScroll: ScrollState,
     shellScroll: ScrollState,
     approvalScroll: ScrollState,
@@ -232,6 +238,12 @@ private fun PermPageContent(
             onChanged = onChanged,
             onOpenPack = { id -> onPage(if (id == null) "pack" else "pack:$id") },
             scroll = permScroll,
+            onBack = onBack
+        )
+        "perm/custom" -> CustomPermPage(
+            revision = revision,
+            onChanged = onChanged,
+            scroll = customScroll,
             onBack = onBack
         )
         "files" -> FileScopePage(
@@ -339,43 +351,60 @@ private fun PermissionHomePage(
             if (token.isNotBlank()) "$sessionUrl?token=$token" else sessionUrl
         }
         CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("预设会话"),
-                    subtitle = if (preset.locked)
-                        L("下面的权限已按这个预设统一并锁定；选「自定义」会恢复你之前调好的那份。")
-                    else L("选固定预设会记住你现在的设置，切回「自定义」时自动恢复。"),
-                    subtitleMaxLines = 2,
-                    icon = Icons.Filled.Star,
-                    // 点整行也能展开右边那个下拉（保持和其它胶囊一致）
-                    onClick = { presetOpen = true },
-                    trailing = {
-                        PillDropdown(
-                            value = L(preset.label),
-                            options = PermPreset.entries.map { L(it.label) },
-                            expanded = presetOpen,
-                            onExpandedChange = { presetOpen = it }
-                        ) { index ->
-                            presetOpen = false
-                            AppCore.permissions.setPreset(PermPreset.entries[index])
-                            onChanged()
+            buildList {
+                add(
+                    RowSpec(
+                        title = L("预设会话"),
+                        subtitle = if (preset.locked)
+                            L("下面的权限已按这个预设统一并锁定；选「自定义」会恢复你之前调好的那份。")
+                        else L("选固定预设会记住你现在的设置，切回「自定义」时自动恢复。"),
+                        subtitleMaxLines = 2,
+                        icon = Icons.Filled.Star,
+                        // 点整行也能展开右边那个下拉（保持和其它胶囊一致）
+                        onClick = { presetOpen = true },
+                        trailing = {
+                            PillDropdown(
+                                value = L(preset.label),
+                                options = PermPreset.entries.map { L(it.label) },
+                                expanded = presetOpen,
+                                onExpandedChange = { presetOpen = it }
+                            ) { index ->
+                                presetOpen = false
+                                AppCore.permissions.setPreset(PermPreset.entries[index])
+                                onChanged()
+                            }
                         }
-                    }
-                ),
-                RowSpec(
-                    title = L("会话「%s」的地址").format(viewProfile),
-                    subtitle = sessionUrl,
-                    subtitleMaxLines = 1,
-                    icon = Icons.Filled.Share,
-                    onClick = { copyText(ctx, copyableUrl, L("地址已复制")) },
-                    trailing = {
-                        PillButton(
-                            L("复制"), outlined = true,
-                            color = MaterialTheme.colorScheme.primary, compact = true
-                        ) { copyText(ctx, copyableUrl, L("地址已复制")) }
-                    }
+                    )
                 )
-            )
+                // 预设为「自定义」时，9 个单项开关的入口就放在这里：换预设 = 换这套开关，
+                // 两者是同一件事，中间不隔别的卡片。固定的预设不需要入口（开关本来就被锁住）。
+                if (!preset.locked) {
+                    add(
+                        RowSpec(
+                            title = L("自定义权限"),
+                            subtitle = L("9 个全局开关：%s").format(summaryOf(switches)),
+                            subtitleMaxLines = 1,
+                            icon = Icons.Filled.Edit,
+                            onClick = { onPage("perm/custom") }
+                        )
+                    )
+                }
+                add(
+                    RowSpec(
+                        title = L("会话「%s」的地址").format(viewProfile),
+                        subtitle = sessionUrl,
+                        subtitleMaxLines = 1,
+                        icon = Icons.Filled.Share,
+                        onClick = { copyText(ctx, copyableUrl, L("地址已复制")) },
+                        trailing = {
+                            PillButton(
+                                L("复制"), outlined = true,
+                                color = MaterialTheme.colorScheme.primary, compact = true
+                            ) { copyText(ctx, copyableUrl, L("地址已复制")) }
+                        }
+                    )
+                )
+            }
         )
 
         // ---------------------------------------------------------- 五个入口
@@ -384,7 +413,7 @@ private fun PermissionHomePage(
             listOf(
                 entrySpec(
                     L("工具权限"),
-                    L("9 个全局开关：%s").format(summaryOf(switches)),
+                    L("工具包与单个工具的覆盖"),
                     Icons.Filled.Lock
                 ) { onPage("perm") },
                 entrySpec(

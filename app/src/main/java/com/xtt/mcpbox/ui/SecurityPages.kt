@@ -83,12 +83,16 @@ internal fun permSummary(vararg keys: PermKey): String {
 
 /* ------------------------------------------------------------ 工具权限 */
 
+/**
+ * 9 个单项权限开关（文件 / 系统 / 网络）。
+ *
+ * 原来铺在「工具权限」页里，和工具包挤在一页。现在单独成一页，
+ * 入口只在预设 = **自定义** 时出现在权限首页（预设锁定时这些开关本来也点不动）。
+ */
 @Composable
-internal fun ToolPermPage(
-    ctx: Context,
+internal fun CustomPermPage(
     revision: Int,
     onChanged: () -> Unit,
-    onOpenPack: (String?) -> Unit,
     scroll: ScrollState,
     onBack: () -> Unit
 ) {
@@ -98,12 +102,13 @@ internal fun ToolPermPage(
     var openPerm by remember { mutableStateOf<PermKey?>(null) }
 
     SettingsPageShell(
-        title = L("工具权限"),
+        title = L("自定义权限"),
         subtitle = L("AI 能做哪些事。选「询问」时每次都要你点头。"),
         onBack = onBack,
         scroll = scroll
     ) {
-        // 预设锁定态要在子页里也能看见，否则会觉得「下拉点不动是坏了」
+        // 理论上从首页进来的前提就是「自定义」；预设万一在别处被改回去，
+        // 这里照样锁住并说清去哪儿解锁，免得看着像开关坏了。
         if (preset.locked) {
             CardGroup(
                 listOf(
@@ -150,7 +155,30 @@ internal fun ToolPermPage(
                 }
             )
         }
+    }
+}
 
+/**
+ * 「工具权限」子页：只剩**工具包**与单个工具覆盖的说明。
+ *
+ * 9 个单项开关已经搬到 [CustomPermPage]：它们只在「自定义」预设下有意义，
+ * 放在这里等于「先切预设、再进两层才能改」。
+ */
+@Composable
+internal fun ToolPermPage(
+    ctx: Context,
+    revision: Int,
+    onChanged: () -> Unit,
+    onOpenPack: (String?) -> Unit,
+    scroll: ScrollState,
+    onBack: () -> Unit
+) {
+    SettingsPageShell(
+        title = L("工具权限"),
+        subtitle = L("工具包与单个工具的覆盖设置"),
+        onBack = onBack,
+        scroll = scroll
+    ) {
         // 单个工具的覆盖在「设置 → AI → 工具管理」里：这里只说明，不重复造控件
         GroupLabel(L("单个工具"))
         CardGroup(
