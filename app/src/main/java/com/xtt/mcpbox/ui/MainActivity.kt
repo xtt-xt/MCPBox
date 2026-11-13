@@ -511,7 +511,7 @@ fun AppRoot(
     // 顶栏（滚上去之后那条矮栏）自己一套样式，和底栏互不影响
     val topBarStyle = BarStyle(TopBarLive.alpha, TopBarLive.blur, TopBarLive.blurOn)
     // 毛玻璃要抓「底栏下面那一层」的画，所以内容层挂 hazeSource、底栏挂 hazeEffect。
-    // 全不透明又不模糊时不挂 —— 省掉一次离屏绘制，和原来的纯色底完全一样。
+    // 没开模糊时不挂 —— 省掉一次离屏绘制，和原来的纯色底完全一样。
     val hazeState = remember { dev.chrisbanes.haze.HazeState() }
     val barVisible = !inSubPage && !imeVisible
     // 底栏实测高度：覆盖式布局要拿它在内容末尾垫一块空白（硬编码会因字体大小 / 手势条高度对不上）

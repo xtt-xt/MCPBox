@@ -27,11 +27,11 @@ data class BarStyle(
     /**
      * 要不要走毛玻璃这一层。
      *
-     * **只看开关**：不透明度和模糊是可以同时调的 —— 糊一层在下面（haze），
-     * 底色和透明度自己画在上面，两边各管各的。100% 不透明时糊出来的东西被
-     * 底色完全盖住，多算一遍没意义，所以那种情况也不走 haze。
+     * 只看「模糊开关 + 半径」：不透明度 100% 也照样走 ——
+     * 那一层里是「实色底色 + 糊过的内容」，整层再按不透明度淡出，
+     * 所以 100% 是不透明的磨砂玻璃（糊的观感最足），往下拖就开始透出下面的内容。
      */
-    val usesHaze: Boolean get() = blurOn && blur > 0.5f && alpha < 0.999f
+    val usesHaze: Boolean get() = blurOn && blur > 0.5f
 
     companion object {
         val Opaque = BarStyle()
