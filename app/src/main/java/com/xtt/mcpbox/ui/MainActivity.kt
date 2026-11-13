@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -518,14 +517,10 @@ fun AppRoot(
     val barVisible = !inSubPage && !imeVisible
     // 底栏实测高度：覆盖式布局要拿它在内容末尾垫一块空白（硬编码会因字体大小 / 手势条高度对不上）
     var barHeightDp by remember { mutableStateOf(0f) }
-    // 内容末尾的留白跟着底栏的显隐**做动画**：底栏是这样滑下去的，
-    // 留白要是立刻归零，正好滚在最底下的那一页会「啪」地往下一跳
-    // （返回时反过来，内容又应该是慢慢升回去的）。
-    val barInsetDp by animateDpAsState(
-        targetValue = if (barVisible) barHeightDp.dp else 0.dp,
-        animationSpec = tween(220),
-        label = "barInset"
-    )
+    // 内容末尾**一直**预留底栏那么高，不管这一刻底栏露没露出来。
+    // 底栏收起（进子页 / 输入法弹出）时留白不变 —— 这样停在最底部时进出子页，
+    // 内容不会因为留白突然消失而往下跳一下；返回也就不用再补回来。
+    val barInsetDp = barHeightDp.dp
 
     CompositionLocalProvider(
         LocalBarStyle provides barStyle,

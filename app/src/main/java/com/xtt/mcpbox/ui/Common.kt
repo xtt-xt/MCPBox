@@ -45,7 +45,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -329,23 +328,17 @@ fun PageScaffold(
 
     Box(Modifier.fillMaxWidth()) {
         // 内容末尾要给底栏留一块空白，否则滚到底时最后一张卡片永远被挡住。
-        // 留白拆成两段：系统手势条那一截 + 底栏比它高出来的那部分。
-        //  · 底栏收起（子页 / 输入法弹出）时只留手势条那一截；
-        //  · 底栏露出时它自己盖住了手势条，两段加起来正好等于底栏高度。
-        // 两段相加是连续的（[LocalBottomBarInset] 本身在 MainActivity 里做动画），
-        // 所以进出子页时内容不会因为留白「啪」地少一截而往下跳。
+        // 这块留白**一直**留着（[LocalBottomBarInset] 不随底栏显隐变化）：
+        // 底栏收起时不减掉，停在最底部进出子页内容才不会往下跳一下。
+        // 只在底栏高度还没测出来（= 0）时才自己避开系统手势条。
         val barInset = LocalBottomBarInset.current.dp
-        val navInset = WindowInsets.navigationBars
-            .asPaddingValues()
-            .calculateBottomPadding()
-        val extraInset = (barInset - navInset).coerceAtLeast(0.dp)
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(scroll)
                 .then(if (useHaze) Modifier.hazeSource(pageHaze) else Modifier)
-                .navigationBarsPadding()
-                .padding(bottom = bottomPadding + extraInset)
+                .then(if (barInset <= 0.dp) Modifier.navigationBarsPadding() else Modifier)
+                .padding(bottom = bottomPadding + barInset)
         ) {
             PageHeader(
                 title = title,
