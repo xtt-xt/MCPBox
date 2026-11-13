@@ -2628,6 +2628,7 @@ object LangEn {
     "自定义权限" to "Custom permissions",
     "工具包与单个工具的覆盖" to "Tool packs and per-tool overrides",
     "工具包与单个工具的覆盖设置" to "Tool packs and per-tool overrides",
+    "工具包决定 AI 在列表里能看见哪些工具" to "Packs decide which tools the AI can see in the list",
     "已关闭" to "Off",
     "已关闭 · 端口 %s" to "Off · port %s",
     "已开启" to "On",

@@ -826,18 +826,42 @@ fun AppSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-            checkedTrackColor = MaterialTheme.colorScheme.primary,
-            checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-            uncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHighest),
-            uncheckedBorderColor = Color.Transparent,
-            disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-            disabledUncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh)
-        )
+        colors = switchColors()
     )
 }
+
+/**
+ * 锁定的开关：看着是「开着」，但点不动（比如工具包里「常驻」的那个包永远可用）。
+ *
+ * 和 [AppSwitch] 同一套配色，只是走 disabled 档：比正常开着的浅一档，
+ * 一眼能看出「这个开关改不了」，又不会像灰掉的控件那样像是坏的。
+ */
+@Composable
+fun LockedSwitch(checked: Boolean) {
+    Switch(
+        checked = checked,
+        enabled = false,
+        onCheckedChange = null,
+        colors = switchColors()
+    )
+}
+
+/** 开关配色（[AppSwitch] 与 [LockedSwitch] 共用，免得两处各写一份、慢慢就对不上）。 */
+@Composable
+private fun switchColors() = SwitchDefaults.colors(
+    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+    checkedTrackColor = MaterialTheme.colorScheme.primary,
+    checkedBorderColor = Color.Transparent,
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+    uncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHighest),
+    uncheckedBorderColor = Color.Transparent,
+    // 锁定的开关也要看得出是「开着」，只是浅一档
+    disabledCheckedThumbColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
+    disabledCheckedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+    disabledCheckedBorderColor = Color.Transparent,
+    disabledUncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+    disabledUncheckedTrackColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+)
 
 /** 生成一个带开关的行（放进 CardGroup 里用）。 */
 fun switchSpec(

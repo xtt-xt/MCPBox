@@ -190,7 +190,9 @@ fun PacksSection(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (pack.core) {
-                            OutlineTag(L("常驻"), MaterialTheme.colorScheme.outline)
+                            // 常驻包永远开着：用锁定的开关代替原来的「常驻」标签，
+                            // 和下面的包同一种控件、同一个位置，一眼就懂「这个包改不了」。
+                            LockedSwitch(checked = true)
                         } else {
                             AppSwitch(isOn) { togglePack(pack, isOn, profile, onChanged) }
                         }

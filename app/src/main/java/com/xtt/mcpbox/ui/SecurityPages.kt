@@ -175,23 +175,10 @@ internal fun ToolPermPage(
 ) {
     SettingsPageShell(
         title = L("工具权限"),
-        subtitle = L("工具包与单个工具的覆盖设置"),
+        subtitle = L("工具包决定 AI 在列表里能看见哪些工具"),
         onBack = onBack,
         scroll = scroll
     ) {
-        // 单个工具的覆盖在「设置 → AI → 工具管理」里：这里只说明，不重复造控件
-        GroupLabel(L("单个工具"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("工具单独覆盖"),
-                    subtitle = L("在上面这套之外，每个工具还能单独设成跟随 / 允许 / 询问 / 拒绝（设置 → AI → 工具管理）。"),
-                    subtitleMaxLines = 3,
-                    icon = Icons.Filled.Info
-                )
-            )
-        )
-
         // 工具包：会话级的工具子集 + 会话状态自动重置
         PacksSection(ctx = ctx, revision = revision, onChanged = onChanged, onOpenPack = onOpenPack)
     }

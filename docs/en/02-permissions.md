@@ -13,7 +13,7 @@ answered, instead of one page with every control on it:
 |---|---|
 | Preset (top dropdown) | Sets all 9 switches at once |
 | Custom permissions (only when preset = Custom) | The 9 switches, grouped **files / system / network**, allow-by-default ones last in each group |
-| Tool permissions | Tool packs and session isolation, per-tool override notes |
+| Tool permissions | Tool packs and session isolation (always-on packs show a locked switch) |
 | File scope | Allowed folders, path rules |
 | Commands | Command permission (jump), execution identity, command rules, command timeout |
 | Approvals | Presentation (overlay / notification), whether it expires, timeout seconds (AI tools only) |
