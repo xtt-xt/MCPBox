@@ -45,6 +45,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -109,6 +110,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -326,16 +328,24 @@ fun PageScaffold(
     var barHeightPx by remember { mutableIntStateOf(0) }
 
     Box(Modifier.fillMaxWidth()) {
-        // 底栏可见时它自己盖住了小白条区域，内容只需多留出它的高度往它下面滑；
-        // 底栏收起（子页 / 输入法弹出）时才需要自己避开小白条。
-        val barInset = LocalBottomBarInset.current
+        // 内容末尾要给底栏留一块空白，否则滚到底时最后一张卡片永远被挡住。
+        // 留白拆成两段：系统手势条那一截 + 底栏比它高出来的那部分。
+        //  · 底栏收起（子页 / 输入法弹出）时只留手势条那一截；
+        //  · 底栏露出时它自己盖住了手势条，两段加起来正好等于底栏高度。
+        // 两段相加是连续的（[LocalBottomBarInset] 本身在 MainActivity 里做动画），
+        // 所以进出子页时内容不会因为留白「啪」地少一截而往下跳。
+        val barInset = LocalBottomBarInset.current.dp
+        val navInset = WindowInsets.navigationBars
+            .asPaddingValues()
+            .calculateBottomPadding()
+        val extraInset = (barInset - navInset).coerceAtLeast(0.dp)
         Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(scroll)
                 .then(if (useHaze) Modifier.hazeSource(pageHaze) else Modifier)
-                .then(if (barInset <= 0f) Modifier.navigationBarsPadding() else Modifier)
-                .padding(bottom = bottomPadding + barInset.dp)
+                .navigationBarsPadding()
+                .padding(bottom = bottomPadding + extraInset)
         ) {
             PageHeader(
                 title = title,
