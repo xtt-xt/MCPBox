@@ -364,25 +364,32 @@ fun PageScaffold(
                         translationY = -(1f - appear) * 10.dp.toPx() -
                             backProgress() * barHeightPx
                     }
-                    // 毛玻璃只负责「糊下面的内容」，底色和透明度由下面这层背景自己画。
-                    // 之前把透明度交给 haze 的 alpha：那只是给 scrim 做 saveLayer 用的，
-                    // 而底色是靠 tint 画的 —— 没给 tint 时整层什么都不画，
-                    // 于是「只要不是 100% 就整条看不见」。
+                    // 毛玻璃这一层自己承担整条栏的「不透明 + 模糊」：
+                    //  · backgroundColor 给底色的实色，糊出来的内容不会在边缘泛透明；
+                    //  · alpha 是不透明度 —— 层内是「底色 + 糊过的内容」，整体按它淡出，
+                    //    透出来的是**下面真实的内容**，所以糊的部分始终占大头（看得出毛玻璃）。
+                    // 反过来把不透明度只交给外层 background（栏自己再铺一层 α 的底色）的话，
+                    // 糊出来的内容只剩 (1-α) 能透出来，79% 不透明度时基本看不出模糊。
+                    //
+                    // backgroundColor 必须给实色：haze 1.5.x 在真要画模糊又不给底色时直接抛
+                    // IllegalArgumentException（"backgroundColor not specified"）。
                     .then(
                         if (useHaze) {
                             Modifier.hazeEffect(pageHaze) {
                                 blurRadius = barStyle.blur.dp
                                 blurEnabled = true
                                 noiseFactor = 0.06f
-                                // haze 1.5.x 在真的要画模糊时要求给一个底色，不给直接抛
-                                // IllegalArgumentException（"backgroundColor not specified"）——
-                                // 「模糊开着又不透明度不满 100」必崩就是这么来的。底色由下面
-                                // 那层 background 自己画，这里给个透明色占位就行。
-                                backgroundColor = Color.Transparent
+                                backgroundColor = base
+                                // 出现动画也在这一层上做：整条是「渐显」而不是「啪」地跳出来
+                                alpha = barStyle.alpha * appear
                             }
                         } else Modifier
                     )
-                    .background(base.copy(alpha = base.alpha * barStyle.alpha * appear))
+                    // 不走毛玻璃时才自己铺底色（走的时候 haze 层已经铺过了，再铺就叠实了）
+                    .background(
+                        if (useHaze) Color.Transparent
+                        else base.copy(alpha = base.alpha * barStyle.alpha * appear)
+                    )
             ) {
                 Row(
                     Modifier
@@ -437,8 +444,10 @@ fun FloatingBar(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val hazeState = LocalHazeState.current
-    // 毛玻璃只用来糊下面的内容；栏本身的底色 / 透明度一律自己画，
-    // 否则 haze 在没有 tint 时整层透明，看起来就是「除了 100% 全透明」。
+    // 走毛玻璃时：这一层自己画「实色底色 + 糊过的内容」，整层再按不透明度淡出 ——
+    // 透出来的是下面真实的内容，糊的部分始终占大头，才看得出毛玻璃。
+    // 不走毛玻璃时（关掉模糊 / 100% 不透明）：只铺一层按不透明度算的底色。
+    // haze 1.5.x 画模糊必须给 backgroundColor，不给直接抛异常（"backgroundColor not specified"）。
     val hazeOn = style.usesHaze && hazeState != null && android.os.Build.VERSION.SDK_INT >= 31
     val base = MaterialTheme.colorScheme.surfaceContainerLow
     Column(
@@ -451,13 +460,14 @@ fun FloatingBar(
                         blurEnabled = true
                         // 深色主题里 blur 需要一点噪声，否则糊成一片
                         noiseFactor = 0.06f
-                        // 同上：haze 画模糊时要求 backgroundColor 已指定，否则抛异常。
-                        // 底色与透明度都由下面那层 background 自己画。
-                        backgroundColor = Color.Transparent
+                        backgroundColor = base
+                        alpha = style.alpha
                     }
                 } else Modifier
             )
-            .background(base.copy(alpha = base.alpha * style.alpha))
+            .background(
+                if (hazeOn) Color.Transparent else base.copy(alpha = base.alpha * style.alpha)
+            )
     ) {
         content()
     }
