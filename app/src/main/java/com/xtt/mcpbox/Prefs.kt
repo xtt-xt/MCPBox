@@ -95,6 +95,13 @@ class Prefs(context: Context) : SettingsSource {
         /** 顶栏的模糊半径（dp）0~40。 */
         const val KEY_TOP_BAR_BLUR = "top_bar_blur"
 
+        /** 底栏 / 顶栏要不要启用模糊（关掉时连 haze 那一层都不建）。 */
+        const val KEY_BAR_BLUR_ON = "bar_blur_on"
+        const val KEY_TOP_BAR_BLUR_ON = "top_bar_blur_on"
+
+        /** 首页「服务」组里要不要显示 SSH 那张快捷开关卡（服务本身照旧在权限 → SSH 服务里开关）。 */
+        const val KEY_SSH_HOME_SHORTCUT = "ssh_home_shortcut"
+
         /** 动态取色的种子从哪来：`wallpaper`（系统壁纸）/ `backdrop`（自定义背景）。 */
         const val KEY_SEED_SOURCE = "dynamic_seed_source"
         /** 从自定义背景里取出来的种子色（ARGB，0 = 还没取）。 */
@@ -417,6 +424,21 @@ class Prefs(context: Context) : SettingsSource {
     var topBarBlur: Int
         get() = getInt(KEY_TOP_BAR_BLUR, 0).coerceIn(0, 40)
         set(value) = putInt(KEY_TOP_BAR_BLUR, value.coerceIn(0, 40))
+
+    /** 底栏要不要启用模糊。关掉时不管半径多少都不走 haze（半径值留着，再打开还是原来那个）。 */
+    var barBlurOn: Boolean
+        get() = getBoolean(KEY_BAR_BLUR_ON, false)
+        set(value) = putBoolean(KEY_BAR_BLUR_ON, value)
+
+    /** 顶栏要不要启用模糊。 */
+    var topBarBlurOn: Boolean
+        get() = getBoolean(KEY_TOP_BAR_BLUR_ON, false)
+        set(value) = putBoolean(KEY_TOP_BAR_BLUR_ON, value)
+
+    /** 首页「服务」组里要不要显示 SSH 快捷开关卡（默认显示）。 */
+    var sshHomeShortcut: Boolean
+        get() = getBoolean(KEY_SSH_HOME_SHORTCUT, true)
+        set(value) = putBoolean(KEY_SSH_HOME_SHORTCUT, value)
 
     /** 桌面图标用哪一个（ui/AppIcon 的 id，默认 `line`）。 */
     var appIcon: String

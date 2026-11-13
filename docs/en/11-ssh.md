@@ -15,6 +15,7 @@ Permissions → **SSH service**:
 | Item | Meaning |
 |---|---|
 | Enable SSH service | Independent switch. Runs alongside the foreground service; works even when the MCP service is off |
+| Home shortcut | On by default. Shows the SSH card under Services on Home (shown even when the service is off — tap it to turn it on). Off: no entry on Home, toggle it only from this page |
 | Port | Default `8722` (`8723` for the test variant), editable |
 | Allow LAN access | Off by default, which binds `127.0.0.1` only — enough for clients on this phone. Turn on to bind `0.0.0.0` |
 | Address / host fingerprint | Tap to copy. The fingerprint is `SHA256:…`; compare it on first connect |

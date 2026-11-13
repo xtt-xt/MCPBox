@@ -15,7 +15,7 @@ android {
         applicationId = "com.xtt.mcpbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 152
+        versionCode = 153
         versionName = "1.4.0"
         resourceConfigurations.add("zh")
     }

@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
@@ -1098,69 +1099,111 @@ internal fun BarsSettingsPage(onBack: () -> Unit) {
     ) {
         GroupLabel(L("顶栏"))
         CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("不透明度"),
-                    subtitle = L("%s%%（100%% = 完全不透明）").format((TopBarLive.alpha * 100).roundToInt()),
-                    content = {
-                        Slider(
-                            value = TopBarLive.alpha * 100f,
-                            // 拖动时只改内存 → 顶栏实时跟着变；松手才落盘
-                            onValueChange = { TopBarLive.preview(alpha = it / 100f) },
-                            valueRange = 0f..100f,
-                            onValueChangeFinished = { TopBarLive.commit() }
-                        )
-                    }
-                ),
-                RowSpec(
-                    title = L("模糊"),
-                    subtitle = if (sdkOk) L("%s dp（0 = 不模糊；糊的是从顶栏下面划过的内容）").format(TopBarLive.blur.roundToInt())
-                    else L("需要 Android 12 及以上，当前系统只做半透明"),
-                    subtitleMaxLines = 2,
-                    content = {
-                        Slider(
-                            value = TopBarLive.blur,
-                            onValueChange = { TopBarLive.preview(blur = it) },
-                            valueRange = 0f..40f,
-                            enabled = sdkOk,
-                            onValueChangeFinished = { TopBarLive.commit() }
-                        )
+            buildList {
+                add(
+                    switchSpec(
+                        title = L("开启模糊"),
+                        subtitle = when {
+                            !sdkOk -> L("需要 Android 12 及以上，当前系统只做半透明")
+                            TopBarLive.blurOn -> L("从顶栏下面划过的内容会被糊掉")
+                            else -> L("关掉时只按不透明度变淡，不做模糊")
+                        },
+                        subtitleMaxLines = 2,
+                        checked = TopBarLive.blurOn
+                    ) { on ->
+                        // 第一次打开给一个能看出效果的半径，不然拖了开关什么都不变
+                        if (on && TopBarLive.blur <= 0.5f) TopBarLive.preview(blur = 20f)
+                        TopBarLive.setBlurEnabled(on)
                     }
                 )
-            )
+                add(
+                    RowSpec(
+                        title = L("不透明度"),
+                        subtitle = L("%s%%（100%% = 完全不透明）").format((TopBarLive.alpha * 100).roundToInt()),
+                        content = {
+                            Slider(
+                                value = TopBarLive.alpha * 100f,
+                                // 拖动时只改内存 → 顶栏实时跟着变；松手才落盘
+                                onValueChange = { TopBarLive.preview(alpha = it / 100f) },
+                                valueRange = 0f..100f,
+                                onValueChangeFinished = { TopBarLive.commit() }
+                            )
+                        }
+                    )
+                )
+                // 模糊开着才显示半径：和开关是同一件事，没必要关着还留一根没用的滑块
+                if (TopBarLive.blurOn) {
+                    add(
+                        RowSpec(
+                            title = L("模糊半径"),
+                            subtitle = L("%s dp（糊的是从顶栏下面划过的内容）").format(TopBarLive.blur.roundToInt()),
+                            subtitleMaxLines = 2,
+                            content = {
+                                Slider(
+                                    value = TopBarLive.blur,
+                                    onValueChange = { TopBarLive.preview(blur = it) },
+                                    valueRange = 0f..40f,
+                                    enabled = sdkOk,
+                                    onValueChangeFinished = { TopBarLive.commit() }
+                                )
+                            }
+                        )
+                    )
+                }
+            }
         )
 
         GroupLabel(L("底栏"))
         CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("不透明度"),
-                    subtitle = L("%s%%（100%% = 完全不透明）").format((BarLive.alpha * 100).roundToInt()),
-                    content = {
-                        Slider(
-                            value = BarLive.alpha * 100f,
-                            onValueChange = { BarLive.preview(alpha = it / 100f) },
-                            valueRange = 0f..100f,
-                            onValueChangeFinished = { BarLive.commit() }
-                        )
-                    }
-                ),
-                RowSpec(
-                    title = L("模糊"),
-                    subtitle = if (sdkOk) L("%s dp（0 = 不模糊；糊的是从底栏下面划过的内容）").format(BarLive.blur.roundToInt())
-                    else L("需要 Android 12 及以上，当前系统只做半透明"),
-                    subtitleMaxLines = 2,
-                    content = {
-                        Slider(
-                            value = BarLive.blur,
-                            onValueChange = { BarLive.preview(blur = it) },
-                            valueRange = 0f..40f,
-                            enabled = sdkOk,
-                            onValueChangeFinished = { BarLive.commit() }
-                        )
+            buildList {
+                add(
+                    switchSpec(
+                        title = L("开启模糊"),
+                        subtitle = when {
+                            !sdkOk -> L("需要 Android 12 及以上，当前系统只做半透明")
+                            BarLive.blurOn -> L("从底栏下面划过的内容会被糊掉")
+                            else -> L("关掉时只按不透明度变淡，不做模糊")
+                        },
+                        subtitleMaxLines = 2,
+                        checked = BarLive.blurOn
+                    ) { on ->
+                        if (on && BarLive.blur <= 0.5f) BarLive.preview(blur = 20f)
+                        BarLive.setBlurEnabled(on)
                     }
                 )
-            )
+                add(
+                    RowSpec(
+                        title = L("不透明度"),
+                        subtitle = L("%s%%（100%% = 完全不透明）").format((BarLive.alpha * 100).roundToInt()),
+                        content = {
+                            Slider(
+                                value = BarLive.alpha * 100f,
+                                onValueChange = { BarLive.preview(alpha = it / 100f) },
+                                valueRange = 0f..100f,
+                                onValueChangeFinished = { BarLive.commit() }
+                            )
+                        }
+                    )
+                )
+                if (BarLive.blurOn) {
+                    add(
+                        RowSpec(
+                            title = L("模糊半径"),
+                            subtitle = L("%s dp（糊的是从底栏下面划过的内容）").format(BarLive.blur.roundToInt()),
+                            subtitleMaxLines = 2,
+                            content = {
+                                Slider(
+                                    value = BarLive.blur,
+                                    onValueChange = { BarLive.preview(blur = it) },
+                                    valueRange = 0f..40f,
+                                    enabled = sdkOk,
+                                    onValueChangeFinished = { BarLive.commit() }
+                                )
+                            }
+                        )
+                    )
+                }
+            }
         )
     }
 }
@@ -1467,6 +1510,7 @@ internal fun SshSettingsPage(
     val shellEnabled = remember(revision) { config.sshShellEnabled }
     val port = remember(revision) { config.sshPort }
     val bindAll = remember(revision) { config.sshBindAll }
+    val homeShortcut = remember(revision) { AppCore.prefs.sshHomeShortcut }
 
     var showPort by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
@@ -1494,6 +1538,19 @@ internal fun SshSettingsPage(
                     checked = enabled
                 ) { on ->
                     com.xtt.mcpbox.server.McpService.setSshEnabled(ctx, on)
+                    onChanged()
+                },
+                // 首页那张卡的「露不露出来」由这里管：关着也照样能在首页看到并直接打开，
+                // 只有这里关掉之后首页才不留入口（改从这里进）。
+                switchSpec(
+                    title = L("主页显示快捷开关"),
+                    subtitle = if (homeShortcut) L("首页「服务」里显示这张卡，从首页也能开关")
+                    else L("首页不显示，只能从这里开关"),
+                    subtitleMaxLines = 2,
+                    icon = Icons.Filled.Home,
+                    checked = homeShortcut
+                ) { on ->
+                    AppCore.prefs.sshHomeShortcut = on
                     onChanged()
                 },
                 RowSpec(

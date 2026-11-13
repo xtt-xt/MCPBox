@@ -507,9 +507,9 @@ fun AppRoot(
     // 切语言 / 主题时只重建内容，导航状态（tab / 两个页面栈）留在外面
     androidx.compose.runtime.key(langRev) {
     // 底栏样式：滑块拖动时改的是 BarLive（实时预览），松手才落盘
-    val barStyle = BarStyle(BarLive.alpha, BarLive.blur)
+    val barStyle = BarStyle(BarLive.alpha, BarLive.blur, BarLive.blurOn)
     // 顶栏（滚上去之后那条矮栏）自己一套样式，和底栏互不影响
-    val topBarStyle = BarStyle(TopBarLive.alpha, TopBarLive.blur)
+    val topBarStyle = BarStyle(TopBarLive.alpha, TopBarLive.blur, TopBarLive.blurOn)
     // 毛玻璃要抓「底栏下面那一层」的画，所以内容层挂 hazeSource、底栏挂 hazeEffect。
     // 全不透明又不模糊时不挂 —— 省掉一次离屏绘制，和原来的纯色底完全一样。
     val hazeState = remember { dev.chrisbanes.haze.HazeState() }
@@ -576,6 +576,7 @@ fun AppRoot(
                     // SSH 卡片：开关和「权限 → SSH 服务」页里那个是同一个值（ssh_enabled），
                     // 两边都能改，改完互相看得见
                     sshEnabled = AppCore.config.sshEnabled,
+                    sshHomeShortcut = AppCore.prefs.sshHomeShortcut,
                     sshRunning = AppCore.ssh.isRunning,
                     sshPort = AppCore.config.sshPort,
                     onToggleSsh = { on -> McpService.setSshEnabled(ctx, on); revision++ },

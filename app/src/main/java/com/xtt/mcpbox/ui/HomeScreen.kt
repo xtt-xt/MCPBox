@@ -68,6 +68,8 @@ fun HomeScreen(
     onRestartService: () -> Unit,
     /** SSH 服务的开关状态：和「权限 → SSH 服务」页里那个是同一个值。 */
     sshEnabled: Boolean,
+    /** 首页要不要显示这张 SSH 卡（权限 → SSH 服务 → 主页显示快捷开关）。 */
+    sshHomeShortcut: Boolean,
     sshRunning: Boolean,
     sshPort: Int,
     onToggleSsh: (Boolean) -> Unit,
@@ -124,16 +126,19 @@ fun HomeScreen(
                 }
                 // SSH 和 MCP 挨在**同一组**里：两张卡连成一体（首尾圆角、中间直角），
                 // 一看就是「同一台设备上的两个服务」。点整行 = 开关，和上面那张卡一致。
-                // 关掉之后这里**整张卡都不显示**（开回来只能走 权限 → 远程访问 → SSH 服务）：
-                // 关着还留一个开关，等于凭空多一个「没在用的服务」。
-                if (sshEnabled) {
+                // 首页露不露这张卡只看「主页显示快捷开关」（权限 → 远程访问 → SSH 服务 里那个）：
+                // 服务关着也照样显示，点一下就能开回来。
+                if (sshHomeShortcut) {
                     add(
                         RowSpec(
                             title = L("SSH 服务"),
-                            subtitle = if (sshRunning) L("正在监听 · 端口 %s").format(sshPort)
-                            else L("已开启，但没在监听 · 端口 %s").format(sshPort),
+                            subtitle = when {
+                                sshRunning -> L("正在监听 · 端口 %s").format(sshPort)
+                                sshEnabled -> L("已开启，但没在监听 · 端口 %s").format(sshPort)
+                                else -> L("已关闭 · 端口 %s").format(sshPort)
+                            },
                             icon = Icons.Filled.Person,
-                            onClick = { onToggleSsh(false) },
+                            onClick = { onToggleSsh(!sshEnabled) },
                             trailing = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     StatusDot(
@@ -142,7 +147,7 @@ fun HomeScreen(
                                         9
                                     )
                                     Spacer(Modifier.width(12.dp))
-                                    AppSwitch(true) { onToggleSsh(it) }
+                                    AppSwitch(sshEnabled) { onToggleSsh(it) }
                                 }
                             }
                         )

@@ -374,6 +374,11 @@ fun PageScaffold(
                                 blurRadius = barStyle.blur.dp
                                 blurEnabled = true
                                 noiseFactor = 0.06f
+                                // haze 1.5.x 在真的要画模糊时要求给一个底色，不给直接抛
+                                // IllegalArgumentException（"backgroundColor not specified"）——
+                                // 「模糊开着又不透明度不满 100」必崩就是这么来的。底色由下面
+                                // 那层 background 自己画，这里给个透明色占位就行。
+                                backgroundColor = Color.Transparent
                             }
                         } else Modifier
                     )
@@ -384,7 +389,8 @@ fun PageScaffold(
                         .fillMaxWidth()
                         // 内容避开状态栏；上面的底色已经铺到屏幕最顶
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .height(46.dp)
+                        // 46 → 54：标题下面再留 8dp，字幕压得太紧
+                        .height(54.dp)
                         .padding(start = 14.dp, end = 14.dp)
                         .alpha(appear),
                     verticalAlignment = Alignment.CenterVertically
@@ -445,6 +451,9 @@ fun FloatingBar(
                         blurEnabled = true
                         // 深色主题里 blur 需要一点噪声，否则糊成一片
                         noiseFactor = 0.06f
+                        // 同上：haze 画模糊时要求 backgroundColor 已指定，否则抛异常。
+                        // 底色与透明度都由下面那层 background 自己画。
+                        backgroundColor = Color.Transparent
                     }
                 } else Modifier
             )

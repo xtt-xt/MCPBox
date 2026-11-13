@@ -6,6 +6,7 @@ package com.xtt.mcpbox.ui
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.xtt.mcpbox.AppCore
 
@@ -19,15 +20,18 @@ data class BarStyle(
     /** 不透明度 0f~1f（1 = 原来的不透明底栏）。 */
     val alpha: Float = 1f,
     /** 模糊半径（dp），0 = 不模糊。 */
-    val blur: Float = 0f
+    val blur: Float = 0f,
+    /** 模糊开关：关掉时不管半径多少都不走 haze。 */
+    val blurOn: Boolean = false
 ) {
     /**
      * 要不要走毛玻璃这一层。
      *
-     * **只看模糊**：半透明不用离屏绘制，底色直接乘上 alpha 画就行；
-     * 反过来开了模糊又不透明时，糊出来的东西被底色完全盖住，纯属白算一遍。
+     * **只看开关**：不透明度和模糊是可以同时调的 —— 糊一层在下面（haze），
+     * 底色和透明度自己画在上面，两边各管各的。100% 不透明时糊出来的东西被
+     * 底色完全盖住，多算一遍没意义，所以那种情况也不走 haze。
      */
-    val usesHaze: Boolean get() = blur > 0.5f && alpha < 0.999f
+    val usesHaze: Boolean get() = blurOn && blur > 0.5f && alpha < 0.999f
 
     companion object {
         val Opaque = BarStyle()
@@ -46,11 +50,14 @@ object BarLive {
         private set
     var blur by mutableFloatStateOf(0f)
         private set
+    var blurOn by mutableStateOf(false)
+        private set
 
     /** 从 Prefs 读一遍（App 启动 / 恢复备份后调）。 */
     fun reload() {
         alpha = AppCore.prefs.barAlpha / 100f
         blur = AppCore.prefs.barBlur.toFloat()
+        blurOn = AppCore.prefs.barBlurOn
     }
 
     /** 实时预览用：只改内存，不落盘。 */
@@ -59,16 +66,24 @@ object BarLive {
         blur?.let { this.blur = it.coerceIn(0f, 40f) }
     }
 
+    /** 开关：落盘并同步内存。 */
+    fun setBlurEnabled(on: Boolean) {
+        blurOn = on
+        commit()
+    }
+
     /** 落盘并同步内存。 */
     fun commit() {
         AppCore.prefs.barAlpha = (alpha * 100).toInt()
         AppCore.prefs.barBlur = blur.toInt()
+        AppCore.prefs.barBlurOn = blurOn
         reload()
     }
 
     fun reset() {
         alpha = 1f
         blur = 0f
+        blurOn = false
     }
 }
 
@@ -103,10 +118,13 @@ object TopBarLive {
         private set
     var blur by mutableFloatStateOf(0f)
         private set
+    var blurOn by mutableStateOf(false)
+        private set
 
     fun reload() {
         alpha = AppCore.prefs.topBarAlpha / 100f
         blur = AppCore.prefs.topBarBlur.toFloat()
+        blurOn = AppCore.prefs.topBarBlurOn
     }
 
     /** 实时预览：只改内存，不落盘。 */
@@ -115,15 +133,23 @@ object TopBarLive {
         blur?.let { this.blur = it.coerceIn(0f, 40f) }
     }
 
+    /** 开关：落盘并同步内存。 */
+    fun setBlurEnabled(on: Boolean) {
+        blurOn = on
+        commit()
+    }
+
     fun commit() {
         AppCore.prefs.topBarAlpha = (alpha * 100).toInt()
         AppCore.prefs.topBarBlur = blur.toInt()
+        AppCore.prefs.topBarBlurOn = blurOn
         reload()
     }
 
     fun reset() {
         alpha = 1f
         blur = 0f
+        blurOn = false
     }
 }
 
