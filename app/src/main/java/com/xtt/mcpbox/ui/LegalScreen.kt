@@ -56,10 +56,13 @@ private val LegalCardCorner = 24.dp
 object Legal {
 
     /** 当前条款版本。改了正文就要改它。 */
-    const val VERSION = "v2"
+    const val VERSION = "v3"
 
-    /** 展示用的发布日期。 */
+    /** 生效日期：条款第一次生效的那天，不随修改变化。 */
     const val DATE = "2026-10-24"
+
+    /** 修改日期：正文最近一次改动的那天。 */
+    const val MODIFIED = "2026-11-14"
 
     /**
      * 每个版本的变更说明。弹窗里逐条列给用户看。
@@ -72,6 +75,11 @@ object Legal {
         "v2" to listOf(
             "《免责声明》更名为《隐私政策》，正文改写为数据与权限说明",
             "原免责声明中的风险与责任条款并入《用户协议》"
+        ),
+        "v3" to listOf(
+            "《隐私政策》补充定位权限说明：只在请求时取一次、缓存在内存、不留轨迹",
+            "《用户协议》的权限与数据两节补充定位相关约定",
+            "两份文档标注生效日期与修改日期"
         )
     )
 
@@ -199,7 +207,7 @@ fun LegalNoticePage(
                             modifier = Modifier.width(14.dp)
                         )
                         Text(
-                            line,
+                            L(line),
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 14.sp,
                             lineHeight = 21.sp

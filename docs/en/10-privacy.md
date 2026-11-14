@@ -1,5 +1,5 @@
 # MCP File Box Privacy Policy
-Version v2 | Effective date: October 24, 2026
+Version v3 | Effective date: October 24, 2026 | Last modified: November 14, 2026
 
 ## 1. General
 1.1 This policy explains what data MCP File Box ("the App") touches, where it is stored, and when it leaves your device. It forms part of the Terms of Use.
@@ -8,7 +8,7 @@ Version v2 | Effective date: October 24, 2026
 ## 2. What Is Not Collected
 2.1 Device identifiers (IMEI, Android ID, serial number, advertising ID) are not collected.
 2.2 Your file contents, directory structure and file name lists are not collected, and are not uploaded anywhere.
-2.3 Location, contacts, SMS, call logs, photo library contents and the list of installed apps are not collected.
+2.3 Contacts, SMS, call logs, photo library contents and the list of installed apps are not collected. See 4.5 for location: it is used per request only, and no location history is kept.
 2.4 The App contains no telemetry, crash reporting, advertising, promotion or behavioral tracking components. There is no third-party analytics SDK.
 
 ## 3. Where Data Lives
@@ -20,16 +20,17 @@ Everything the App produces is written to its **private app directory** on this 
 3.4 Usage statistics (daily request counts, uptime, launch count) — `stats/stats.json`.
 3.5 Custom backdrop — a copy of the image or video you picked, inside the private directory.
 3.6 Custom tools and custom icons — likewise inside the private directory.
+3.7 Location cache — the most recent fix lives in memory only (reused within 60 seconds) and disappears when the app process ends. Nothing is written to disk and no location history is kept.
 
 Unless you export or back up explicitly, none of this is sent off the device by the App.
 
 ## 4. Why Each Permission Is Used
-4.1 **File access** (all-files access / storage permission): to read and write files in device storage as you authorize, and for the MCP file channel. You can restrict it to specific folders on the permissions page (one root folder is open by default).
+4.1 **File access** (all-files access / storage permission): to read and write files in device storage as you authorize, and for the MCP file channel. You can restrict it to the app-private directory or specific folders on the permissions page.
 4.2 **Display over other apps**: for approval prompts, and for the built-in browser's floating ball and page panel. Without it, approvals fall back to notifications.
 4.3 **Notifications**: for approval alerts and foreground service status. Notification text contains only an operation summary (tool name, path), never file contents.
 4.4 **Ignore battery optimization / start on boot / wake lock**: to keep the service running in the background and resume listening after a reboot.
-4.5 **Location**: a fix (latitude/longitude, accuracy, altitude) is taken only when you or the AI calls the "get location" tool **and** you approve it in the approval dialog. No continuous tracking, nothing in the background, nothing uploaded anywhere — the coordinates go only to the AI client that asked for them.
-4.6 **Root / Shizuku**: used for running commands and UI automation only after you grant it. Whether and how much you grant is up to you, and you can revoke it at any time.
+4.5 **Location** (precise / approximate): used only by the "get location" tool. A fix is obtained in three cases: one is taken and cached when you open or return to the app; the AI tool reads that cache first; when the cache is stale, the system's last known fix is read instead. If none is available the tool returns an error. No continuous tracking, nothing in the background; the coordinates go only to the AI client that asked, and are never uploaded to any server. The permission can be limited to "while in use" and revoked at any time in system settings.
+4.6 **Root / Shizuku**: used for running commands and UI automation only after you grant it; when the location cache is stale, the location tool also uses it to read the system's last known fix. Whether and how much you grant is up to you, and you can revoke it at any time.
 4.7 All of the above must be granted by you; the App does not bypass system dialogs to obtain them.
 
 ## 5. Network Access

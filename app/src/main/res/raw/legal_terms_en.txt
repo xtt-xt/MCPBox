@@ -1,5 +1,5 @@
 # MCP File Box Terms of Use
-Version v2 | Effective date: October 24, 2026
+Version v3 | Effective date: October 24, 2026 | Last modified: November 14, 2026
 
 ## 1. Acceptance and Scope
 1.1 These terms are an agreement between you and the developer of MCP File Box ("the App") regarding your use of the App and its documentation.
@@ -12,7 +12,7 @@ Version v2 | Effective date: October 24, 2026
 2.3 The App is released as open source under GPL-3.0. The source code is public and you may review, build and modify it yourself.
 
 ## 3. Your Authorization and Confirmations
-3.1 System permissions the App needs (file access, overlays, notifications, battery optimization, Root, Shizuku, etc.) must be granted by you, and you may revoke them in system settings at any time.
+3.1 System permissions the App needs (file access, overlays, notifications, battery optimization, location, Root, Shizuku, etc.) must be granted by you, and you may revoke them in system settings at any time.
 3.2 For sensitive operations such as writing, deleting or running commands, the App shows an approval prompt. Tapping "Allow" authorizes that single operation; tapping "Always allow" grants long-term authorization for that kind of operation and creates a corresponding rule.
 3.3 Decisions you make in approval prompts, and the results of the operations they authorize, are your own responsibility.
 3.4 After being authorized, an AI client may perform many operations in sequence. Their consequences are likewise your responsibility; check each request before approving it.
@@ -26,7 +26,8 @@ Version v2 | Effective date: October 24, 2026
 5.1 The App does not collect or upload your file contents, directory structure, device identifiers, usage records or any other personal information.
 5.2 The App contains no telemetry, crash reporting, advertising or tracking components.
 5.3 Settings, sessions, the memory store and statistics are stored only in the App's private directory on your device. Request statistics are generated and displayed locally and are never sent to any server.
-5.4 The exact scope of data handling, and its exceptions, is described in the Privacy Policy.
+5.4 Location is used only on demand when the "get location" tool is called, and no location history is kept; see section 4.5 of the Privacy Policy.
+5.5 The exact scope of data handling, and its exceptions, is described in the Privacy Policy.
 
 ## 6. Open Source License and Third-Party Components
 6.1 The App is released under GPL-3.0. You may use, copy, modify and distribute it within the terms of that license.

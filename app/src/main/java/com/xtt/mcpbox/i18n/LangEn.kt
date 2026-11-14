@@ -2561,6 +2561,12 @@ object LangEn {
     "本版变更" to "What changed",
     "全文" to "Full text",
     "这一版只是同步了条款版本号" to "This version only bumped the terms version",
+    "本应用新增用户协议与免责声明" to "The app now ships a Terms of Use and a disclaimer",
+    "《免责声明》更名为《隐私政策》，正文改写为数据与权限说明" to "The disclaimer became the Privacy Policy, rewritten around data and permissions",
+    "原免责声明中的风险与责任条款并入《用户协议》" to "Risk and liability clauses from the old disclaimer moved into the Terms of Use",
+    "《隐私政策》补充定位权限说明：只在请求时取一次、缓存在内存、不留轨迹" to "Privacy Policy: location is requested once, cached in memory, no history kept",
+    "《用户协议》的权限与数据两节补充定位相关约定" to "Terms of Use: the permissions and data sections now cover location",
+    "两份文档标注生效日期与修改日期" to "Both documents now show an effective date and a last-modified date",
     "版本 %s" to "Version %s",
     "立刻重走一遍六步引导，并清掉「已经走过」的记录（下次打开也会进）" to "Run the six-step onboarding again right away and clear the \"already done\" flag (it will also show on next launch)",
     // ---- 命令规则编辑 / 自适应色阶 / 从背景取色（2026-10-23）
