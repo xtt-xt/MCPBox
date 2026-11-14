@@ -79,7 +79,7 @@ import com.xtt.mcpbox.core.Rule
  * ```
  * ""                 首页（预设 + 5 个入口 + 全局限制）
  * perm               工具权限（工具包 / 单个工具覆盖）
- * perm/custom        自定义权限（9 个开关，按 文件 / 系统 / 网络 分组）
+ * perm/custom        自定义权限（逐个开关，按 文件 / 系统 / 网络 分组）
  * files              文件范围（目录 / 路径规则 / 私有目录）
  * files/rules        路径规则列表
  * shell              命令与执行（身份 / 规则 / 超时）
@@ -376,13 +376,13 @@ private fun PermissionHomePage(
                         }
                     )
                 )
-                // 预设为「自定义」时，9 个单项开关的入口就放在这里：换预设 = 换这套开关，
+                // 预设为「自定义」时，单项开关的入口就放在这里：换预设 = 换这套开关，
                 // 两者是同一件事，中间不隔别的卡片。固定的预设不需要入口（开关本来就被锁住）。
                 if (!preset.locked) {
                     add(
                         RowSpec(
                             title = L("自定义权限"),
-                            subtitle = L("9 个全局开关：%s").format(summaryOf(switches)),
+                            subtitle = L("%s 个全局开关：%s").format(PermKey.entries.size, summaryOf(switches)),
                             subtitleMaxLines = 1,
                             icon = Icons.Filled.Edit,
                             onClick = { onPage("perm/custom") }
@@ -554,6 +554,7 @@ internal fun permIcon(key: PermKey): ImageVector = when (key) {
     PermKey.BROWSER -> Icons.Filled.Search
     PermKey.TOOLS -> Icons.Filled.Refresh
     PermKey.SYSTEM -> Icons.Filled.Info
+    PermKey.LOCATION -> Icons.Filled.Place
     PermKey.MEMORY -> Icons.Filled.Star
 }
 

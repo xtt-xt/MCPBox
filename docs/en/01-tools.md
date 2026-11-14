@@ -2,7 +2,7 @@
 
 [← Back to README](../../README.en.md) ｜ [中文](../01-工具清单.md)
 
-MCPBox registers **72 MCP tools**. They are grouped into **tool packs** (see [03 Packs & sessions](03-packs-and-sessions.md)):
+MCPBox registers **74 MCP tools**. They are grouped into **tool packs** (see [03 Packs & sessions](03-packs-and-sessions.md)):
 `tools/list` only returns the tools of the core pack plus the active packs, but `tools/call` is **not filtered by packs** — calling a tool by name is allowed (it still goes through the permission matrix).
 
 The "Permission key" column is the switch a tool uses (see [02 Permissions](02-permissions.md)); that key's default decides whether an approval pops up.
@@ -118,6 +118,25 @@ Pages run in the app's own WebView; the login state is isolated from your system
 | `browser_storage` | `browser.control` | Manage login state and identity **per page**: read / set cookies, clear one site's cookies, clear cache, get / set UA |
 | `browser_engines` | `browser.control` | List / add / remove search engines (your own ones are saved in settings) |
 | `browser_download` | `fs.write` | Download an http(s) link straight to the phone (image / PDF / zip / text), without the browser |
+
+## location · Location (2, off by default)
+
+Takes **one fix** only: no continuous tracking, nothing in the background, and no background
+location permission needed. The `location` key defaults to **ask** — every fix needs a tap on the phone.
+
+| Tool | Permission key | What it does |
+|---|---|---|
+| `get_location` | `location` | One fix: latitude/longitude, accuracy, altitude, speed, bearing, provider (GPS / network / passive), fix time, mock flag. Configurable timeout and GPS preference |
+| `location_status` | `system.info` | Whether location works at all: permission granted, precise or not, GPS and network providers on/off, hardware present. **Reads no coordinates**, so it needs no location permission |
+
+> Coordinates are raw WGS-84; maps in mainland China render them shifted. Turning coordinates into
+> a street address needs a third-party service over the network — this tool does not do it.
+
+**Whether a live fix is possible**: Android only delivers locations while the app has a visible UI
+when the permission is "while using the app". So the app grabs one position each time it comes to
+the foreground (at most once per 60 s), and the tool prefers that copy. If the app has been in the
+background and the cached copy has gone stale, it falls back to the system's last known location
+(Root / Shizuku required) and says so in the output, including how old it is.
 
 ## my.tools · My tools (dynamic, off by default)
 

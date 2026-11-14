@@ -4,7 +4,7 @@
 
 ## Why tool packs
 
-Tool definitions are re-sent to the model on **every request**. With all 72 tools enabled, a `tools/list` body is roughly **34k characters** (at ~4 characters per token, about 8500 tokens); twenty turns means 170k characters — and most turns need only a handful of tools.
+Tool definitions are re-sent to the model on **every request**. With all 74 tools enabled, a `tools/list` body is roughly **34k characters** (at ~4 characters per token, about 8500 tokens); twenty turns means 170k characters — and most turns need only a handful of tools.
 
 So tools are split into packs, and `tools/list` returns only the **core pack plus the active packs**:
 
@@ -17,6 +17,7 @@ So tools are split into packs, and `tools/list` returns only the **core pack plu
 | `shell` Commands & custom tools | 8 | off |
 | `ui` UI automation | 8 | off |
 | `browser` Built-in browser | 18 | off |
+| `location` Location | 2 | off |
 | `my.tools` My tools | dynamic (follows custom tools) | off |
 
 **Out of the box the AI sees 22 tools** (measured: that configuration produces a ~9.6k character `tools/list` body) — about 30% of the full set, i.e. **roughly 70% fewer tokens** than sending everything.

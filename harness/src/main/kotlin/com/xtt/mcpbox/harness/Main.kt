@@ -991,7 +991,7 @@ fun main() {
 
         println("\n[36] 工具包：模型与存储")
         val ps = PackStore(settings)
-        check("内置包有 7 个", BuiltinPacks.ALL.size == 7)
+        check("内置包有 8 个", BuiltinPacks.ALL.size == 8, "实际 ${BuiltinPacks.ALL.size} 个")
         check("UI 自动化包存在且默认关", BuiltinPacks.UI.id == "ui" && !BuiltinPacks.UI.defaultActive &&
             BuiltinPacks.UI.tools.size == 8)
         check("浏览器包存在且默认关", BuiltinPacks.BROWSER.id == "browser" &&
@@ -2842,6 +2842,156 @@ fun main() {
         }
     }
 
+    println("\n[56] 位置工具包（一次性取位置）")
+    run {
+        // 单独起一台服务器，只为了给它一个「会返回定位」的假手机：
+        // 主服务器那台 host=null，是故意用来测「没有设备信息源」的分支的。
+        val settings2 = MemorySettings()
+        settings2.putInt(Config.Keys.PORT, 18730)
+        settings2.putString(Config.Keys.TOKEN, "loctoken")
+        settings2.putBoolean(Config.Keys.TOKEN_ENABLED, true)
+        settings2.putString(Config.Keys.ROOTS, root.absolutePath)
+        settings2.putLong(Config.Keys.APPROVAL_TIMEOUT, 5000)
+
+        val cfg2 = Config(settings2)
+        val perms2 = PermissionStore(cfg2, settings2)
+        val appr2 = ApprovalCenter(cfg2, perms2, EventLog())
+        // 位置权限出厂是「询问」→ 这里替手机主人一律点「允许」
+        appr2.headlessResolver = { ApprovalDecision.ALLOW_ONCE }
+
+        val fake = FakeLocationHost()
+        val srv2 = McpServer(
+            config = cfg2,
+            customTools = CustomToolStore(cfg2, settings2),
+            permissions = perms2,
+            approval = appr2,
+            log = EventLog(),
+            host = fake,
+            packs = PackStore(settings2),
+            profiles = ProfileStore(null, cfg2)
+        )
+        srv2.profiles.setActive(ProfileStore.DEFAULT_ID, BuiltinPacks.ALL.map { it.id })
+        check("位置：服务器起得来", srv2.start(), srv2.lastError ?: "")
+        val b2 = "http://127.0.0.1:18730"
+        val a2 = mapOf("Authorization" to "Bearer loctoken")
+
+        fun rpc(name: String, args: String): Pair<Boolean, String> {
+            val r = http(
+                "POST", "$b2/mcp",
+                """{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"$name","arguments":$args}}""",
+                a2
+            )
+            if (r.code != 200) return false to "HTTP ${r.code} ${r.body}"
+            val o = J.parseToJsonElement(r.body).jsonObject
+            o["error"]?.let { return false to "rpc error: $it" }
+            val res = o["result"]!!.jsonObject
+            val txt = res["content"]!!.jsonArray
+                .mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.content }
+                .joinToString("\n")
+            return (res["isError"]?.jsonPrimitive?.content != "true") to txt
+        }
+
+        // 模型这一侧：包是内置的、出厂不激活、两个工具都在
+        val loc = BuiltinPacks.byId("location")
+        check("位置：内置包存在且出厂不激活", loc != null && !loc.defaultActive, loc?.id ?: "null")
+        check(
+            "位置：包里正好是 get_location / location_status",
+            loc!!.tools.toSet() == setOf("get_location", "location_status"),
+            loc.tools.toString()
+        )
+        val names2 = srv2.tools.map { it.name }.toSet()
+        check("位置：两个工具都注册进注册表了", names2.containsAll(setOf("get_location", "location_status")))
+        check(
+            "位置：权限出厂是「询问」（每次取位置都要点同意）",
+            PermKey.LOCATION.default == PermAction.ASK
+        )
+        check(
+            "位置：get_location 走 location 权限键",
+            srv2.tools.first { it.name == "get_location" }.perm == PermKey.LOCATION,
+            srv2.tools.first { it.name == "get_location" }.perm.id
+        )
+
+        // 没授权：直接报错（真机上这时透明 Activity 会弹系统申请框；harness 里没有 Activity）
+        fake.granted = false
+        val (stOk, stText) = rpc("location_status", "{}")
+        check("定位状态：没授权时能返回", stOk, stText)
+        check("定位状态：写明没授权", stText.contains("否") && stText.contains("权限"), stText.take(400))
+        val (noPermOk, noPermText) = rpc("get_location", "{}")
+        check("取位置：没授权时失败", !noPermOk, noPermText.take(300))
+        check(
+            "取位置：失败里说清「权限还没给」和兜底的设置路径",
+            noPermText.contains("定位权限") && noPermText.contains("系统设置"),
+            noPermText.take(300)
+        )
+        // 现在由 Android 层的透明 Activity 负责「弹权限框 + 取位置」，
+        // 所以 mock 会被调用，但它因为没授权照样返回 null。
+        check("取位置：没授权时取不到坐标", fake.lastFixWaitMs != null, "mock 没被调用")
+
+        // 授权了但一直拿不到点：报错要指向「没信号」那一套建议
+        fake.granted = true
+        fake.servicesOn = true
+        fake.fix = null
+        val (noFixOk, noFixText) = rpc("get_location", """{"timeout_ms":2000}""")
+        check("取位置：拿不到点时报错", !noFixOk, noFixText.take(300))
+        check(
+            "取位置：报错区分「没权限」和「没信号」",
+            noFixText.contains("timeout_ms") && !noFixText.contains("定位权限还没给"),
+            noFixText.take(300)
+        )
+        fake.fix = LocationFix(
+            latitude = 31.230416, longitude = 121.473701, accuracy = 12f,
+            timeMs = System.currentTimeMillis() - 3_000, provider = "network"
+        )
+
+        // 授权了但系统定位关着：也是直接说清楚
+        fake.granted = true
+        fake.servicesOn = false
+        val (offOk, offText) = rpc("get_location", "{}")
+        check("取位置：系统定位关着时报错", !offOk, offText.take(300))
+        check("取位置：提示去打开位置信息", offText.contains("位置信息") || offText.contains("定位"), offText.take(300))
+
+        // 正常取到位置
+        fake.servicesOn = true
+        fake.mock = false
+        val (ok, text) = rpc("get_location", """{"timeout_ms":3000,"high_accuracy":false}""")
+        check("取位置：能拿到坐标", ok, text.take(400))
+        check("取位置：报告经纬度", text.contains("31.230416") || text.contains("31.2304"), text.take(400))
+        check("取位置：报告精度", text.contains("精度"), text.take(400))
+        check("取位置：报告定位方式（网络定位）", text.contains("网络定位"), text.take(400))
+        check("取位置：报告定位时间", text.contains("定位时间"), text.take(400))
+        check("取位置：新鲜的位置不写「不是实时」", !text.contains("不是刚取的实时位置"), text.take(400))
+        check("取位置：参数穿过来了（high_accuracy=false）", fake.lastHighAccuracy == false)
+
+        // 很旧的缓存（后台只能读到最后已知位置）：文案要说清「不是实时」
+        fake.fix = LocationFix(
+            latitude = 31.230416, longitude = 121.473701, accuracy = 45f,
+            timeMs = System.currentTimeMillis() - 7 * 60_000, provider = "network"
+        )
+        val (oldOk, oldText) = rpc("get_location", """{"timeout_ms":2000}""")
+        check("取位置：很旧的缓存也能返回", oldOk, oldText.take(400))
+        check("取位置：旧缓存要说清不是实时位置", oldText.contains("不是刚取的实时位置"), oldText.take(500))
+        check("取位置：旧缓存用「分钟」表述", oldText.contains("分钟"), oldText.take(500))
+
+        // GPS + 模拟位置
+        fake.mock = true
+        fake.fix = LocationFix(
+            latitude = 31.230416, longitude = 121.473701, accuracy = 12f,
+            timeMs = System.currentTimeMillis() - 3_000, provider = "network"
+        )
+        val (gpsOk, gpsText) = rpc("get_location", """{"timeout_ms":2000}""")
+        check("取位置：默认走高精度", gpsOk && fake.lastHighAccuracy == true, gpsText.take(200))
+        check("取位置：GPS 来源写清楚", gpsText.contains("GPS"), gpsText.take(400))
+        check("取位置：模拟位置有提醒", gpsText.contains("模拟位置"), gpsText.take(400))
+
+        // 拿不到定位：报错里要有排查建议
+        fake.fix = null
+        val (noneOk, noneText) = rpc("get_location", """{"timeout_ms":1000}""")
+        check("取位置：拿不到时报错", !noneOk, noneText.take(300))
+        check("取位置：报错里给排查建议", noneText.contains("timeout_ms") || noneText.contains("GPS"), noneText.take(300))
+
+        srv2.stop()
+    }
+
     println("\n====================================")
     println("通过 $passed 项，失败 $failed 项")
     println("====================================")
@@ -3070,5 +3220,55 @@ private class FakeBrowser : BrowserBridge {
         }
         // WebView 的 evaluateJavascript 会把返回值再 JSON 编码一次，text / html 这类纯字符串也一样
         return kotlinx.serialization.json.JsonPrimitive(payload).toString()
+    }
+}
+
+/**
+ * 假手机：只实现定位相关的两条。
+ *
+ * `granted` / `servicesOn` / `fix` 都由测试逐段改，用来覆盖「没权限」「没开定位」
+ * 「正常」「模拟位置」「拿不到」这五种情形。
+ */
+private class FakeLocationHost : HostInfo {
+    var granted = true
+    var fine = true
+    var servicesOn = true
+    var gpsOn = true
+    var mock = false
+    var fix: LocationFix? = LocationFix(
+        latitude = 31.230416,
+        longitude = 121.473701,
+        accuracy = 12f,
+        altitude = 4.5,
+        speed = 0.8f,
+        bearing = 90f,
+        timeMs = System.currentTimeMillis() - 3_000,
+        provider = "network"
+    )
+    var lastFixWaitMs: Long? = null
+    var lastHighAccuracy: Boolean? = null
+
+    override fun deviceInfo(): Map<String, Any?> = mapOf("型号" to "FakePhone")
+
+    override fun notify(title: String, message: String): Boolean = true
+
+    override fun locationStatus(): Map<String, Any?> = mapOf(
+        "已授权" to granted,
+        "精确定位" to fine,
+        "定位总开关" to servicesOn,
+        "GPS" to (gpsOn && servicesOn),
+        "网络定位" to servicesOn,
+        "有定位硬件" to true
+    )
+
+    override fun locationFix(waitMs: Long, highAccuracy: Boolean): LocationFix? {
+        lastFixWaitMs = waitMs
+        lastHighAccuracy = highAccuracy
+        if (!granted || !servicesOn) return null
+        val base = fix ?: return null
+        return base.copy(
+            provider = if (highAccuracy) "gps" else "network",
+            mock = mock
+        )
     }
 }

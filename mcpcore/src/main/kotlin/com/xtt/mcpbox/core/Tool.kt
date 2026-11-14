@@ -156,6 +156,31 @@ class ToolSpec(
     )
 }
 
+/**
+ * 一次定位结果。
+ *
+ * App 侧从 `LocationManager` 拿到 `Location` 之后转成这个**纯数据**类，
+ * mcpcore 里不能 import android，所以两者之间只传它。
+ * 可选字段用 null 表示「系统没给这一项」（例如室内定位常常没有海拔和方向）。
+ */
+data class LocationFix(
+    val latitude: Double,
+    val longitude: Double,
+    /** 水平精度（米）；0 或负数表示系统没给。 */
+    val accuracy: Float,
+    val altitude: Double? = null,
+    /** 米/秒。 */
+    val speed: Float? = null,
+    /** 度，正北为 0。 */
+    val bearing: Float? = null,
+    /** 定位时刻（系统时间，毫秒）。 */
+    val timeMs: Long,
+    /** 来源：gps / network / passive / fused… */
+    val provider: String = "",
+    /** 是不是模拟定位（开发者选项里设的假位置）。 */
+    val mock: Boolean = false
+)
+
 /** Android side may provide device facts / notifications; optional. */
 interface HostInfo {
     fun deviceInfo(): Map<String, Any?>
@@ -168,4 +193,17 @@ interface HostInfo {
      * 返回 false 表示这端没有剪贴板能力。
      */
     fun setClipboard(text: String): Boolean = false
+
+    /**
+     * 取**一次**定位（前台一次性请求，不持续定位、不需要后台定位权限）。
+     *
+     * @param waitMs 最多等多久；超时就返回最后已知位置，实在没有才返回 null。
+     * @param highAccuracy true = 优先 GPS（慢但准），false = 优先网络定位（快但粗）。
+     * 没有定位权限 / 系统定位关着 / 桌面端测试模式都返回 null。
+     */
+    fun locationFix(waitMs: Long, highAccuracy: Boolean): LocationFix? = null
+
+    /** 定位能力与系统状态（是否授权、精确定位、GPS / 网络定位开关）。桌面端返回空表。 */
+    fun locationStatus(): Map<String, Any?> = emptyMap()
+
 }

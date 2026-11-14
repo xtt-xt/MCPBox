@@ -13,6 +13,12 @@ object LangEn {
     " 秒未处理自动拒绝" to "s idle · auto-deny",
     "%s 小时 %s 分" to "%s h %s min",
     "%s 分 %s 秒" to "%s min %s s",
+    "%s 分钟" to "%s min",
+    "%s 小时" to "%s h",
+    "%s 天" to "%s days",
+    "定位时间：%s（%s前）" to "Fix time: %s (%s ago)",
+    "注意：这不是刚取的实时位置，是系统缓存的最后一次定位。" to "Note: this is the system's last known location, not a fresh fix. ",
+    "MCP 文件盒在后台时系统不投递新位置，把 App 切到前台再调用一次才能拿到实时的。" to "Android does not deliver new locations while MCP Box is in the background; bring the app to the front and call again for a live fix.",
     "%s 秒" to "%s s",
 
     // ---------------- mcpcore / 主题 / 网络里定义的界面文案（补漏）
@@ -695,6 +701,96 @@ object LangEn {
 
     // ---------------- i18n 第二批：内置工具 —— 只读
     "设备信息" to "Device info",
+    // ---- 位置工具包 ----
+    "获取位置" to "Get location",
+    "取一次手机的当前位置：经纬度、精度、海拔、速度、方向、定位方式与时间。" +
+        "只取一次，不会持续定位，也不会在后台跟踪。" +
+        "需要系统定位权限；权限没给、或者系统定位关着时会直接告诉你原因。" to
+        "Read the phone's current position once: latitude/longitude, accuracy, altitude, speed, bearing, provider and time. " +
+        "One shot only — no continuous tracking, nothing in the background. " +
+        "Needs the system location permission; if it is missing or location is off, the tool says so.",
+    "最多等多久（毫秒），默认 8000" to "How long to wait in milliseconds; default 8000",
+    "优先用 GPS 精确定位（更准、更慢、更耗电）；关掉则优先网络定位（快但只到街区级）" to
+        "Prefer GPS (more accurate, slower, more battery); off: prefer network location (fast but block-level)",
+    "定位状态" to "Location status",
+    "看定位能不能用：系统权限给没给、是不是精确定位、GPS 与网络定位开没开、有没有模拟定位。" +
+        "取不到位置时先用它排查。不读坐标，所以不需要定位权限。" to
+        "Whether location works at all: permission granted or not, precise or approximate, GPS / network providers on or off, mock location detected. " +
+        "Use it to troubleshoot when a fix fails. It does not read coordinates, so it needs no location permission.",
+    "位置" to "Location",
+    "取手机的当前位置（经纬度、精度、海拔、速度、方向）以及定位能不能用的状态。" +
+        "要知道「这台手机现在在哪」、算距离、判断是否到达某地时激活它。" +
+        "只取一次、不持续定位；每次取位置都会在手机上过一次审批。" to
+        "Read the phone's current position (lat/long, accuracy, altitude, speed, bearing) and whether location works. " +
+        "Activate it when you need to know where this phone is, compute distances or check whether it reached a place. " +
+        "One shot, no continuous tracking; every reading asks for approval on the phone.",
+    // ---- 位置工具的运行文案 ----
+    "读取当前位置（%s）" to "Read current position (%s)",
+    "优先 GPS" to "GPS preferred",
+    "优先网络定位" to "Network location preferred",
+    "当前运行环境没有定位能力（桌面端测试模式）" to "No location capability here (desktop test mode)",
+    "没拿到定位权限，读不到位置。" to "No location permission, so position cannot be read.",
+    "定位权限还没给，读不到位置。" to "Location permission is still missing, so position cannot be read.",
+    "刚才已经弹过系统的权限申请框了，再调用一次可以重新弹；" to "The system prompt has just been shown; call again to see it once more;",
+    "要是系统不再弹了（点过「不再询问」），去 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里手动打开。" to
+        "If the system stops asking (you picked \"don't ask again\"), enable it manually in System settings → Apps → MCP Box → Permissions → Location.",
+    "→ 还没授权：直接调用 get_location，会现场弹系统的权限申请框；要是系统不再弹了，再去 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里手动打开。" to
+        "→ Not granted yet: calling get_location shows the system prompt right away; if the system stops asking, enable it manually in System settings → Apps → MCP Box → Permissions → Location.",
+    "去 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置，选「使用应用时允许」，并打开「精确位置」。" to
+        "Go to System settings → Apps → MCP Box → Permissions → Location, allow it while the app is in use, and turn on Precise location.",
+    "给完权限回来再调用一次就行。" to "Come back and call it again once permission is granted.",
+    "到 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里选「使用应用时允许」，并打开「精确位置」。" to
+        "In System settings → Apps → MCP Box → Permissions → Location, choose \"Allow only while using the app\" and turn on \"Use precise location\".",
+    "→ 还没授权：去 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里允许（选「使用应用时允许」，精确位置也打开）。" to
+        "→ Not granted yet: allow it in System settings → Apps → MCP Box → Permissions → Location (choose \"Allow only while using the app\" and turn on precise location).",
+    "到 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里选「使用应用时允许」，并打开「精确位置」。" to
+        "In System settings → Apps → MCP Box → Permissions → Location, choose \"Allow only while using the app\" and turn on \"Use precise location\".",
+    "→ 还没授权：去 系统设置 → 应用 → MCP 文件盒 → 权限 → 位置 里允许（选「使用应用时允许」，精确位置也打开）。" to
+        "→ Not granted yet: allow it in System settings → Apps → MCP Box → Permissions → Location (choose \"Allow only while using the app\" and turn on precise location).",
+    "手机的定位开关是关着的：到 系统设置 → 位置信息 里打开，再调用一次。" to
+        "Location is switched off on the phone: turn it on in System settings → Location, then call again.",
+    "等了 %s 秒也没拿到定位。" to "No fix after waiting %s seconds.",
+    "  · 室内、地下车库、电梯里常常收不到 GPS 信号" to "  · Indoors, in car parks and lifts GPS often gets no signal",
+    "  · 可以试试把 timeout_ms 调大，或者把 high_accuracy 关掉走网络定位" to
+        "  · Try a larger timeout_ms, or turn high_accuracy off to use network location",
+    "  · 也确认一下 设置 → 位置信息 里的「位置服务」是开着的" to
+        "  · Also check that Location services are enabled in Settings → Location",
+    "查看定位状态" to "Check location status",
+    "已授权" to "Granted",
+    "精确定位" to "Precise location",
+    "定位总开关" to "Location services",
+    "网络定位" to "Network location",
+    "有定位硬件" to "Location hardware",
+    "否" to "No",
+    "未知" to "Unknown",
+    "→ 系统定位是关的：到 系统设置 → 位置信息 里打开。" to
+        "→ Location is off: turn it on in System settings → Location.",
+    "→ 可以取位置：调用 get_location 试试。" to "→ Ready: call get_location to read a position.",
+    "当前位置" to "Current position",
+    "坐标：" to "Coordinates: ",
+    "纬度：" to "Latitude: ",
+    "经度：" to "Longitude: ",
+    "精度：约 ±%s 米" to "Accuracy: about ±%s m",
+    "海拔：%s 米" to "Altitude: %s m",
+    "速度：%s 米/秒" to "Speed: %s m/s",
+    "方向：%s°（正北 0°）" to "Bearing: %s° (0° = north)",
+    "定位方式：" to "Provider: ",
+    "GPS 卫星定位" to "GPS satellites",
+    "GPS 卫星定位（本次精度较差，接近网络定位）" to "GPS (poor accuracy this time, close to network location)",
+    "网络定位（基站 / Wi-Fi）" to "Network (cell / Wi-Fi)",
+    "被动定位（别的应用刚取过）" to "Passive (another app just read one)",
+    "系统融合定位" to "System fused location",
+    "定位时间：%s（%s 秒前）" to "Fix time: %s (%s s ago)",
+    "定位时间：%s（%s前）" to "Fix time: %s (%s ago)",
+    "%s 分钟" to "%s min",
+    "注意：这不是刚取的实时位置，是系统缓存的最后一次定位。" to "Note: this is not a fresh fix but the system's last known location. ",
+    "MCP 文件盒在后台时系统不投递新位置，把 App 切到前台再调用一次才能拿到实时的。" to "Android does not deliver new locations while MCP Box is in the background; bring the app to the front and call again for a live fix.",
+    "注意：这是「模拟位置」（开发者选项里设的假坐标），不是真实位置。" to
+        "Note: this is a mock location (fake coordinates from developer options), not the real position.",
+    "说明：经纬度是 WGS-84 / GCJ-02 之间的原始值，国内地图显示时会有偏移；" to
+        "Note: coordinates are the raw value between WGS-84 and GCJ-02, so Chinese map apps may show them offset; ",
+    "经纬度转地址需要联网的第三方服务，本工具不做。" to
+        "Turning coordinates into a street address needs an online third-party service, which this tool does not do.",
     "查看手机型号、系统版本、电量、存储占用等设备信息。" to "Show device info: phone model, system version, battery, storage usage, etc.",
     "列出目录" to "List directory",
     "列出目录下的文件和子目录（名称、类型、大小、修改时间）。path 留空表示默认根目录。" to "List the files and subdirectories of a directory (name, type, size, modified time). Leave path empty for the default root.",
@@ -2608,7 +2704,7 @@ object LangEn {
     "%s 条 · 给命令定允许 / 询问 / 拒绝，按顺序第一条命中生效" to "%s rule(s) · allow / ask / deny per command, first match wins",
     "%s 条 · 给某个目录单独定允许 / 询问 / 拒绝，比上面整套开关优先" to "%s rule(s) · allow / ask / deny per folder; takes precedence over the switches above",
     "%s 秒 · AI 和 SSH 执行命令时的上限" to "%s s · limit for commands run by the AI and by SSH",
-    "9 个全局开关：%s" to "9 global switches: %s",
+    "%s 个全局开关：%s" to "%s global switches: %s",
     "AI 和 SSH 请求权限时怎么问你" to "How the AI and SSH ask you for permission",
     "AI 和 SSH 都只在这几个目录里活动" to "Both the AI and SSH stay inside these folders",
     "AI 能做哪些事。选「询问」时每次都要你点头。" to "What the AI may do. \"Ask\" means it needs your go-ahead every time.",

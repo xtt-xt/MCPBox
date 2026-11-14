@@ -62,14 +62,16 @@ import com.xtt.mcpbox.i18n.L
 /* ------------------------------------------------------------ 分组 */
 
 /**
- * 9 个权限键按「文件 / 系统 / 网络」分三组。
+ * 权限键按「文件 / 系统 / 网络」分三组。
  *
  * 每组内部把**默认就是允许**的排在后面：`fs.read`、`system.info`、`memory`
  * 平时几乎不用动，和 `shell.exec`、`fs.delete` 平铺在一起看不出轻重。
  */
 private val PermGroups: List<Pair<String, List<PermKey>>> = listOf(
     "文件" to listOf(PermKey.WRITE, PermKey.DELETE, PermKey.READ),
-    "系统" to listOf(PermKey.SHELL, PermKey.UI, PermKey.TOOLS, PermKey.SYSTEM, PermKey.MEMORY),
+    "系统" to listOf(
+        PermKey.SHELL, PermKey.UI, PermKey.TOOLS, PermKey.LOCATION, PermKey.SYSTEM, PermKey.MEMORY
+    ),
     "网络" to listOf(PermKey.BROWSER)
 )
 
@@ -84,7 +86,7 @@ internal fun permSummary(vararg keys: PermKey): String {
 /* ------------------------------------------------------------ 工具权限 */
 
 /**
- * 9 个单项权限开关（文件 / 系统 / 网络）。
+ * 单项权限开关（文件 / 系统 / 网络）。
  *
  * 原来铺在「工具权限」页里，和工具包挤在一页。现在单独成一页，
  * 入口只在预设 = **自定义** 时出现在权限首页（预设锁定时这些开关本来也点不动）。
@@ -161,7 +163,7 @@ internal fun CustomPermPage(
 /**
  * 「工具权限」子页：只剩**工具包**与单个工具覆盖的说明。
  *
- * 9 个单项开关已经搬到 [CustomPermPage]：它们只在「自定义」预设下有意义，
+ * 那些单项开关已经搬到 [CustomPermPage]：它们只在「自定义」预设下有意义，
  * 放在这里等于「先切预设、再进两层才能改」。
  */
 @Composable

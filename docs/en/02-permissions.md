@@ -11,8 +11,8 @@ answered, instead of one page with every control on it:
 
 | Entry | What is inside |
 |---|---|
-| Preset (top dropdown) | Sets all 9 switches at once |
-| Custom permissions (only when preset = Custom) | The 9 switches, grouped **files / system / network**, allow-by-default ones last in each group |
+| Preset (top dropdown) | Sets all 10 switches at once |
+| Custom permissions (only when preset = Custom) | The 10 switches, grouped **files / system / network**, allow-by-default ones last in each group |
 | Tool permissions | Tool packs and session isolation (always-on packs show a locked switch) |
 | File scope | Allowed folders, path rules |
 | Commands | Command permission (jump), execution identity, command rules, command timeout |
@@ -26,7 +26,7 @@ Settings → Terminal & commands, and SSH on its own page: adjusting "may the AI
 visiting three pages. All three are now inside Permissions, and Settings only keeps items unrelated
 to authorisation (port, browser behaviour, appearance…).
 
-## The permission matrix: 9 keys × three states
+## The permission matrix: 10 keys × three states
 
 Every permission key has three states: **allow** / **ask** / **deny**.
 
@@ -41,17 +41,18 @@ Every permission key has three states: **allow** / **ask** / **deny**.
 | `browser.control` | ask | Built-in browser: open pages, click, fill forms, run scripts, read/write cookies (**asks on every action** by default) |
 | `system.info` | allow | Device info, storage info, server status, fetching the token |
 | `memory` | allow | Memory read/write (turning the master switch off removes memory tools from `tools/list`) |
+| `location` | ask | Reading the phone location (lat/lon, accuracy, altitude). **Every fix needs approval**; one shot only, no tracking |
 
 At the top of the app's **Permissions** page you can switch a **preset session** in one tap
 (it stays on the home page). When the preset is Custom, an entry for *Custom permissions* sits right
-below it in the same card — tap it to change the 9 switches one by one:
+below it in the same card — tap it to change the 10 switches one by one:
 
 | Preset | Effect |
 |---|---|
-| Allow all | All 9 keys set to allow — the AI stops being interrupted |
-| Deny all | All 9 keys set to deny — the AI can only read server status |
-| Ask all | All 9 keys set to ask — every sensitive action pops up (safest) |
-| Custom | Unlocked; tune the 9 switches one by one |
+| Allow all | All 10 keys set to allow — the AI stops being interrupted |
+| Deny all | All 10 keys set to deny — the AI can only read server status |
+| Ask all | All 10 keys set to ask — every sensitive action pops up (safest) |
+| Custom | Unlocked; tune the 10 switches one by one |
 
 - Choosing one of the first three **locks** the switches below (whole rows become untappable), so you never end up with "says allow all but deletes ask".
 - Before switching to a fixed preset the app **saves your current custom settings**; switching back to Custom restores them exactly.

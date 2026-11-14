@@ -49,7 +49,7 @@ Token:     already included in the URL above
 
 | Feature | In one line | Details |
 |---|---|---|
-| **72 MCP tools** | Files, shell, UI, browser, memory, custom tools, token | [01](docs/en/01-tools.md) |
+| **74 MCP tools** | Files, shell, UI, browser, location, memory, custom tools, token | [01](docs/en/01-tools.md) |
 | **Tool packs** | The AI sees only 22 tools by default; open more on demand, or let the AI manage packs itself | [03](docs/en/03-packs-and-sessions.md) |
 | **Permissions & approvals** | 9 permission keys with three states, path / command rules, four-state per-tool policy; approvals via overlay or notification | [02](docs/en/02-permissions.md) |
 | **Built-in terminal** | App sandbox / Root / Shizuku identities; dangerous commands ask first | [01](docs/en/01-tools.md) |
@@ -114,7 +114,7 @@ Full docs live in [`docs/en/`](docs/en/) (English) and [`docs/`](docs/) (Chinese
 
 | Doc | Contents |
 |---|---|
-| [01 Tools](docs/en/01-tools.md) | All 72 tools: pack, permission key, what it does |
+| [01 Tools](docs/en/01-tools.md) | All 74 tools: pack, permission key, what it does |
 | [02 Permissions & approvals](docs/en/02-permissions.md) | Permission matrix, preset sessions, per-tool policy, path / command rules, timeouts, approval modes |
 | [03 Packs & sessions](docs/en/03-packs-and-sessions.md) | Why packs exist, their contents and defaults, AI pack control, `/mcp/p/<name>` session isolation |
 | [04 Memory](docs/en/04-memory.md) | Entities / observations / relations, storage and UI, import & export, merge vs replace |

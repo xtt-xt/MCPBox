@@ -52,6 +52,11 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
         "memory", "记忆库",
         "创建 / 修改 / 查询 AI 的长期记忆",
         PermAction.ALLOW
+    ),
+    LOCATION(
+        "location", "获取位置",
+        "读取手机定位：经纬度、精度、海拔（需要系统定位权限）",
+        PermAction.ASK
     );
 
     companion object {

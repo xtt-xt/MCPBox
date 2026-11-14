@@ -24,12 +24,13 @@ Everything the App produces is written to its **private app directory** on this 
 Unless you export or back up explicitly, none of this is sent off the device by the App.
 
 ## 4. Why Each Permission Is Used
-4.1 **File access** (all-files access / storage permission): to read and write files in device storage as you authorize, and for the MCP file channel. You can restrict it to the app-private directory or specific folders on the permissions page.
+4.1 **File access** (all-files access / storage permission): to read and write files in device storage as you authorize, and for the MCP file channel. You can restrict it to specific folders on the permissions page (one root folder is open by default).
 4.2 **Display over other apps**: for approval prompts, and for the built-in browser's floating ball and page panel. Without it, approvals fall back to notifications.
 4.3 **Notifications**: for approval alerts and foreground service status. Notification text contains only an operation summary (tool name, path), never file contents.
 4.4 **Ignore battery optimization / start on boot / wake lock**: to keep the service running in the background and resume listening after a reboot.
-4.5 **Root / Shizuku**: used for running commands and UI automation only after you grant it. Whether and how much you grant is up to you, and you can revoke it at any time.
-4.6 All of the above must be granted by you; the App does not bypass system dialogs to obtain them.
+4.5 **Location**: a fix (latitude/longitude, accuracy, altitude) is taken only when you or the AI calls the "get location" tool **and** you approve it in the approval dialog. No continuous tracking, nothing in the background, nothing uploaded anywhere — the coordinates go only to the AI client that asked for them.
+4.6 **Root / Shizuku**: used for running commands and UI automation only after you grant it. Whether and how much you grant is up to you, and you can revoke it at any time.
+4.7 All of the above must be granted by you; the App does not bypass system dialogs to obtain them.
 
 ## 5. Network Access
 The App uses the network only in these cases:

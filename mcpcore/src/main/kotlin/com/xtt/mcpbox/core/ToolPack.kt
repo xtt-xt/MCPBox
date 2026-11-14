@@ -149,7 +149,19 @@ object BuiltinPacks {
         defaultActive = false
     )
 
-    val ALL: List<ToolPack> = listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL, UI, BROWSER)
+    val LOCATION = ToolPack(
+        id = "location",
+        title = "位置",
+        description = "取手机的当前位置（经纬度、精度、海拔、速度、方向）以及定位能不能用的状态。" +
+            "要知道「这台手机现在在哪」、算距离、判断是否到达某地时激活它。" +
+            "只取一次、不持续定位；每次取位置都会在手机上过一次审批。",
+        tools = listOf("get_location", "location_status"),
+        builtin = true,
+        defaultActive = false
+    )
+
+    val ALL: List<ToolPack> =
+        listOf(CORE, FILE_READ, MEMORY, FILE_WRITE, SHELL, UI, BROWSER, LOCATION)
 
     fun byId(id: String): ToolPack? = ALL.firstOrNull { it.id == id }
 
