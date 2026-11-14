@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -403,6 +404,15 @@ fun AppRoot(
     /** 返回：出栈。栈里只剩根页时交给系统（退出应用）。 */
     fun goBack() {
         if (navStack.size > 1) navStack = navStack.dropLast(1)
+    }
+
+    // 一级页面（除首页）按系统返回 → 先回首页，不要直接把 App 退出。
+    //
+    // 栈里只剩根页 = 现在待的是某个 tab 的一级页面；子页自己会接返回（它们那一层的
+    // BackHandler 注册得更晚，优先级更高），所以这里只兜「一级页面」这一种情况。
+    // 跨 tab 不做跟手预览（上一页在另一棵树里），只接返回键 —— 和跨 tab 的子页返回一个口径。
+    if (navStack.size == 1 && tab != 0) {
+        BackHandler { go(Route(0, "")) }
     }
     var revision by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf(AppCore.server.status()) }
