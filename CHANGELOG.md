@@ -22,15 +22,17 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
-## v1.4.0-168 · 2026-11-14
+## v1.4.1-171 · 2026-11-14
+
+<details open>
+<summary><b>中文</b></summary>
 
 ### 新增
 
-- **位置工具包**：新增「获取位置」「定位状态」两个工具，AI 能取一次手机的经纬度、精度、海拔、速度、方向；只取一次，不持续定位、不在后台跟踪
-- **获取位置权限**：单列一个开关，出厂「询问」，每次取位置都要在手机上点同意
-- 每次取位置都要过一次审批；没给系统定位权限时，报错里直接说清去哪儿开
-- 每次打开 App 顺手取一次位置存着；后台调用时直接用这份，比系统缓存新鲜
-- **会话地址**：权限页顶部直接显示当前会话的地址，点一下就能复制
+- **位置工具包**：新增「获取位置」「定位状态」两个工具，AI 能取一次经纬度、精度、海拔、速度、方向；只取一次，不持续定位、不在后台跟踪
+- **获取位置权限**：单列一个开关，出厂「询问」，每次取位置都要在手机上点同意；没给系统定位权限时，报错里直接说清去哪儿开
+- 每次打开 App 顺手取一次位置存着，AI 调用时直接用这份
+- **会话地址**：权限页顶部显示当前会话的地址，点一下就能复制
 - **终端选中**：终端里的输出可以长按选中复制
 
 ### 权限
@@ -53,11 +55,78 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 - 输出很长时切到终端不再卡顿
 
+### 关于
+
+- 版本行只显示版本号，MCP 协议版本归到「运行环境」
+- 开源鸣谢补齐实际用到的依赖，共 10 项
+
+### 条款
+
+- 用户协议与隐私政策升到 v3，标出生效日期与修改日期
+- 隐私政策补充定位说明：只在请求时取一次、缓存在内存、不留轨迹
+
+### 导航
+
+- 除首页外的一级页面按系统返回先回首页，不再直接退出应用
+
 ### 修复
 
 - 顶栏、底栏的不透明度除了 100% 以外都变成全透明
 - 停在页面最底部时进出子页，底部留白会瞬间变化、内容跟着跳一下；现在底部一直保留底栏那块空间
 
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### New
+
+- **Location tools**: two new tools, "get location" and "location status". The AI can fetch latitude/longitude, accuracy, altitude, speed and bearing once; nothing runs continuously, nothing tracks in the background
+- **Location permission**: its own switch, set to Ask by default, so every fix needs a tap on the phone; when the system permission is missing, the error says exactly where to grant it
+- The app takes one fix when opened and keeps it, so tool calls use that reading
+- **Session address**: the Permissions tab shows the address for the current session; tap to copy
+- **Terminal selection**: terminal output can be long-pressed and selected
+
+### Permissions
+
+- Removed the app-private-directory switch: to reach another app, add its folder to the allowed roots
+- The individual permission switches moved from Tools Permissions to a new Custom Permissions page, reachable from the preset card when the preset is Custom
+- Tools Permissions now only lists packs; the Resident label on built-in packs became a locked switch
+
+### Home
+
+- The SSH service card is now controlled by "Show shortcut on Home" under Permissions → Remote access → SSH service; the card can also start the service when it is off
+
+### Bars
+
+- Removed the divider lines above and below the top and bottom bars
+- The top and bottom bars each have their own Blur switch, and blur radius works together with opacity
+- Slightly more space under the top bar title
+
+### Terminal
+
+- Switching to the terminal no longer stutters with very long output
+
+### About
+
+- The version line shows only the version number; the MCP protocol version moved to Runtime
+- Open-source credits now list the dependencies actually used, ten in total
+
+### Terms
+
+- Terms of Use and Privacy Policy bumped to v3, with an effective date and a last-modified date
+- The Privacy Policy now explains location: one fix per request, cached in memory, no history kept
+
+### Navigation
+
+- System back on a first-level page other than Home now returns to Home instead of exiting the app
+
+### Fixes
+
+- Top and bottom bar opacity made the bars fully transparent at anything below 100%
+- Leaving or entering a subpage at the very bottom of a page shifted the bottom inset and made the content jump; the inset is now always reserved
+
+</details>
 ---
 
 ## v1.4.0 · 2026-10-25
