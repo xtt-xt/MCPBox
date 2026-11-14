@@ -76,11 +76,20 @@ import kotlinx.coroutines.withContext
 private data class Credit(val name: String, val license: String, val url: String)
 
 private val CREDITS = listOf(
+    // 界面
     Credit("AndroidX / Jetpack Compose", "Apache-2.0", "https://developer.android.com/jetpack/androidx"),
-    Credit("Kotlin & kotlinx.coroutines", "Apache-2.0", "https://kotlinlang.org"),
-    Credit(L("Material Components (HCT 取色算法)"), "Apache-2.0", "https://github.com/material-components/material-components-android"),
+    Credit("Material Components", "Apache-2.0", "https://github.com/material-components/material-components-android"),
     Credit("Material Color Utilities", "Apache-2.0", "https://github.com/material-foundation/material-color-utilities"),
-    Credit("Shizuku", "Apache-2.0", "https://github.com/RikkaApps/Shizuku-API")
+    Credit("Haze", "Apache-2.0", "https://github.com/chrisbanes/haze"),
+    // 语言与序列化
+    Credit("Kotlin & kotlinx.coroutines", "Apache-2.0", "https://kotlinlang.org"),
+    Credit("kotlinx.serialization", "Apache-2.0", "https://github.com/Kotlin/kotlinx.serialization"),
+    // 系统能力
+    Credit("Shizuku", "Apache-2.0", "https://github.com/RikkaApps/Shizuku-API"),
+    // 内置 SSH / SFTP 服务端
+    Credit("Apache MINA SSHD", "Apache-2.0", "https://mina.apache.org/sshd-project/"),
+    Credit("SLF4J", "MIT", "https://www.slf4j.org"),
+    Credit("EdDSA-Java", "CC0-1.0", "https://github.com/str4d/ed25519-java")
 )
 
 private const val ABOUT_PAGE = "about"
@@ -336,7 +345,7 @@ private fun AboutHomePage(
             )
             Spacer(Modifier.height(3.dp))
             Text(
-                "${full}（${ServerMeta.PROTOCOL}）",
+                full,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 fontFamily = FontFamily.Monospace

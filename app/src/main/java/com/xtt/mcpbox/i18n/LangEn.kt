@@ -649,7 +649,6 @@ object LangEn {
     "已导入语言包 %s（%s 条译文）" to "Imported language pack %s (%s entries)",
     "没有读到 entries" to "No \"entries\" found",
     "语言包里一条译文都没有" to "The language pack contains no translations at all",
-    "Material Components (HCT 取色算法)" to "Material Components (HCT color extraction)",
     "喵" to "Meow",
     "喵喵喵" to "Meow meow meow",
     "喵～ 猫娘语已解锁" to "Meow~ cat-girl language unlocked",
