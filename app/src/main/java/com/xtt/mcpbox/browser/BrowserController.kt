@@ -17,6 +17,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.TextPaint
 import android.text.TextUtils
@@ -47,6 +48,7 @@ import com.xtt.mcpbox.core.BrowserPageInfo
 import com.xtt.mcpbox.core.EventLog
 import com.xtt.mcpbox.core.LogKind
 import com.xtt.mcpbox.i18n.L
+import com.xtt.mcpbox.ui.BallSource
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -70,8 +72,6 @@ import kotlin.math.max
 class BrowserController(private val context: Context) : BrowserBridge {
 
     private companion object {
-        const val KEY_BALL_X = "browser_ball_x"
-        const val KEY_BALL_Y = "browser_ball_y"
         const val KEY_PANEL_W = "browser_panel_w"
         const val KEY_PANEL_H = "browser_panel_h"
         const val KEY_PANEL_X = "browser_panel_x"
@@ -94,7 +94,12 @@ class BrowserController(private val context: Context) : BrowserBridge {
     private val themed: Context = if (context is android.app.Activity) context
     else android.view.ContextThemeWrapper(context, com.xtt.mcpbox.R.style.Theme_MCPBox)
 
-    private class Page(val id: String, val web: WebView) {
+    private class Page(val id: String) {
+        /**
+         * 这一页的 WebView。休眠时（[sleeping]）它是 null —— 彻底销毁，
+         * 只留地址、标题和滚动位置，下次用到时 [wake] 重新建一个。
+         */
+        var web: WebView? = null
         var title: String = ""
         var url: String = ""
         var loading: Boolean = true
@@ -105,10 +110,19 @@ class BrowserController(private val context: Context) : BrowserBridge {
         /** 这一页自己的身份（mobile / desktop / 自定义串）；null = 跟随全局设置。 */
         var uaOverride: String? = null
 
+        /** 最后一次被用到的时刻（开机以来的毫秒）：AI 操作、用户切页、触摸都算。休眠计时看它。 */
+        var lastUsed: Long = SystemClock.elapsedRealtime()
+
+        /** 已经休眠：WebView 已销毁，只剩地址。 */
+        var sleeping: Boolean = false
+
+        /** 休眠前记下的滚动位置，唤醒并加载完再滚回去。 */
+        var sleepScrollY: Int = 0
+
         fun info(): BrowserPageInfo = BrowserPageInfo(
             id = id, url = url, title = title, loading = loading,
             canGoBack = canGoBack, canGoForward = canGoForward, error = error,
-            ua = uaOverride
+            ua = uaOverride, sleeping = sleeping
         )
     }
 
@@ -119,8 +133,34 @@ class BrowserController(private val context: Context) : BrowserBridge {
     @Volatile private var statusText: String = ""
     @Volatile private var pausedFlag: Boolean = false
 
-    private var ball: BallView? = null
-    private var ballParams: WindowManager.LayoutParams? = null
+    /**
+     * 浏览器在共用悬浮球上的那一个「源」：
+     * 只要还有页面就在球上出现，球上是地球图标（有审批时让位给待审批条数）。
+     */
+    private val ballSource = object : BallSource {
+        override val id = "browser"
+        override fun available(): Boolean = pages.isNotEmpty()
+        override fun badge(): Int = 0
+        override fun label(): String = L("浏览器")
+        override fun open() = call { togglePanel() }
+        override fun drawIcon(canvas: Canvas, cx: Float, cy: Float, radius: Float, paint: Paint) {
+            // 地球：一个圆 + 一条赤道 + 一条经线
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = radius * 0.18f
+            canvas.drawCircle(cx, cy, radius, paint)
+            canvas.drawLine(cx - radius, cy, cx + radius, cy, paint)
+            canvas.drawOval(
+                cx - radius * 0.46f, cy - radius,
+                cx + radius * 0.46f, cy + radius, paint
+            )
+            paint.style = Paint.Style.FILL
+        }
+    }
+
+    init {
+        AppCore.ball.register(ballSource)
+    }
+
     private var panel: LinearLayout? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var pageHost: PageHost? = null
@@ -185,7 +225,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
     override fun open(url: String, ua: String?): String = call {
         val web = newWebView()
         val id = "p${++seq}"
-        val page = Page(id, web)
+        val page = Page(id)
+        page.web = web
         // 身份要在 loadUrl 之前定下来 —— 否则第一个请求已经用旧 UA 出去了
         page.uaOverride = ua
         applyUa(page)
@@ -195,16 +236,17 @@ class BrowserController(private val context: Context) : BrowserBridge {
         currentId = id
         refreshVisibility()
         rebuildTabs()
-        ensureBall()
+        AppCore.ball.refresh()
         ensurePanel()
         refreshPanel()
+        scheduleSleepTick()
         log(L("浏览器：新开页面 %s").format(url))
         id
     }
 
     override fun close(id: String) = call {
         val page = pages.remove(id) ?: return@call
-        pageHost?.removeView(page.web)
+        page.web?.let { pageHost?.removeView(it) }
         destroy(page)
         if (currentId == id) currentId = pages.keys.lastOrNull()
         afterPagesChanged()
@@ -212,7 +254,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
 
     override fun closeAll() = call {
         pages.values.toList().forEach { page ->
-            pageHost?.removeView(page.web)
+            page.web?.let { pageHost?.removeView(it) }
             destroy(page)
         }
         pages.clear()
@@ -222,12 +264,127 @@ class BrowserController(private val context: Context) : BrowserBridge {
     }
 
     private fun destroy(page: Page) {
+        val web = page.web ?: return
+        page.web = null
+        destroy(web)
+    }
+
+    private fun destroy(web: WebView) {
         runCatching {
-            page.web.stopLoading()
-            page.web.loadUrl("about:blank")
-            page.web.removeAllViews()
-            page.web.destroy()
+            web.stopLoading()
+            web.loadUrl("about:blank")
+            web.removeAllViews()
+            web.destroy()
         }
+    }
+
+    // -------------------------------------------------------------- 休眠 / 唤醒
+
+    /** 页面 id → 唤醒后要滚回去的位置（加载完再滚，否则会被页面自己重置）。 */
+    private val restoreScroll = HashMap<String, Int>()
+
+    /** 每 20 秒看一遍有没有页面该休眠了。 */
+    private val sleepTick = object : Runnable {
+        override fun run() = sweepSleep()
+    }
+
+    private fun scheduleSleepTick() {
+        main.removeCallbacks(sleepTick)
+        if (pages.isEmpty()) return
+        if (AppCore.config.browserSleepMinutes <= 0) return
+        main.postDelayed(sleepTick, 20_000L)
+    }
+
+    /**
+     * 到点的页面休眠：销毁 WebView，只留地址与滚动位置。
+     *
+     * 「看得见」的那一页不冻 —— 面板展开且它是当前页时，用户正看着它。
+     * 面板收起以后没有任何页面是看得见的，所以当前页也按时间休眠。
+     * 加载中的页面跳过，免得把正在加载的东西毁掉。
+     */
+    private fun sweepSleep() {
+        val minutes = AppCore.config.browserSleepMinutes
+        if (minutes <= 0) return
+        val limit = minutes * 60_000L
+        val now = SystemClock.elapsedRealtime()
+        pages.values.toList().forEach { page ->
+            if (page.sleeping || page.loading) return@forEach
+            if (expanded && page.id == currentId) return@forEach
+            if (now - page.lastUsed >= limit) sleep(page)
+        }
+        scheduleSleepTick()
+    }
+
+    private fun sleep(page: Page) {
+        val web = page.web ?: return
+        page.sleeping = true
+        page.web = null
+        page.loading = false
+        page.error = null
+        page.canGoBack = false
+        page.canGoForward = false
+        var finished = false
+        // 滚动位置要先问页面（回调在主线程，不能在这里等）
+        val finish = {
+            if (!finished) {
+                finished = true
+                pageHost?.removeView(web)
+                destroy(web)
+                rebuildTabs()
+                refreshPanel()
+                log(L("浏览器：页面已休眠 %s").format(page.url.ifBlank { page.id }))
+            }
+        }
+        main.postDelayed({ finish() }, 800)
+        runCatching {
+            web.evaluateJavascript("String(Math.round(window.scrollY||0))") { result ->
+                page.sleepScrollY = result?.trim('"')?.toIntOrNull() ?: 0
+                main.post { finish() }
+            }
+        }.onFailure { finish() }
+    }
+
+    /** 唤醒休眠页（主线程）：重建 WebView 并加载原地址；[urlOverride] 给了就直接开新地址。 */
+    private fun wake(page: Page, urlOverride: String? = null): WebView? {
+        page.web?.let { return it }
+        val web = newWebView()
+        page.web = web
+        page.sleeping = false
+        page.loading = true
+        page.error = null
+        applyUa(page)
+        pageHost?.addView(web, frameParamsOf())
+        web.visibility = if (page.id == currentId) View.VISIBLE else View.INVISIBLE
+        val url = urlOverride ?: page.url.ifBlank { "about:blank" }
+        if (urlOverride == null && page.sleepScrollY > 0) restoreScroll[page.id] = page.sleepScrollY
+        page.sleepScrollY = 0
+        web.loadUrl(url)
+        page.lastUsed = SystemClock.elapsedRealtime()
+        scheduleSleepTick()
+        log(L("浏览器：唤醒页面 %s").format(url))
+        return web
+    }
+
+    private fun ensureAwake(page: Page): WebView? = page.web ?: wake(page)
+
+    /**
+     * core 线程用：休眠页先唤醒，并等它加载完（最多 [timeoutMs]）。
+     * 内部会 sleep 轮询，必须在**非主线程**调用。
+     */
+    private fun ensureAwakeWaiting(page: Page, timeoutMs: Long = 20_000) {
+        if (call { page.sleeping }) call { wake(page) }
+        if (!call { page.loading }) return
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (!call { page.loading }) break
+            runCatching { Thread.sleep(100) }
+        }
+        // 刚加载完再给一帧，截图 / 读内容才有东西
+        runCatching { Thread.sleep(260) }
+    }
+
+    private fun touch(page: Page?) {
+        if (page != null) page.lastUsed = SystemClock.elapsedRealtime()
     }
 
     private fun afterPagesChanged() {
@@ -235,28 +392,35 @@ class BrowserController(private val context: Context) : BrowserBridge {
         rebuildTabs()
         refreshPanel()
         if (pages.isEmpty()) {
-            collapse(keepBall = false)
-            removeBall()
+            main.removeCallbacks(sleepTick)
+            collapse()
+            AppCore.ball.refresh()
+        } else {
+            // 面板开着的时候换了个当前页（比如关掉了刚才那一页）：新当前页要是休眠的就叫醒
+            if (expanded) pages[currentId]?.let { ensureAwake(it) }
+            scheduleSleepTick()
         }
     }
 
     override fun navigate(id: String, url: String, ua: String?) {
         call {
-            val page = pages[id]
-            if (page != null) {
-                if (ua != null) {
-                    page.uaOverride = ua
-                    applyUa(page)
-                }
-                page.loading = true
-                page.error = null
-                page.web.loadUrl(url)
+            val page = pages[id] ?: return@call
+            if (ua != null) {
+                page.uaOverride = ua
+                applyUa(page)
             }
+            page.loading = true
+            page.error = null
+            page.lastUsed = SystemClock.elapsedRealtime()
+            // 休眠页不用先把旧地址加载一遍，直接开到新地址
+            if (page.sleeping) wake(page, url) else page.web?.loadUrl(url)
         }
     }
 
     override fun history(id: String, action: String) = call {
-        val web = pages[id]?.web ?: return@call
+        val page = pages[id] ?: return@call
+        val web = ensureAwake(page) ?: return@call
+        page.lastUsed = SystemClock.elapsedRealtime()
         when (action) {
             "back" -> if (web.canGoBack()) web.goBack()
             "forward" -> if (web.canGoForward()) web.goForward()
@@ -269,23 +433,30 @@ class BrowserController(private val context: Context) : BrowserBridge {
     override fun currentId(): String? = currentId
 
     override fun switchTo(id: String) = call {
-        if (!pages.containsKey(id)) return@call
+        val page = pages[id] ?: return@call
         currentId = id
+        page.lastUsed = SystemClock.elapsedRealtime()
+        ensureAwake(page)
         refreshVisibility()
         rebuildTabs()
         refreshPanel()
+        scheduleSleepTick()
     }
 
     override fun eval(id: String, js: String): String? {
+        val page = call { pages[id] } ?: return null
+        // 休眠页先唤醒并等它加载完，否则读到的是白页
+        ensureAwakeWaiting(page)
         // 结果回调在主线程 → 这里只能在**调用线程**上等，不能占着主线程
         var value: String? = null
         val latch = CountDownLatch(1)
         main.post {
-            val web = pages[id]?.web
+            val web = page.web
             if (web == null) {
                 latch.countDown()
                 return@post
             }
+            page.lastUsed = SystemClock.elapsedRealtime()
             runCatching {
                 web.evaluateJavascript(js) { result ->
                     value = result
@@ -296,8 +467,13 @@ class BrowserController(private val context: Context) : BrowserBridge {
         return if (latch.await(25, TimeUnit.SECONDS)) value else null
     }
 
-    override fun screenshot(id: String): ByteArray? = call {
-        val web = pages[id]?.web ?: return@call null
+    override fun screenshot(id: String): ByteArray? {
+        val page = call { pages[id] } ?: return null
+        // 休眠页要重新加载出来才画得出东西
+        ensureAwakeWaiting(page)
+        return call {
+            val web = page.web ?: return@call null
+            page.lastUsed = SystemClock.elapsedRealtime()
         val w = if (web.width > 0) web.width else screenW()
         val h = if (web.height > 0) web.height else screenH()
         if (w <= 0 || h <= 0) return@call null
@@ -321,17 +497,14 @@ class BrowserController(private val context: Context) : BrowserBridge {
         } finally {
             runCatching { bmp?.recycle() }
         }
+        }
     }
 
     // ============================================================== 状态 / 暂停
 
     override fun setStatus(text: String) {
         statusText = text
-        post {
-            ball?.status = text
-            ball?.invalidate()
-            hintView?.text = text
-        }
+        post { hintView?.text = text }
     }
 
     override fun paused(): Boolean = pausedFlag
@@ -339,8 +512,6 @@ class BrowserController(private val context: Context) : BrowserBridge {
     override fun setPaused(value: Boolean) {
         pausedFlag = value
         post {
-            ball?.paused = value
-            ball?.invalidate()
             refreshPanel()
             if (value) setStatus(L("已暂停，等你继续"))
         }
@@ -418,7 +589,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
     override fun clearCache() = call {
         runCatching {
             CookieManager.getInstance().flush()
-            pages.values.forEach { it.web.clearCache(true) }
+            pages.values.forEach { it.web?.clearCache(true) }
             WebStorage.getInstance().deleteAllData()
             WebViewDatabase.getInstance(context).clearFormData()
         }
@@ -427,7 +598,9 @@ class BrowserController(private val context: Context) : BrowserBridge {
 
     override fun userAgent(id: String?): String = call {
         val page = (if (id != null) pages[id] else null) ?: pages.values.firstOrNull()
-        page?.web?.settings?.userAgentString.orEmpty()
+        page?.web?.settings?.userAgentString
+            ?: runCatching { resolveUa(page?.uaOverride ?: AppCore.config.browserUserAgent) }.getOrNull()
+            ?: ""
     }
 
     override fun setPageUserAgent(id: String, ua: String?) = call {
@@ -450,15 +623,16 @@ class BrowserController(private val context: Context) : BrowserBridge {
     override fun release() {
         main.post {
             runCatching {
+                main.removeCallbacks(sleepTick)
                 pages.values.toList().forEach { pg ->
-                    pageHost?.removeView(pg.web)
+                    pg.web?.let { pageHost?.removeView(it) }
                     destroy(pg)
                 }
                 pages.clear()
                 currentId = null
                 pausedFlag = false
                 statusText = ""
-                removeBall()
+                AppCore.ball.refresh()
                 removePanel()
             }
         }
@@ -494,6 +668,11 @@ class BrowserController(private val context: Context) : BrowserBridge {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(web, true)
         }
+        // 用户在这一页上触摸（滚动、点击）也算「在用」，休眠计时从这里重新开始
+        web.setOnTouchListener { _, e ->
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) touch(pageOf(web))
+            false
+        }
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url?.toString().orEmpty()
@@ -518,6 +697,10 @@ class BrowserController(private val context: Context) : BrowserBridge {
                 pg.canGoBack = view.canGoBack()
                 pg.canGoForward = view.canGoForward()
                 CookieManager.getInstance().flush()
+                // 休眠唤醒的页面：加载完滚回原来的位置
+                restoreScroll.remove(pg.id)?.let { y ->
+                    if (y > 0) view.evaluateJavascript("window.scrollTo(0,$y)", null)
+                }
                 rebuildTabs()
                 refreshPanel()
             }
@@ -576,7 +759,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
                     val transport = resultMsg.obj as WebView.WebViewTransport
                     val child = newWebView()
                     val id = "p${++seq}"
-                    val childPage = Page(id, child)
+                    val childPage = Page(id)
+                    childPage.web = child
                     applyUa(childPage)
                     pages[id] = childPage
                     child.webViewClient = web.webViewClient
@@ -588,7 +772,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
                     refreshVisibility()
                     rebuildTabs()
                     refreshPanel()
-                    ensureBall()
+                    AppCore.ball.refresh()
+                    scheduleSleepTick()
                     true
                 }.getOrDefault(false)
             }
@@ -618,184 +803,10 @@ class BrowserController(private val context: Context) : BrowserBridge {
     /** 页面自己的身份优先，没有就用全局默认。 */
     private fun applyUa(page: Page) {
         val spec = page.uaOverride ?: AppCore.config.browserUserAgent
-        runCatching { page.web.settings.userAgentString = resolveUa(spec) ?: defaultUa }
+        runCatching { page.web?.settings?.userAgentString = resolveUa(spec) ?: defaultUa }
     }
 
     private fun pageOf(web: WebView): Page? = pages.values.firstOrNull { it.web === web }
-
-    // ================================================================== 悬浮球
-
-    private fun ensureBall() {
-        if (ball != null) return
-        val wmv = wm ?: return
-        val view = BallView(context)
-        val params = WindowManager.LayoutParams(
-            dp(112), dp(80),
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            val sx = AppCore.prefs.getInt(KEY_BALL_X, -1)
-            val sy = AppCore.prefs.getInt(KEY_BALL_Y, -1)
-            x = if (sx < 0) screenW() - dp(112) - dp(4) else sx.coerceIn(0, max(0, screenW() - dp(112)))
-            y = if (sy < 0) (screenH() * 0.28f).toInt() else sy.coerceIn(0, max(0, screenH() - dp(80)))
-        }
-        view.status = statusText
-        view.paused = pausedFlag
-        view.setOnTouchListener(ballTouch(view, params))
-        runCatching { wmv.addView(view, params) }.onFailure {
-            log(L("悬浮球创建失败：%s").format(it.message), ok = false)
-        }
-        ball = view
-        ballParams = params
-    }
-
-    private fun removeBall() {
-        val v = ball ?: return
-        runCatching { wm?.removeView(v) }
-        ball = null
-        ballParams = null
-    }
-
-    /** 拖动 = 挪位置；轻点 = 展开 / 收起面板；松手贴边半收。 */
-    private fun ballTouch(view: View, params: WindowManager.LayoutParams) =
-        object : View.OnTouchListener {
-            private var downX = 0f
-            private var downY = 0f
-            private var startX = 0
-            private var startY = 0
-            private var moved = false
-
-            override fun onTouch(v: View, e: MotionEvent): Boolean {
-                when (e.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downX = e.rawX; downY = e.rawY
-                        startX = params.x; startY = params.y
-                        moved = false
-                        return true
-                    }
-
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = e.rawX - downX
-                        val dy = e.rawY - downY
-                        if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
-                        if (moved) {
-                            params.x = (startX + dx).toInt()
-                            params.y = (startY + dy).toInt()
-                            runCatching { wm?.updateViewLayout(view, params) }
-                        }
-                        return true
-                    }
-
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        if (!moved) {
-                            togglePanel()
-                        } else {
-                            // 贴边吸一下，但**整个球都留在屏幕里**（不做半收，免得看着像被裁掉）
-                            val w = dp(112)
-                            val h = dp(80)
-                            val half = dp(26)
-                            params.x = if (params.x + half < screenW() / 2) dp(4) else screenW() - w - dp(4)
-                            params.y = params.y.coerceIn(dp(4), max(dp(4), screenH() - h - dp(4)))
-                            runCatching { wm?.updateViewLayout(view, params) }
-                            AppCore.prefs.putInt(KEY_BALL_X, params.x)
-                            AppCore.prefs.putInt(KEY_BALL_Y, params.y)
-                        }
-                        return true
-                    }
-                }
-                return false
-            }
-        }
-
-    /** 悬浮球：一个圆 + 上面一条状态胶囊。 */
-    private inner class BallView(ctx: Context) : View(ctx) {
-        var status: String = ""
-        var paused: Boolean = false
-
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = dp(10).toFloat()
-            color = p.text
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            val d = dp(50)
-            val cx = width / 2f
-            val cy = height - d / 2f
-            val r = d / 2f
-            val chipTop = cy - r - dp(23)
-
-            // 状态胶囊（球上方）：不透明一点，保证在任意壁纸 / 应用上都读得清
-            if (status.isNotBlank()) {
-                val label = TextUtils.ellipsize(status, text, dp(100).toFloat(), TextUtils.TruncateAt.END)
-                val tw = text.measureText(label.toString())
-                val pad = dp(8).toFloat()
-                val rect = RectF(
-                    cx - tw / 2 - pad,
-                    chipTop,
-                    cx + tw / 2 + pad,
-                    cy - r - dp(5)
-                )
-                paint.style = Paint.Style.FILL
-                paint.color = Color.argb(60, 0, 0, 0)
-                canvas.drawRoundRect(
-                    RectF(rect.left, rect.top + dpF(1.5f), rect.right, rect.bottom + dpF(1.5f)),
-                    dp(10).toFloat(), dp(10).toFloat(), paint
-                )
-                paint.color = blend(p.card, p.background, 0.97f)
-                canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), paint)
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = dpF(1f).coerceAtLeast(1f)
-                paint.color = if (paused) blend(p.outline, p.card, 0.7f) else blend(p.primary, p.card, 0.45f)
-                canvas.drawRoundRect(rect, dp(10).toFloat(), dp(10).toFloat(), paint)
-                paint.style = Paint.Style.FILL
-                canvas.drawText(label.toString(), cx - tw / 2, rect.bottom - dp(6), text)
-            }
-
-            // 球体投影（两层，代替 elevation —— 悬浮窗里的 View 没有系统阴影）
-            paint.style = Paint.Style.FILL
-            paint.shader = null
-            paint.color = Color.argb(30, 0, 0, 0)
-            canvas.drawCircle(cx, cy + dpF(3f), r + dpF(1f), paint)
-            paint.color = Color.argb(18, 0, 0, 0)
-            canvas.drawCircle(cx, cy + dpF(6f), r + dpF(2f), paint)
-
-            // 球体：主色渐变（上浅下深），暂停时换成中性灰
-            val top = if (paused) blend(p.cardHigh, p.text, 0.08f) else blend(p.primary, p.background, 0.94f)
-            val bottom = if (paused) blend(p.card, p.background, 0.85f) else blend(p.primary, p.card, 0.70f)
-            paint.shader = android.graphics.LinearGradient(
-                0f, cy - r, 0f, cy + r, top, bottom, android.graphics.Shader.TileMode.CLAMP
-            )
-            canvas.drawCircle(cx, cy, r, paint)
-            paint.shader = null
-
-            // 描边：一道细细的主色环，边界更干净
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dpF(1.2f).coerceAtLeast(1f)
-            paint.color = if (paused) blend(p.outline, p.card, 0.6f) else blend(p.primary, p.background, 0.40f)
-            canvas.drawCircle(cx, cy, r - dpF(0.6f), paint)
-
-            // 地球（一根纬线 + 一根经线椭圆）
-            val gr = r * 0.52f
-            paint.color = if (paused) p.textDim else p.onPrimary
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dpF(1.9f)
-            canvas.drawCircle(cx, cy, gr, paint)
-            canvas.drawOval(RectF(cx - gr * 0.50f, cy - gr, cx + gr * 0.50f, cy + gr), paint)
-            canvas.drawLine(cx - gr, cy, cx + gr, cy, paint)
-
-            // AI 正在操作时，右上角点一颗小灯
-            if (!paused && status.isNotBlank()) {
-                paint.style = Paint.Style.FILL
-                paint.color = p.onPrimary
-                canvas.drawCircle(cx + gr + dpF(1f), cy - gr - dpF(1f), dpF(2.6f), paint)
-            }
-        }
-    }
 
     // ================================================================== 面板窗
 
@@ -872,7 +883,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
             setPaused(false)
             call { closeAll() }
         }
-        val collapse = panelButton(L("收起")) { collapse(keepBall = true) }
+        val collapse = panelButton(L("收起")) { collapse() }
         listOf(pauseBtn!!, reloadBtn, closeOne, closeAll, collapse).forEachIndexed { i, v ->
             buttons.addView(
                 v,
@@ -945,7 +956,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
     }
 
     /** 折叠 = 面板缩成 1×1 且不吃触摸；展开 = 恢复上次的尺寸并抢焦点（才能打字）。 */
-    private fun collapse(keepBall: Boolean) {
+    private fun collapse() {
         val params = panelParams ?: return
         val v = panel ?: return
         if (!expanded) return
@@ -961,7 +972,6 @@ class BrowserController(private val context: Context) : BrowserBridge {
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         runCatching { wm?.updateViewLayout(v, params) }
         refreshPanel()
-        if (!keepBall && pages.isEmpty()) removeBall()
     }
 
     private fun expand() {
@@ -973,6 +983,11 @@ class BrowserController(private val context: Context) : BrowserBridge {
         val w = AppCore.prefs.getInt(KEY_PANEL_W, -1).takeIf { it > dp(120) } ?: (sw * 0.7f).toInt()
         val h = AppCore.prefs.getInt(KEY_PANEL_H, -1).takeIf { it > dp(120) } ?: (sh * 0.7f).toInt()
         expanded = true
+        // 面板重新打开 = 用户要看了：休眠的当前页先唤醒
+        pages[currentId]?.let {
+            touch(it)
+            ensureAwake(it)
+        }
         pageHost?.apply {
             fallbackWidth = sw
             fallbackHeight = sh
@@ -992,11 +1007,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
     }
 
     private fun togglePanel() {
-        if (pages.isEmpty()) {
-            removeBall()
-            return
-        }
-        if (expanded) collapse(keepBall = true) else expand()
+        if (pages.isEmpty()) return
+        if (expanded) collapse() else expand()
     }
 
     private fun panelDrag(root: View) = object : View.OnTouchListener {
@@ -1087,7 +1099,7 @@ class BrowserController(private val context: Context) : BrowserBridge {
     private fun refreshVisibility() {
         val cur = currentId
         pages.forEach { (id, page) ->
-            page.web.visibility = if (id == cur) View.VISIBLE else View.INVISIBLE
+            page.web?.visibility = if (id == cur) View.VISIBLE else View.INVISIBLE
         }
     }
 
@@ -1096,14 +1108,21 @@ class BrowserController(private val context: Context) : BrowserBridge {
         row.removeAllViews()
         pages.values.forEachIndexed { index, page ->
             val active = page.id == currentId
-            val label = (index + 1).toString() + ". " + page.title.ifBlank { page.url }.ifBlank { page.id }
+            val base = (index + 1).toString() + ". " + page.title.ifBlank { page.url }.ifBlank { page.id }
+            val label = if (page.sleeping) base + L(" · 已休眠") else base
             val chip = TextView(context).apply {
                 text = TextUtils.ellipsize(
-                    label.take(40), TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(11).toFloat() },
+                    label.take(48), TextPaint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(11).toFloat() },
                     dp(120).toFloat(), TextUtils.TruncateAt.END
                 )
                 textSize = 11f
-                setTextColor(if (active) p.onPrimary else p.textDim)
+                setTextColor(
+                    when {
+                        active -> p.onPrimary
+                        page.sleeping -> blend(p.textDim, p.background, 0.55f)
+                        else -> p.textDim
+                    }
+                )
                 background = if (active) rounded(p.primary, 50f)
                 else rounded(blend(p.cardHigh, p.background, 0.9f), 50f, blend(p.outline, p.card, 0.45f))
                 setPadding(dp(11), dp(6), dp(11), dp(6))
@@ -1131,7 +1150,8 @@ class BrowserController(private val context: Context) : BrowserBridge {
         call {
             page.loading = true
             page.error = null
-            page.web.reload()
+            page.lastUsed = SystemClock.elapsedRealtime()
+            ensureAwake(page)?.reload()
             refreshPanel()
             log(L("浏览器：手动刷新 %s").format(page.url.ifBlank { page.id }))
         }

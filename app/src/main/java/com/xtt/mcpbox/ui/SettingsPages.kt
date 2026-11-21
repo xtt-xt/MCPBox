@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
 import com.xtt.mcpbox.NetUtil
+import com.xtt.mcpbox.Prefs
 import com.xtt.mcpbox.core.ApprovalPresentation
 import com.xtt.mcpbox.core.BrowserEngines
 import com.xtt.mcpbox.core.Config
@@ -149,6 +150,8 @@ internal fun AppearanceSettingsPage(
     onOpenBars: () -> Unit = {},
     /** 打开「应用图标」子页。 */
     onOpenIcon: () -> Unit = {},
+    /** 打开「悬浮球」子页（审批 / 浏览器共用的那颗球）。 */
+    onOpenBall: () -> Unit = {},
     onBack: () -> Unit,
     /** 滚动位置由外面持有：预览层要和真页面共用同一份（见 [SettingsPageShell]）。 */
     scroll: ScrollState = rememberScrollState()
@@ -292,6 +295,12 @@ internal fun AppearanceSettingsPage(
         GroupLabel(L("交互"))
         CardGroup(
             listOf(
+                entrySpec(
+                    L("悬浮球"),
+                    L("审批 / 浏览器共用的那颗球：吸附方式与位置"),
+                    Icons.Filled.Star,
+                    onOpenBall
+                ),
                 switchSpec(
                     title = L("预见式返回动画"),
                     subtitle = L("从屏幕边缘拖动，页面跟手移动，松手返回。需要 Android 13。"),
@@ -438,6 +447,11 @@ internal fun BrowserSettingsPage(
     val config = AppCore.config
     val allowLan = remember(revision) { config.browserAllowLan }
     var maxPages by remember(revision) { mutableStateOf(config.browserMaxPages) }
+    var sleepMinutes by remember(revision) { mutableStateOf(config.browserSleepMinutes) }
+    // 0 = 始终不休眠；用户配置里万一有个别的值（改过 prefs），也保留在选项里
+    val sleepChoices = remember(revision, sleepMinutes) {
+        (listOf(0, 5, 15, 30, 60) + sleepMinutes).distinct().sorted()
+    }
     val engines = remember(revision) { BrowserEngines.BUILTIN + BrowserEngines.custom(config) }
     val custom = remember(revision) { BrowserEngines.custom(config) }
     val defaultEngine = remember(revision) { config.browserDefaultEngine }
@@ -504,6 +518,18 @@ internal fun BrowserSettingsPage(
                         )
                     }
                 ),
+                dropdownSpec(
+                    title = L("后台页面休眠"),
+                    subtitle = L("多久没用到就把页面销毁、只留地址；切回时重新加载（省内存，页面内的表单与临时状态会丢）"),
+                    icon = Icons.Filled.List,
+                    options = sleepChoices.map { sleepLabel(it) },
+                    selectedIndex = sleepChoices.indexOf(sleepMinutes).coerceAtLeast(0)
+                ) { index ->
+                    sleepMinutes = sleepChoices[index]
+                    config.browserSleepMinutes = sleepMinutes
+                    AppCore.saveConfig()
+                    onChanged()
+                },
                 RowSpec(
                     title = L("当前打开的页面"),
                     subtitle = if (pageCount == 0) L("没有页面（悬浮球不显示）")
@@ -1942,3 +1968,61 @@ internal fun SshSettingsPage(
         )
     }
 }
+
+/** 浏览器「后台页面休眠」下拉的显示文字：0 = 始终不休眠。 */
+private fun sleepLabel(minutes: Int): String = when (minutes) {
+    0 -> L("始终不休眠")
+    60 -> L("1 小时")
+    else -> L("%s 分钟").format(minutes)
+}
+
+/* ------------------------------------------------------------ 悬浮球 */
+
+/**
+ * 悬浮球设置（设置 → 外观与语言 → 悬浮球）。
+ *
+ * 审批和浏览器合用同一颗球，所以位置与吸附只有一份设置 —— 以前这份设置挂在
+ * 「权限 → 审批」下面，看着像审批专属，现在挪到这里。
+ */
+@Composable
+internal fun BallSettingsPage(revision: Int, onChanged: () -> Unit, onBack: () -> Unit) {
+    val edge = remember(revision) { BallEdge.of(AppCore.prefs.overlayBallEdge) }
+
+    SettingsPageShell(
+        title = L("悬浮球"),
+        subtitle = L("审批和浏览器共用的那颗球"),
+        onBack = onBack
+    ) {
+        CardGroup(
+            listOf(
+                dropdownSpec(
+                    title = L("小球吸附"),
+                    subtitle = when (edge) {
+                        BallEdge.NONE -> L("松手就停在那，不往边上贴")
+                        BallEdge.LEFT -> L("松手后贴到屏幕左边")
+                        BallEdge.RIGHT -> L("松手后贴到屏幕右边")
+                        BallEdge.AUTO -> L("松手后贴到近的那一边")
+                    },
+                    icon = Icons.Filled.Star,
+                    options = listOf(L("不吸附"), L("靠左"), L("靠右"), L("自动")),
+                    selectedIndex = edge.ordinal
+                ) { index ->
+                    AppCore.prefs.overlayBallEdge =
+                        BallEdge.entries.getOrElse(index) { BallEdge.AUTO }.id
+                    onChanged()
+                },
+                RowSpec(
+                    title = L("重置小球位置"),
+                    icon = Icons.Filled.Refresh,
+                    onClick = {
+                        AppCore.prefs.putInt(Prefs.KEY_OVERLAY_BALL_X, -1)
+                        AppCore.prefs.putInt(Prefs.KEY_OVERLAY_BALL_Y, -1)
+                        AppCore.ball.refresh()
+                        onChanged()
+                    }
+                )
+            )
+        )
+    }
+}
+

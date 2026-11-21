@@ -145,6 +145,7 @@ fun SettingsScreen(
                     onOpenWallpaper = {},
                     onOpenBars = {},
                     onOpenIcon = {},
+                    onOpenBall = {},
                     onBack = {},
                     scroll = appearanceScroll
                 )
@@ -194,6 +195,7 @@ fun SettingsScreen(
                     onOpenWallpaper = { onPage("appearance/wallpaper") },
                     onOpenBars = { onPage("appearance/bars") },
                     onOpenIcon = { onPage("appearance/icon") },
+                    onOpenBall = { onPage("appearance/ball") },
                     onBack = back,
                     scroll = appearanceScroll
                 )
@@ -262,6 +264,11 @@ fun SettingsScreen(
                 "appearance/bars" -> BarsSettingsPage(onBack = back)
                 "appearance/icon" -> IconSettingsPage(
                     ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "appearance/ball" -> BallSettingsPage(
                     revision = revision,
                     onChanged = onChanged,
                     onBack = back

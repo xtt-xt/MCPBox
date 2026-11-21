@@ -27,7 +27,9 @@ import com.xtt.mcpbox.core.ShellEnv
 import com.xtt.mcpbox.core.StatsStore
 import com.xtt.mcpbox.core.SuLauncher
 import com.xtt.mcpbox.browser.BrowserController
+import android.content.ComponentCallbacks
 import com.xtt.mcpbox.ui.OverlayApproval
+import com.xtt.mcpbox.ui.OverlayBall
 
 /**
  * 进程内单例：把 mcpcore 里的服务器核心和 Android 的各种能力接起来。
@@ -62,11 +64,23 @@ object AppCore {
     lateinit var terminal: TerminalController
         private set
 
-    /** 内置浏览器（WebView + 悬浮球 + 悬浮窗）。 */
+    /** 内置浏览器（WebView + 悬浮窗）。 */
     lateinit var browser: BrowserController
         private set
 
-    /** Compose 主题变化时由 MainActivity 写进来，供悬浮窗使用。 */
+    /**
+     * 屏幕上唯一的那颗悬浮球：审批和浏览器各注册一个源，共用一套位置与手感。
+     * （谁都不在时球自己收起来，见 [OverlayBall.refresh]。）
+     */
+    lateinit var ball: OverlayBall
+        private set
+
+    /**
+     * 悬浮窗 / 悬浮球用的配色快照。
+     *
+     * 由 [refreshOverlayPalette] 现算（Compose 之外也能算），主题设置一变就更新；
+     * 不在前台时也不会退回到那套默认蓝。
+     */
     @Volatile var overlayPalette: OverlayPalette = OverlayPalette.Fallback
     lateinit var server: McpServer
         private set
@@ -156,6 +170,21 @@ object AppCore {
             terminal = TerminalController(application)
             // AI 执行的命令也显示在 App 的「终端」页里
             com.xtt.mcpbox.core.ShellMirror.attach { text -> terminal.append(text) }
+            // 悬浮窗 / 悬浮球用的配色：先算出来（服务在后台跑时 Activity 可能根本没起来，
+            // 这时不能退回默认蓝），再让它们构造 —— 它们都直接用 AppCore.overlayPalette
+            overlayPalette = OverlayPalette.compute(application)
+            // 深色 / 浅色切换、换壁纸（动态取色）都要让悬浮窗跟着变
+            runCatching {
+                application.registerComponentCallbacks(object : ComponentCallbacks {
+                    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+                        refreshOverlayPalette()
+                    }
+
+                    override fun onLowMemory() {}
+                })
+            }
+            // 共用的悬浮球要先建好：浏览器在自己的 init 里就要注册进来
+            ball = OverlayBall(application)
             browser = BrowserController(application)
             // SSH：服务端自己的实现（SFTP 的路径判定复用同一份 PathSandbox）
             PhoneSshServer.bootstrap(application.filesDir.absolutePath, androidMode = true)
@@ -218,6 +247,18 @@ object AppCore {
         log.enabled = config.logEnabled
     }
 
+    /**
+     * 重新算一遍悬浮窗用的配色。服务在后台跑、Activity 没起来时也得是主题色，
+     * 所以入口不放在 Compose 里（MainActivity 主题变化时也会调一次）。
+     */
+    fun refreshOverlayPalette() {
+        if (!initialized) return
+        overlayPalette = OverlayPalette.compute(app)
+        overlay?.refreshPalette()
+        // init 里注册配置监听的时候球可能还没建好，晚一点再刷也一样
+        if (::ball.isInitialized) ball.refresh()
+    }
+
     fun attachOverlay(): OverlayApproval {
         val existing = overlay
         if (existing != null) return existing
@@ -247,5 +288,6 @@ object AppCore {
         overlay?.releaseAll()
         overlay = null
         if (approval.presenter != null) approval.presenter = null
+        runCatching { ball.release() }
     }
 }

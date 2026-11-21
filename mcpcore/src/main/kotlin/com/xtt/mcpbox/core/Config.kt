@@ -90,6 +90,7 @@ class Config(private val src: SettingsSource) {
         /** 浏览器工具包 */
         const val BROWSER_ALLOW_LAN = "browser_allow_lan"
         const val BROWSER_MAX_PAGES = "browser_max_pages"
+        const val BROWSER_SLEEP_MINUTES = "browser_sleep_minutes"
         const val BROWSER_ENGINES = "browser_engines_json"
         const val BROWSER_UA = "browser_user_agent"
         const val BROWSER_ENGINE = "browser_default_engine"
@@ -178,6 +179,11 @@ class Config(private val src: SettingsSource) {
     @Volatile var browserAllowLan: Boolean = false
     /** 同时最多开几个页面（WebView 很吃内存）。 */
     @Volatile var browserMaxPages: Int = 5
+    /**
+     * 一页多久没被用到就休眠（销毁 WebView、只留地址，切回时重新加载）。
+     * 0 = 始终不休眠；单位分钟。
+     */
+    @Volatile var browserSleepMinutes: Int = 15
     /** 用户自建的搜索引擎（JSON 列表）。 */
     @Volatile var browserEngines: String = ""
     /** 浏览器身份：mobile（手机版）/ desktop（桌面版）/ default（WebView 默认）/ 自定义 UA。 */
@@ -252,6 +258,7 @@ class Config(private val src: SettingsSource) {
         profileTtlMinutes = src.getInt(Keys.PROFILE_TTL_MINUTES, 30).coerceIn(1, 1440)
         browserAllowLan = src.getBoolean(Keys.BROWSER_ALLOW_LAN, false)
         browserMaxPages = src.getInt(Keys.BROWSER_MAX_PAGES, 5).coerceIn(1, 12)
+        browserSleepMinutes = src.getInt(Keys.BROWSER_SLEEP_MINUTES, 15).coerceIn(0, 240)
         browserEngines = src.getString(Keys.BROWSER_ENGINES, "") ?: ""
         browserUserAgent = src.getString(Keys.BROWSER_UA, "mobile") ?: "mobile"
         browserDefaultEngine = src.getString(Keys.BROWSER_ENGINE, "bing") ?: "bing"
@@ -300,6 +307,7 @@ class Config(private val src: SettingsSource) {
         src.putInt(Keys.PROFILE_TTL_MINUTES, profileTtlMinutes)
         src.putBoolean(Keys.BROWSER_ALLOW_LAN, browserAllowLan)
         src.putInt(Keys.BROWSER_MAX_PAGES, browserMaxPages)
+        src.putInt(Keys.BROWSER_SLEEP_MINUTES, browserSleepMinutes)
         src.putString(Keys.BROWSER_ENGINES, browserEngines)
         src.putString(Keys.BROWSER_UA, browserUserAgent)
         src.putString(Keys.BROWSER_ENGINE, browserDefaultEngine)

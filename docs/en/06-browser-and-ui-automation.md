@@ -27,10 +27,37 @@ Every page can have its own User-Agent and cookies:
 
 ### Floating ball and panel
 
-Whenever a page is open, a floating ball appears on the phone. Tapping it opens a panel with five buttons: **pause AI / reload page / close this page / close all / collapse**.
+Approvals and the browser **share one floating ball** (merged 2026-11-21; they used to have one each):
+
+| What is there now | What the ball shows | Tap | Long-press |
+|---|---|---|---|
+| Pending approvals only | Pending count | Opens the approval card | Just vibrates and bounces |
+| Open pages only | Globe icon | Opens the browser panel | Just vibrates and bounces |
+| Both | Pending count (approvals win) | Opens the approval card | Vibrates and pops a ring menu |
+
+- The ring menu has two sectors and picks its side from the **ball centre's distance to each of the four screen edges**, so it never runs off-screen:
+  top-left corner → bottom-right, top-right → bottom-left, bottom-left → top-right, bottom-right → top-left (one quadrant each);
+  only hugging the left edge → opens right, right edge → opens left, top edge → opens down, bottom edge → opens up (half a circle each);
+  far from every edge (e.g. snapping set to None with the ball parked mid-screen) → one item on each side.
+  Slide onto a sector and release to open it; release near the centre to cancel.
+- Ball position and snapping (none / left / right / auto) live under **Settings → Appearance → Floating ball**, shared by both features.
+- With no pages and no pending approvals the ball hides itself.
+
+The panel itself: a stroked window with five buttons — **pause AI / reload page / close this page / close all / collapse**.
 
 - "Pause AI" only blocks the AI's actions; a manual "reload page" is never blocked by it (taking over should not be blocked by your own pause).
 - The panel can be dragged, and lets you watch the page, switch pages and take over manually.
+
+### Sleeping inactive pages
+
+Android's WebView has no per-page freeze API (`pauseTimers` is global and would stop the current page too), so background pages get a hard sleep instead: **once the timeout passes the WebView is destroyed and only its address is kept**; opening it again reloads it.
+
+- Timeout under **Settings → Browser → Sleep inactive pages**: never / 5 / 15 / 30 / 60 minutes (default 15).
+- "Last used" counts any AI action on that page (read content / click / screenshot / eval…), switching to it, operating the panel, and touching or scrolling on the page.
+- The current page is **not** frozen while the panel is open (the user is looking at it); once collapsed, it sleeps by the same timeout.
+- Sleeping pages show "asleep" on their tab and in `browser_pages`; any action on them wakes them up, at the cost of one extra load for the AI.
+- Waking restores the scroll position; **form input, in-page routing and transient state are lost**.
+- The page limit still counts tabs, not live WebViews.
 
 ### Known limits
 

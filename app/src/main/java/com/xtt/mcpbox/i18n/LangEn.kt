@@ -1931,6 +1931,25 @@ object LangEn {
     "审批方式改为：%s" to "Approval style set to: %s",
     "审批方式为「通知栏」，已发通知：%s" to "Approval style is \"notification\", posted: %s",
     "\n还有 %s 条待审批" to "\n%s more awaiting approval",
+    "弹窗位置" to "Popup position",
+    "贴在屏幕上方弹出" to "Pops up near the top of the screen",
+    "屏幕中间弹出" to "Pops up in the middle of the screen",
+    "贴在屏幕下方弹出" to "Pops up near the bottom of the screen",
+    "上" to "Top",
+    "中" to "Center",
+    "下" to "Bottom",
+    "缩小" to "Minimize",
+    "小球吸附" to "Ball edge snap",
+    "松手就停在那，不往边上贴" to "Stays where you drop it",
+    "松手后贴到屏幕左边" to "Snaps to the left edge",
+    "松手后贴到屏幕右边" to "Snaps to the right edge",
+    "松手后贴到近的那一边" to "Snaps to the nearest edge",
+    "不吸附" to "No snap",
+    "靠左" to "Left",
+    "靠右" to "Right",
+    "自动" to "Auto",
+    "不会自动超时" to "Never times out",
+    "剩余 %s 秒 · 超时自动拒绝" to "%s s left · auto-deny",
 
     // ---------------- 文件进出通道：整目录（zip 上传解压 / 目录打包下载）
     "选文件（可多选）或选一个 zip 解压，直接写进手机存储（会按权限设置弹审批）" to
@@ -2754,6 +2773,18 @@ object LangEn {
     "连接与访问" to "Connections",
     "默认目录（相对路径基于它，SSH 的工作目录也是它）" to "Default folder (relative paths and the SSH working directory start here)",
     "默认超时" to "Default timeout",
-    )
+    "后台页面休眠" to "Sleep inactive pages",
+    "多久没用到就把页面销毁、只留地址；切回时重新加载（省内存，页面内的表单与临时状态会丢）" to "Destroy a page after it has been idle this long, keeping only its address; it reloads when you come back (saves memory, but forms and transient page state are lost)",
+    "始终不休眠" to "Never",
+    " · 已休眠" to " · Asleep",
+    " 已休眠" to " (asleep)",
+    "浏览器：页面已休眠 %s" to "Browser: page asleep %s",
+    "浏览器：唤醒页面 %s" to "Browser: waking page %s",
+    "1 小时" to "1 hour",
+    "重置小球位置" to "Reset ball position",
+    "悬浮球" to "Floating ball",
+    "审批和浏览器共用的那颗球" to "The ball shared by approvals and the browser",
+    "审批 / 浏览器共用的那颗球：吸附方式与位置" to "The ball shared by approvals and the browser: snapping and position",
+        )
 
 }

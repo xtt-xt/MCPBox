@@ -87,10 +87,13 @@ Whenever you hit "always allow / always deny" in an approval dialog, MCPBox **cr
 
 | Setting | Default | Notes |
 |---|---|---|
-| Approval mode | **Overlay** | A top-level overlay above every app, with four buttons: allow once / always allow / deny / always deny |
+| Approval mode | **Overlay** | A top-level card above every app: header with icon, permission name, "tool · 1 / 3" and a minimize button; a scrollable body; four buttons at the bottom: allow once / always allow / deny / always deny |
+| Card position | **Center** | Pin the card to the top / middle / bottom of the screen |
 | Approval mode = Notification | — | One notification per request, action buttons right in the notification, plus "N more waiting" in the body |
 | Local-only access / web console | — | Approvals can also be handled from the web console |
 
+- With several requests waiting the card shows one at a time (first come first served), "1 / 3" in the header, and moves on once handled.
+- The minimize button turns the card into a ball showing how many requests are waiting; tap it to reopen the card. That ball is **shared with the browser** (snapping and position live under **Settings → Appearance → Floating ball**).
 - Notification mode **never shows the overlay** (even with overlay permission); overlay mode **falls back to notifications** when it lacks the permission, otherwise nobody would see the request.
 - A denied request returns a clear error saying the user can change the permission in the app — **do not retry in a loop after a denial**.
 

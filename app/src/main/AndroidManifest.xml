@@ -19,6 +19,9 @@
     <!-- 悬浮窗：审批弹窗显示在最上层 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- 震动：长按审批小球时的一下反馈 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- 定位：AI 取一次当前位置（location 工具包）。只做前台一次性请求，不要后台定位 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

@@ -56,10 +56,8 @@ import androidx.compose.ui.Modifier
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.xtt.mcpbox.AppCore
-import com.xtt.mcpbox.OverlayPalette
 import com.xtt.mcpbox.ShizukuHelper
 import com.xtt.mcpbox.autoGrantJoin
 import com.xtt.mcpbox.autoGrantMissingPermissions
@@ -121,19 +119,10 @@ class MainActivity : ComponentActivity() {
                 backdropSeed = backdropSeed
             ) {
                 // 把当前配色同步给悬浮窗（它在 Compose 外面，拿不到 MaterialTheme）
-                val cs = MaterialTheme.colorScheme
                 LaunchedEffect(seed, style, darkMode, dynColor, seedSource, backdropSeed) {
-                    AppCore.overlayPalette = OverlayPalette(
-                        background = cs.background.toArgb(),
-                        card = cs.surfaceContainer.toArgb(),
-                        cardHigh = cs.surfaceContainerHigh.toArgb(),
-                        cardLow = cs.surfaceContainerLow.toArgb(),
-                        text = cs.onSurface.toArgb(),
-                        textDim = cs.onSurfaceVariant.toArgb(),
-                        primary = cs.primary.toArgb(),
-                        onPrimary = cs.onPrimary.toArgb(),
-                        outline = cs.outline.toArgb()
-                    )
+                    // 交给 AppCore 现算 —— 和「服务在后台算一遍」是同一个入口，
+                    // 免得两处各写一份、早晚不一致
+                    AppCore.refreshOverlayPalette()
                 }
                 // 自定义背景（图片 / 视频）铺在最底下；页面自己的 PageSurface 负责往上叠遮罩。
                 // 它现读 Prefs，所以主题版本号变了（也就是背景设置改了）要重新取一遍。

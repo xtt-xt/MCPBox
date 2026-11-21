@@ -35,7 +35,12 @@ data class BrowserPageInfo(
      *
      * 存的是规格而不是展开后的 UA 串，好让 AI 看到「桌面版」这种说法。
      */
-    val ua: String? = null
+    val ua: String? = null,
+    /**
+     * 休眠中：长时间没用，页面已经被销毁，只留地址。
+     * 对它做任何操作（读内容 / 截图 / 切过去）都会自动唤醒并重新加载。
+     */
+    val sleeping: Boolean = false
 ) {
     /** 域名（给 AI 看的一行用）。 */
     val host: String get() = hostOf(url)
@@ -552,6 +557,7 @@ class BrowserHub(private val config: Config, private val bridge: BrowserBridge?)
             val mark = if (p.id == currentId) "*" else " "
             val flags = buildString {
                 if (p.loading) append(L(" 加载中"))
+                if (p.sleeping) append(L(" 已休眠"))
                 if (p.error != null) append(L(" 出错"))
                 if (p.canGoBack) append(L(" 可后退"))
                 if (!p.ua.isNullOrBlank()) append(" · ").append(uaLabel(p.ua))

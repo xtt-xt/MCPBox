@@ -6,6 +6,7 @@ package com.xtt.mcpbox
 import com.xtt.mcpbox.ui.DEFAULT_SEED
 import com.xtt.mcpbox.ui.DarkMode
 import com.xtt.mcpbox.ui.PaletteStyle
+import com.xtt.mcpbox.ui.ApprovalPosition
 
 import android.content.Context
 import com.xtt.mcpbox.core.SettingsSource
@@ -56,6 +57,20 @@ class Prefs(context: Context) : SettingsSource {
         const val KEY_PREDICTIVE_BACK = "predictive_back"
         /** 审批请求怎么呈现：overlay（悬浮窗，默认）/ notify（通知栏）。 */
         const val KEY_APPROVAL_PRESENTATION = "approval_presentation"
+        /** 审批卡片弹在哪：top / center / bottom（默认 center）。 */
+        const val KEY_APPROVAL_POSITION = "approval_position"
+        /** 审批收成球之后停在哪（屏幕坐标；-1 = 还没记录过）。 */
+        const val KEY_APPROVAL_BALL_X = "approval_ball_x"
+        const val KEY_APPROVAL_BALL_Y = "approval_ball_y"
+        /** 球松手后贴哪边：none / left / right / auto（默认 auto）。 */
+        const val KEY_APPROVAL_BALL_EDGE = "approval_ball_edge"
+
+        // ---- 共用的悬浮球（审批 + 浏览器合在一颗球上）----
+        /** 球停在屏幕哪（屏幕坐标；-1 = 还没记录过，回落到审批球的旧键）。 */
+        const val KEY_OVERLAY_BALL_X = "overlay_ball_x"
+        const val KEY_OVERLAY_BALL_Y = "overlay_ball_y"
+        /** 球松手后贴哪边：none / left / right / auto（默认 auto）。 */
+        const val KEY_OVERLAY_BALL_EDGE = "overlay_ball_edge"
 
         // ---- 自定义背景（背景图 / 背景视频 + 一层可调透明度的遮罩）----
         const val KEY_BACKDROP_ENABLED = "backdrop_enabled"
@@ -334,6 +349,33 @@ class Prefs(context: Context) : SettingsSource {
         get() = getString(KEY_APPROVAL_PRESENTATION, com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id)
             ?: com.xtt.mcpbox.core.ApprovalPresentation.OVERLAY.id
         set(value) = putString(KEY_APPROVAL_PRESENTATION, value)
+
+    /**
+     * 审批卡片弹出位置：`top` / `center` / `bottom`（默认居中）。
+     * 解析在 [com.xtt.mcpbox.ui.ApprovalPosition.of]。
+     */
+    var approvalPosition: String
+        get() = getString(KEY_APPROVAL_POSITION, ApprovalPosition.CENTER.id) ?: ApprovalPosition.CENTER.id
+        set(value) = putString(KEY_APPROVAL_POSITION, value)
+
+    /**
+     * 缩小后的球松手贴哪边：`none` / `left` / `right` / `auto`（默认就近）。
+     * 解析在 [com.xtt.mcpbox.ui.BallEdge.of]。
+     */
+    var approvalBallEdge: String
+        get() = getString(KEY_APPROVAL_BALL_EDGE, com.xtt.mcpbox.ui.BallEdge.AUTO.id)
+            ?: com.xtt.mcpbox.ui.BallEdge.AUTO.id
+        set(value) = putString(KEY_APPROVAL_BALL_EDGE, value)
+
+    /**
+     * 共用的悬浮球（审批 + 浏览器）松手贴哪边：`none` / `left` / `right` / `auto`。
+     *
+     * 没设过就回落到旧的 [approvalBallEdge]，升级上来的人不用重设一遍。
+     * 解析在 [com.xtt.mcpbox.ui.BallEdge.of]。
+     */
+    var overlayBallEdge: String
+        get() = getString(KEY_OVERLAY_BALL_EDGE, null) ?: approvalBallEdge
+        set(value) = putString(KEY_OVERLAY_BALL_EDGE, value)
 
     /**
      * 预见式返回动画（Android 13+ 的 predictive back，默认开）。

@@ -919,6 +919,7 @@ fun dropdownSpec(
     icon: ImageVector? = null,
     value: String,
     options: List<String>,
+    visible: Boolean = true,
     onSelect: (Int) -> Unit
 ): RowSpec {
     var open by remember { mutableStateOf(false) }
@@ -926,6 +927,7 @@ fun dropdownSpec(
         title = title,
         subtitle = subtitle,
         icon = icon,
+        visible = visible,
         onClick = { open = true },
         trailing = {
             PillDropdown(
@@ -947,10 +949,11 @@ fun dropdownSpec(
     icon: ImageVector? = null,
     options: List<String>,
     selectedIndex: Int,
+    visible: Boolean = true,
     onSelect: (Int) -> Unit
 ): RowSpec {
     val value = options.getOrElse(selectedIndex.coerceIn(0, options.lastIndex)) { options.first() }
-    return dropdownSpec(title, subtitle, icon, value, options, onSelect)
+    return dropdownSpec(title, subtitle, icon, value, options, visible, onSelect)
 }
 
 @Composable

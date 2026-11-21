@@ -398,6 +398,9 @@ internal fun ApprovalPolicyPage(
     val presentation = remember(revision) {
         ApprovalPresentation.of(AppCore.prefs.approvalPresentation)
     }
+    val position = remember(revision) {
+        ApprovalPosition.of(AppCore.prefs.approvalPosition)
+    }
 
     SettingsPageShell(
         title = L("审批"),
@@ -425,7 +428,23 @@ internal fun ApprovalPolicyPage(
                         message = L("审批方式改为：%s").format(L(if (index == 1) "通知栏" else "悬浮窗"))
                     )
                     onChanged()
-                }
+                },
+                dropdownSpec(
+                    title = L("弹窗位置"),
+                    subtitle = when (position) {
+                        ApprovalPosition.TOP -> L("贴在屏幕上方弹出")
+                        ApprovalPosition.CENTER -> L("屏幕中间弹出")
+                        ApprovalPosition.BOTTOM -> L("贴在屏幕下方弹出")
+                    },
+                    visible = presentation == ApprovalPresentation.OVERLAY,
+                    icon = Icons.Filled.Place,
+                    options = listOf(L("上"), L("中"), L("下")),
+                    selectedIndex = position.ordinal
+                ) { index ->
+                    AppCore.prefs.approvalPosition =
+                        ApprovalPosition.entries.getOrElse(index) { ApprovalPosition.CENTER }.id
+                    onChanged()
+                },
             )
         )
 
