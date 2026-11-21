@@ -31,26 +31,23 @@ The pack-management tools (`list_packs` / `activate_pack` / `deactivate_pack` / 
 | `file_hash` | `fs.read` | md5 / sha1 / sha256, to compare two files |
 | `storage_info` | `system.info` | Accessible roots plus total / free space per partition |
 
-## memory · Memory store (10, on by default)
+## memory · Memory store (7, on by default)
 
 Turning off the "memory" master switch removes these tools from `tools/list` entirely.
 
-| Tool | Permission key | What it does |
-|---|---|---|
-| `create_entities` | `memory` | Create entities (nodes): projects, tools, events, people, user preferences… names are unique |
-| `create_relations` | `memory` | Create a directed relation between two entities (e.g. `PART_OF`) |
-| `add_observations` | `memory` | Append observations — one fact per line — to an existing entity; duplicates are skipped |
-| `read_graph` | `memory` | Read the whole store (entities + relations), filterable by folder / type |
-| `search_nodes` | `memory` | Keyword search; results include the **direct neighbours** of each hit |
-| `open_nodes` | `memory` | Read a few entities by exact name, with observations and relations |
-| `memory_stats` | `memory` | Store size: entity / relation counts and folder / type / predicate distributions |
-| `delete_entities` | `memory` | Delete entities (their relations go too) |
-| `delete_relations` | `memory` | Delete specific relations |
-| `delete_observations` | `memory` | Delete exact observation lines from an entity (must match verbatim) |
+Each memory is a Markdown file and the AI reads and writes whole notes. See [04 Memory](04-memory.md).
 
-> ⚠️ **`memory_export` / `memory_import` are not part of any pack yet**, so they never show up in
-> `tools/list` (packs only expose the tools listed in them). For now use `tools/call` directly, or the
-> app's "Memory → ⋯ → Export / Import". See [04 Memory](04-memory.md).
+| Tool | Perm key | What it does |
+|---|---|---|
+| `memory_list` | `memory` | List every note (folder + name + one-line summary), optionally one folder |
+| `memory_read` | `memory` | Read one note in full: summary, type, body, and both directions of links (with the other note's summary) |
+| `memory_write` | `memory` | Write a whole note (creates if missing); summary / type / body / links optional, `oldName` renames |
+| `memory_append` | `memory` | Append a paragraph to the body (newline-separated); creates the note if missing |
+| `memory_search` | `memory` | Keyword search over name / summary / type / folder / body / links, hits include direct neighbours |
+| `memory_delete` | `memory` | Delete notes (links pointing at them are removed too) |
+| `memory_stats` | `memory` | Note count, link count, and the folder / type / link-type breakdown |
+
+> Import / export is not a tool: use "Memory → ⋯" in the app to export / import a zip.
 
 ## file.write · Writing files (9, off by default)
 

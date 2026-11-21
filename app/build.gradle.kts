@@ -15,8 +15,8 @@ android {
         applicationId = "com.xtt.mcpbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 171
-        versionName = "1.4.1"
+        versionCode = 172
+        versionName = "1.5.0"
         resourceConfigurations.add("zh")
     }
 
@@ -116,6 +116,10 @@ dependencies {
     // 毛玻璃（实时模糊底层内容）：底栏与全选工具条用。
     // 1.5.4 对应的 compose 是 1.7.3，和上面的 bom 一致。
     implementation("dev.chrisbanes.haze:haze:1.5.4")
+
+    // Markdown 渲染：JetBrains 官方解析器 + 现成的 Compose M3 组件。
+    // 0.27.0 是配 Compose 1.7.x / Kotlin 2.0 的版本，和这里的 BOM 对得上。
+    implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
 
     // 从种子色派生整套 M3 配色（HCT 色彩空间）。
     // 注意：material-color-utilities 没有独立坐标，它打包在 MDC 里，

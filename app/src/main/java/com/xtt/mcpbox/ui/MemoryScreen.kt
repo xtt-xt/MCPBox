@@ -6,21 +6,13 @@ package com.xtt.mcpbox.ui
 import com.xtt.mcpbox.i18n.L
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,18 +20,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,207 +45,186 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xtt.mcpbox.AppCore
-import com.xtt.mcpbox.core.MemoryEntity
-import com.xtt.mcpbox.core.MemoryRelation
+import com.xtt.mcpbox.core.Backup
+import com.xtt.mcpbox.core.MemoryLink
+import com.xtt.mcpbox.core.MemoryNote
+import kotlinx.coroutines.launch
 
-/** 记忆库列表 / 观察列表一次渲染多少条（实体卡比较重，比日志少很多）。 */
+/** 记忆列表一次渲染多少张卡。 */
 private const val MEMORY_PAGE = 20
 
 /**
- * 记忆库：给 AI 用的长期记忆（知识图谱）。
+ * 记忆库：每条记忆就是一个 Markdown 文件。
  *
- * 列表页负责浏览 / 搜索 / 按分区过滤；点进实体能改类型、分区、观察和关系。
- * AI 那边通过 create_entities / create_relations / search_nodes 等工具读写同一份数据。
+ * 列表页负责浏览 / 搜索 / 按分区筛选；点进去整篇编辑（名字、分区、简介、类型、正文、关联）。
+ * AI 那边通过 memory_list / memory_read / memory_write 等工具读写同一批文件。
+ *
+ * 根目录下还有旧版的 graph.json 时，整页只显示一条迁移横幅 —— 迁移完成前记忆功能不可用。
  */
 @Composable
 fun MemoryScreen(
     ctx: Context,
-    revision: Int,
     onChanged: () -> Unit,
     onBack: () -> Unit
 ) {
+    // AI 从外面写过记忆时，这一页要跟着刷新 —— 光靠设置栈的 revision 不够
+    var liveRev by remember { mutableStateOf(AppCore.memory.revision) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val l = { liveRev = AppCore.memory.revision }
+        AppCore.memory.addListener(l)
+        onDispose { AppCore.memory.removeListener(l) }
+    }
+    val revision = liveRev.toInt()
+
     var page by rememberSaveable { mutableStateOf("list") }
     var showMenu by remember { mutableStateOf(false) }
-    // 待导入的 JSON 文本（先选文件，再选导入方式）
-    var pendingImport by remember { mutableStateOf<String?>(null) }
-    var askMode by remember { mutableStateOf(false) }
-    var askReplace by remember { mutableStateOf(false) }
+    var showMigrate by remember { mutableStateOf(false) }
+    // 待导入的内容（先读文件，再选合并 / 覆盖）
+    var pendingImport by remember { mutableStateOf<ImportPayload?>(null) }
 
-    fun doImport(text: String, merge: Boolean) {
-        runCatching { AppCore.memory.importJson(text, merge) }.fold(
-            onSuccess = { r ->
-                toast(ctx, r.describe())
-                onChanged()
-            },
-            onFailure = { toast(ctx, L("导入失败：%s").format(it.message ?: L("不是合法的记忆文件"))) }
-        )
-    }
+    val legacy = remember(revision) { AppCore.memory.hasLegacy }
+    val backups = remember(revision, legacy) { AppCore.memory.legacyBackups() }
 
-    // 导出：系统文件选择器自己挑位置，默认给个带时间戳的文件名
+    // ---------------------------------------------------------------- 导入导出
+
     val exportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         if (uri != null) {
-            val text = AppCore.memory.exportJson()
-            val ok = runCatching {
-                ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            val bytes = runCatching {
+                Backup.zip(
+                    parts = mapOf(Backup.Part.MEMORY to AppCore.memory.exportManifest()),
+                    includeToken = false,
+                    memoryFiles = AppCore.memory.filesSnapshot()
+                )
+            }.getOrNull()
+            val ok = bytes != null && runCatching {
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
             }.isSuccess
-            val g = AppCore.memory.graph
             toast(
                 ctx,
-                if (ok) L("已导出 %s 个实体 · %s 条关系").format(g.entities.size, g.relations.size)
-                else L("导出失败")
+                if (ok) L("已导出 %s 条记忆").format(AppCore.memory.notes.size) else L("导出失败")
             )
         }
     }
+
     val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            val text = runCatching {
-                ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            val bytes = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             }.getOrNull()
-            if (text.isNullOrBlank()) {
+            if (bytes == null || bytes.isEmpty()) {
                 toast(ctx, L("读不到文件内容"))
             } else {
-                pendingImport = text
-                askMode = true
+                pendingImport = runCatching { parseImport(bytes) }.getOrNull()
+                if (pendingImport == null) toast(ctx, L("不是记忆库备份"))
             }
         }
     }
 
+    val legacyExportLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            val latest = AppCore.memory.legacyBackups().firstOrNull()
+            val text = latest?.let { runCatching { it.readText() }.getOrNull() }
+            val ok = text != null && runCatching {
+                ctx.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+            }.isSuccess
+            toast(ctx, if (ok) L("已导出最后旧版数据库") else L("导出失败"))
+        }
+    }
+
+    // ---------------------------------------------------------------- 弹窗
+
     if (showMenu) {
+        val options = buildList {
+            add(L("导出全部记忆"))
+            add(L("从文件导入"))
+            if (backups.isNotEmpty()) add(L("导出最后旧版数据库"))
+        }
         ChoiceDialog(
             title = L("记忆库"),
-            options = listOf(L("导出到文件"), L("从文件导入")),
+            options = options,
             selected = -1,
             onDismiss = { showMenu = false },
             onSelect = { index ->
                 showMenu = false
-                if (index == 0) exportLauncher.launch("mcpbox-memory-${memoryStamp()}.json")
-                else importLauncher.launch(arrayOf("application/json", "*/*"))
+                when {
+                    index == 0 -> exportLauncher.launch("mcpbox-memory-${memoryStamp()}.zip")
+                    index == 1 -> importLauncher.launch(arrayOf("application/zip", "application/json", "*/*"))
+                    index == 2 -> legacyExportLauncher.launch("mcpbox-memory-legacy-${memoryStamp()}.json")
+                }
             }
         )
     }
 
-    if (askMode) {
+    pendingImport?.let { payload ->
         ChoiceDialog(
             title = L("导入方式"),
-            options = listOf(L("合并（推荐）：保留现有内容"), L("覆盖：清空后整份替换")),
+            options = listOf(L("合并：保留现有内容"), L("覆盖：清空后整份替换")),
             selected = 0,
-            onDismiss = { askMode = false; pendingImport = null },
+            onDismiss = { pendingImport = null },
             onSelect = { index ->
-                askMode = false
-                if (index == 0) {
-                    pendingImport?.let { doImport(it, merge = true) }
-                    pendingImport = null
-                } else {
-                    askReplace = true
-                }
+                pendingImport = null
+                runCatching {
+                    val r = if (payload.files.isNotEmpty()) {
+                        AppCore.memory.importFiles(payload.files, replace = index == 1)
+                    } else {
+                        AppCore.memory.importLegacyJson(payload.legacyJson.orEmpty(), replace = index == 1)
+                    }
+                    toast(ctx, r.describe())
+                    onChanged()
+                }.onFailure { toast(ctx, L("导入失败：%s").format(it.message ?: "")) }
             }
         )
     }
 
-    if (askReplace) {
-        AlertDialog(
-            onDismissRequest = { askReplace = false; pendingImport = null },
-            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(28.dp),
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-            title = { Text(L("覆盖整个记忆库？"), fontSize = 20.sp) },
-            text = {
-                Text(
-                    L("当前 %s 个实体 · %s 条关系会被全部清空，然后写入文件里的内容。这一步不能撤销。")
-                        .format(
-                            AppCore.memory.graph.entities.size,
-                            AppCore.memory.graph.relations.size
-                        ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    askReplace = false
-                    pendingImport?.let { doImport(it, merge = false) }
-                    pendingImport = null
-                }) { Text(L("覆盖"), color = Sem.bad) }
-            },
-            dismissButton = {
-                TextButton(onClick = { askReplace = false; pendingImport = null }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
+    // 旧版数据：页内横幅点开时复用同一个迁移窗（App 启动时也会自动弹一次）
+    MemoryMigrateWindow(
+        visible = showMigrate && legacy,
+        onDismiss = { showMigrate = false },
+        onMigrated = { showMigrate = false; onChanged() }
+    )
 
-    // 列表页的滚动、搜索词与分区提到这一层：预览层要和真页面共用同一份，
-    // 否则拖动时露出来的记忆列表永远停在最顶部、筛选也是空的
+    // ---------------------------------------------------------------- 页栈
+
     val listScroll = rememberScrollState()
     var listQuery by rememberSaveable { mutableStateOf("") }
     var listFolder by rememberSaveable { mutableStateOf("") }
 
-    // 详情里按返回 → 回列表；已经在列表了就不接（交还给设置页栈，离开记忆库）。
-    // 开了「预见式返回动画」时手指拖着走、松手才决定；拖动时下面露出来的就是记忆列表。
+    // 编辑页返回 = 回预览（新建则回列表）
+    fun backFromPage() {
+        page = if (page.startsWith("edit:") && page.removePrefix("edit:").isNotEmpty()) {
+            "detail:" + page.removePrefix("edit:")
+        } else "list"
+    }
+
+    // 从编辑页 / 新建页按返回时，背后露出来的应该是预览页
+    val behindEdit = page.startsWith("edit:") && page.removePrefix("edit:").isNotEmpty()
+
     PredictiveBackBox(
-        onBack = { page = "list" },
-        handleBack = page.startsWith("detail:"),
-        follow = page.startsWith("detail:") && AppCore.prefs.predictiveBack,
+        onBack = { backFromPage() },
+        handleBack = page != "list",
+        follow = page != "list" && AppCore.prefs.predictiveBack,
         behind = {
-            MemoryListPage(
-                scroll = listScroll,
-                query = listQuery,
-                onQuery = { listQuery = it },
-                folder = listFolder,
-                onFolder = { listFolder = it },
+            if (behindEdit) MemoryPreviewPage(
                 ctx = ctx,
+                name = page.removePrefix("edit:"),
                 revision = revision,
                 onChanged = onChanged,
-                onBack = onBack,
-                onOpen = { page = "detail:$it" },
-                onMore = { showMenu = true }
-            )
-        }
-    ) {
-    // 跟手提交时旧页已经偏了多少（普通返回是 0）—— 交给共用转场去用。
-    // 注意必须在**组合作用域**里读（transitionSpec 那个 lambda 不是 @Composable）
-    val commitDrag = LocalPredictiveCommitDrag.current
-    // 视频背景时页面是透明的（视频在最底层），两页重叠就会互相透出文字 →
-    // 这种模式下转场走「退出的那一页直接收掉」（见 pageSlide 的 noOverlap）。
-    val noOverlap = rememberTransparentPages()
-    AnimatedContent(
-        targetState = page,
-        transitionSpec = {
-            pageSlide(
-                // 同工具页：根页 key 是 "list"，方向要按层级比，不能看「key 是否空串」
-                entering = pageForward(targetState, initialState) { if (it == "list") 0 else 1 },
-                commitDrag = commitDrag,
-                noOverlap = noOverlap
-            )
-        },
-        label = "memoryPage"
-    ) { current ->
-        // 每页自带底色：转场时新旧两页重叠，各自有底才不会互相透出文字。
-        // 记忆库整页是设置里的子页 → sub = true
-        PageSurface(sub = true) {
-        if (current.startsWith("detail:")) {
-            MemoryDetailPage(
-                ctx = ctx,
-                name = current.removePrefix("detail:"),
-                revision = revision,
-                onChanged = onChanged,
+                onEdit = {},
                 onOpen = { page = "detail:$it" },
                 onBack = { page = "list" }
-            )
-        } else {
-            MemoryListPage(
+            ) else MemoryListPage(
                 scroll = listScroll,
                 query = listQuery,
                 onQuery = { listQuery = it },
@@ -261,11 +235,85 @@ fun MemoryScreen(
                 onChanged = onChanged,
                 onBack = onBack,
                 onOpen = { page = "detail:$it" },
-                onMore = { showMenu = true }
+                onNew = { page = "new" },
+                onMore = { showMenu = true },
+                legacy = legacy,
+                onMigrate = { showMigrate = true }
             )
-        }
             }
-}
+    ) {
+        val commitDrag = LocalPredictiveCommitDrag.current
+        val noOverlap = rememberTransparentPages()
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                pageSlide(
+                    entering = pageForward(targetState, initialState) {
+                        // 列表 0、预览 1、编辑 2 —— 编辑页是预览的子级，
+                        // 不分开的话「编辑完返回」会因为两边同为 1 被判成前进，又播一次进入动画
+                        when {
+                            it == "list" -> 0
+                            it.startsWith("edit:") || it == "new" -> 2
+                            else -> 1
+                        }
+                    },
+                    commitDrag = commitDrag,
+                    noOverlap = noOverlap
+                )
+            },
+            label = "memoryPage"
+        ) { current ->
+            PageSurface(sub = true) {
+                when {
+                    current == "new" -> MemoryEditPage(
+                        ctx = ctx,
+                        name = null,
+                        revision = revision,
+                        onChanged = onChanged,
+                        onOpen = { page = "detail:$it" },
+                        onBack = { page = "list" },
+                        onDone = { page = "detail:$it" }
+                    )
+
+                    current.startsWith("detail:") -> MemoryPreviewPage(
+                        ctx = ctx,
+                        name = current.removePrefix("detail:"),
+                        revision = revision,
+                        onChanged = onChanged,
+                        onEdit = { page = "edit:" + current.removePrefix("detail:") },
+                        onOpen = { page = "detail:$it" },
+                        onBack = { page = "list" }
+                    )
+
+                    current.startsWith("edit:") -> MemoryEditPage(
+                        ctx = ctx,
+                        name = current.removePrefix("edit:"),
+                        revision = revision,
+                        onChanged = onChanged,
+                        onOpen = { page = "detail:$it" },
+                        onBack = { page = "detail:" + current.removePrefix("edit:") },
+                        onDone = { page = "detail:$it" }
+                    )
+
+                    else -> MemoryListPage(
+                        scroll = listScroll,
+                        query = listQuery,
+                        onQuery = { listQuery = it },
+                        folder = listFolder,
+                        onFolder = { listFolder = it },
+                        ctx = ctx,
+                        revision = revision,
+                        onChanged = onChanged,
+                        onBack = onBack,
+                        onOpen = { page = "detail:$it" },
+                        onNew = { page = "new" },
+                        onMore = { showMenu = true },
+                        legacy = legacy,
+                        onMigrate = { showMigrate = true }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -283,27 +331,26 @@ private fun MemoryListPage(
     onChanged: () -> Unit,
     onBack: () -> Unit,
     onOpen: (String) -> Unit,
-    onMore: () -> Unit
+    onNew: () -> Unit,
+    onMore: () -> Unit,
+    legacy: Boolean,
+    onMigrate: () -> Unit
 ) {
-    // 列表页是「记忆库」这一栈的根：不接返回，交给设置页栈统一处理
-
-    val graph = remember(revision) { AppCore.memory.graph }
+    val all = remember(revision) { AppCore.memory.notes }
     val folders = remember(revision) { AppCore.memory.folders() }
-    var showNew by remember { mutableStateOf(false) }
 
     val list = remember(revision, query, folder) {
-        graph.entities.filter { e ->
-            (folder.isBlank() || e.folder == folder) &&
+        all.filter { n ->
+            (folder.isBlank() || n.folderLabel == folder) &&
                 (
                     query.isBlank() ||
-                        e.name.contains(query, true) ||
-                        e.type.contains(query, true) ||
-                        e.observations.any { o -> o.contains(query, true) }
+                        n.name.contains(query, true) ||
+                        n.description.contains(query, true) ||
+                        n.type.contains(query, true) ||
+                        n.body.contains(query, true)
                     )
-        }.sortedBy { it.name.lowercase() }
+        }
     }
-    // 实体卡比日志行重（一张卡要渲染观察 + 关系），一次渲染太多会卡首帧：
-    // 首批 20 张，离底半屏再补 20 张。
     val shownCount = rememberPagedCount(
         list.size, scroll,
         resetKey = query to folder,
@@ -311,38 +358,6 @@ private fun MemoryListPage(
         step = MEMORY_PAGE,
         preloadScreens = 0.5f
     )
-    // 关系按实体名索引，避免每张卡都把整张关系表扫一遍
-    val relOf = remember(graph) {
-        val map = mutableMapOf<String, MutableList<MemoryRelation>>()
-        graph.relations.forEach { r ->
-            map.getOrPut(r.from) { mutableListOf() }.add(r)
-            map.getOrPut(r.to) { mutableListOf() }.add(r)
-        }
-        map
-    }
-
-    if (showNew) {
-        TextInputDialog(
-            title = L("新建记忆"),
-            fields = listOf(
-                InputField("name", L("名称"), ""),
-                InputField("type", L("类型"), L("例如：项目事实 / 用户偏好 / 事件")),
-                InputField("folder", L("分区"), L("例如：projects / xtt"))
-            ),
-            onDismiss = { showNew = false },
-            onConfirm = { values ->
-                val name = values["name"]?.trim().orEmpty()
-                if (name.isNotEmpty()) {
-                    AppCore.memory.createEntities(
-                        listOf(Triple(name, values["type"]?.trim().orEmpty(), values["folder"]?.trim().orEmpty()))
-                    )
-                    toast(ctx, L("已新建「%s」").format(name))
-                    onChanged()
-                }
-                showNew = false
-            }
-        )
-    }
 
     PageScaffold(
         scroll = scroll,
@@ -350,18 +365,30 @@ private fun MemoryListPage(
         onBack = onBack,
         bottomPadding = 24.dp,
         actions = {
-            RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = { showNew = true })
+            RoundIconButton(Icons.Filled.Add, L("新建记忆"), onClick = onNew)
             Spacer(Modifier.width(8.dp))
             RoundIconButton(Icons.Filled.MoreVert, L("导入导出"), onClick = onMore)
         }
     ) {
-
         Spacer(Modifier.height(10.dp))
+
+        if (legacy) {
+            // 旧版数据：整页只剩这一条横幅，迁移之前内容一律不显示
+            Column(Modifier.padding(horizontal = 14.dp)) {
+                LegacyBanner(onClick = onMigrate)
+            }
+            Spacer(Modifier.height(16.dp))
+            Column(Modifier.padding(horizontal = 18.dp)) {
+                EmptyHint(L("记忆库还在旧版格式，迁移完成后这里才会显示内容。"))
+            }
+            return@PageScaffold
+        }
+
         Column(Modifier.padding(horizontal = 14.dp)) {
             OutlinedTextField(
                 value = query,
                 onValueChange = onQuery,
-                placeholder = { Text(L("搜索名称 / 类型 / 观察内容"), fontSize = 13.sp) },
+                placeholder = { Text(L("搜索名字 / 简介 / 正文"), fontSize = 13.sp) },
                 singleLine = true,
                 shape = RoundedCornerShape(18.dp),
                 leadingIcon = {
@@ -377,16 +404,14 @@ private fun MemoryListPage(
 
         if (folders.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
-            // 文件夹筛选：和日志筛选同一套分类胶囊（选中实心主色、按下收圆角）
             val names = listOf("") + folders.map { it.first }
-            val labels = listOf(L("全部")) + folders.map { "${it.first} ${it.second}" }
+            val labels = listOf(L("全部") + " ${all.size}") + folders.map { "${it.first} ${it.second}" }
             val selected = names.indexOfFirst { it == folder }.coerceAtLeast(0)
             CategoryPillRow(
                 items = labels,
                 selected = selected,
                 contentPadding = PaddingValues(horizontal = 14.dp)
             ) { index ->
-                // 再点一次已选中的文件夹 = 取消筛选
                 onFolder(if (index == selected && index > 0) "" else names[index])
             }
         }
@@ -396,7 +421,7 @@ private fun MemoryListPage(
         if (list.isEmpty()) {
             Column(Modifier.padding(horizontal = 18.dp)) {
                 EmptyHint(
-                    if (graph.entities.isEmpty()) L("记忆库还是空的。AI 用 create_entities 就能往里写，也可以点右上角 + 手动加。")
+                    if (all.isEmpty()) L("记忆库还是空的。AI 用 memory_write 就能往里写，也可以点右上角 + 手动新建。")
                     else L("没有匹配的记忆。")
                 )
             }
@@ -405,8 +430,8 @@ private fun MemoryListPage(
                 Modifier.padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp)
             ) {
-                list.take(shownCount).forEach { e ->
-                    EntityCard(e, relOf[e.name].orEmpty()) { onOpen(e.name) }
+                list.take(shownCount).forEach { n ->
+                    NoteCard(n, revision) { onOpen(n.name) }
                 }
             }
             PagedHint(shownCount, list.size)
@@ -415,8 +440,7 @@ private fun MemoryListPage(
         Spacer(Modifier.height(16.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
             Text(
-                L("记忆按「实体 + 观察 + 关系」组织。实体是一张卡（项目、工具、事件、偏好…），") +
-                    L("观察是卡上的一条条事实，关系把两张卡连起来。同一份数据 AI 也能读写。"),
+                L("每条记忆就是一个 Markdown 文件，放在记忆目录下的分区文件夹里。AI 读写的是同一批文件，改了哪篇就是改了哪个文件。"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 17.sp
@@ -426,12 +450,31 @@ private fun MemoryListPage(
 }
 
 @Composable
-private fun EntityCard(e: MemoryEntity, relations: List<MemoryRelation>, onClick: () -> Unit) {
-    // 按下底色 160ms 渐变 + primary ripple，两者都裁在 24dp 圆角里
+private fun LegacyBanner(onClick: () -> Unit) {
+    PressCardBox(onClick = onClick) {
+        Text(
+            L("更新新版记忆数据库"),
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 15.5.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            L("检测到旧版记忆数据。点这里完成迁移，迁移后才能继续读写记忆。"),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun NoteCard(n: MemoryNote, revision: Int, onClick: () -> Unit) {
+    val edgeCount = remember(revision, n.name) { AppCore.memory.edgesOf(n.name).size }
     PressCardBox(onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                e.name,
+                n.name,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 15.5.sp,
                 fontWeight = FontWeight.Medium,
@@ -439,164 +482,243 @@ private fun EntityCard(e: MemoryEntity, relations: List<MemoryRelation>, onClick
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            if (e.type.isNotBlank()) {
+            if (n.type.isNotBlank()) {
                 Spacer(Modifier.width(8.dp))
-                OutlineTag(e.type, MaterialTheme.colorScheme.primary)
+                OutlineTag(n.type, MaterialTheme.colorScheme.primary)
             }
         }
-
-        val meta = buildString {
-            append(e.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER })
-            append(" · ").append(L("%s 条观察").format(e.observations.size))
-            if (relations.isNotEmpty()) append(" · ").append(L("%s 条关系").format(relations.size))
-        }
-        Text(
-            meta,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 3.dp)
-        )
-
-        e.observations.take(3).forEach { o ->
+        if (n.description.isNotBlank()) {
             Text(
-                "· $o",
+                n.description,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.5.sp,
                 lineHeight = 17.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 5.dp)
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
-        if (e.observations.size > 3) {
-            Text(
-                L("… 还有 %s 条").format(e.observations.size - 3),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.5.sp,
-                modifier = Modifier.padding(top = 3.dp)
-            )
+        val meta = buildString {
+            append(n.folderLabel)
+            if (edgeCount > 0) append(" · ").append(L("%s 条关联").format(edgeCount))
         }
-        if (relations.isNotEmpty()) {
-            Text(
-                relations.take(2).joinToString("　") { r ->
-                    if (r.from == e.name) "${r.type} ▸ ${r.to}" else "◂ ${r.type} ${r.from}"
-                },
-                color = Sem.info,
-                fontSize = 11.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 5.dp)
-            )
-        }
+        Text(
+            meta,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.5.sp,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 
+/* ------------------------------------------------------------------ 预览页 */
 
-/* ------------------------------------------------------------------ 详情页 */
-
+/**
+ * 记忆详情：默认只读预览。
+ *
+ * 正文按 Markdown 渲染，关联列在下方可以点进去；要改内容点右上角的笔。
+ */
 @Composable
-private fun MemoryDetailPage(
+private fun MemoryPreviewPage(
     ctx: Context,
     name: String,
     revision: Int,
     onChanged: () -> Unit,
+    onEdit: () -> Unit,
     onOpen: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    // 返回交给外层的 PredictiveBackBox（整栈一个），这里不再自己接
-    val entity = remember(revision, name) { AppCore.memory.entity(name) }
-    if (entity == null) {
+    val note = remember(revision, name) { AppCore.memory.note(name) }
+    if (note == null) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
             PageHeader(title = L("记忆不存在"), onBack = onBack)
         }
         return
     }
-    val relations = remember(revision, name) { AppCore.memory.relationsOf(name) }
-    val allNames = remember(revision) { AppCore.memory.graph.entities.map { it.name }.filter { it != name } }
+    val edges = remember(revision, name) { AppCore.memory.edgesOf(name) }
     val scroll = rememberScrollState()
-    // 观察可能有上百条，和日志一样分批渲染
-    val obsShown = rememberPagedCount(
-        entity.observations.size, scroll,
-        resetKey = name,
-        initial = MEMORY_PAGE,
-        step = MEMORY_PAGE,
-        preloadScreens = 0.5f
-    )
 
-    var editMeta by remember { mutableStateOf<String?>(null) }        // "name"/"type"/"folder"
-    var addObs by remember { mutableStateOf(false) }
-    var addRel by remember { mutableStateOf(false) }
+    PageScaffold(
+        scroll = scroll,
+        title = note.name,
+        subtitle = "/" + (if (note.folder.isBlank()) "" else note.folder + "/") + note.name + ".md",
+        onBack = onBack,
+        bottomPadding = 28.dp,
+        actions = {
+            RoundIconButton(Icons.Filled.Edit, L("编辑"), onClick = onEdit)
+        }
+    ) {
+        Spacer(Modifier.height(8.dp))
+        Column(
+            Modifier.padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 分区 · 类型
+            if (note.type.isNotBlank() || note.folder.isNotBlank()) {
+                MarkdownInfoCard(
+                    label = L("分区"),
+                    value = listOf(note.folderLabel, note.type).filter { it.isNotBlank() }.joinToString(" · ")
+                )
+            }
+            if (note.description.isNotBlank()) {
+                MarkdownInfoCard(label = L("简介"), value = note.description)
+            }
+
+            if (note.body.isBlank()) {
+                Surface(
+                    color = chromeColor(MaterialTheme.colorScheme.surfaceContainer),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        L("正文为空。点右上角的笔写点什么。"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp)
+                    )
+                }
+            } else {
+                MarkdownCard(note.body)
+            }
+
+            // 关联
+            if (edges.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    L("关联 %s 条").format(edges.size),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(6.dp))
+                edges.forEach { e ->
+                    val peer = if (e.outgoing) e.to else e.from
+                    PressCardBox(onClick = { if (e.peerExists) onOpen(peer) else onEdit() }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (e.outgoing) e.type else "← " + e.type,
+                                color = if (e.outgoing) Sem.info else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.5.sp,
+                                maxLines = 1
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                peer,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (e.peerDescription.isNotBlank()) {
+                            Text(
+                                e.peerDescription,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 3.dp)
+                            )
+                        } else if (!e.peerExists) {
+                            Text(
+                                L("对方还没有记忆"),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 3.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ 编辑页 */
+
+@Composable
+private fun MemoryEditPage(
+    ctx: Context,
+    name: String?,
+    revision: Int,
+    onChanged: () -> Unit,
+    onOpen: (String) -> Unit,
+    onBack: () -> Unit,
+    onDone: (String) -> Unit
+) {
+    val note = remember(revision, name) { name?.let { AppCore.memory.note(it) } }
+    if (name != null && note == null) {
+        Column(Modifier.fillMaxWidth().padding(22.dp)) {
+            PageHeader(title = L("记忆不存在"), onBack = onBack)
+        }
+        return
+    }
+
+    val folders = remember(revision) { AppCore.memory.folders().map { it.first } }
+    val allNames = remember(revision, name) {
+        AppCore.memory.notes.map { it.name }.filter { it != name }
+    }
+    val edges = remember(revision, name) { name?.let { AppCore.memory.edgesOf(it) }.orEmpty() }
+
+    var nameText by remember(name) { mutableStateOf(note?.name.orEmpty()) }
+    var folderText by remember(name) { mutableStateOf(note?.folder.orEmpty()) }
+    var descText by remember(name) { mutableStateOf(note?.description.orEmpty()) }
+    var typeText by remember(name) { mutableStateOf(note?.type.orEmpty()) }
+    var bodyText by remember(name) { mutableStateOf(note?.body.orEmpty()) }
+    var links by remember(name) { mutableStateOf(note?.links.orEmpty()) }
+
+    var addLink by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var deleteObs by remember { mutableStateOf<String?>(null) }
-    var deleteRel by remember { mutableStateOf<MemoryRelation?>(null) }
+    val scroll = rememberScrollState()
 
-    val metaLabels = mapOf(
-        "name" to L("名称"),
-        "type" to L("类型"),
-        "folder" to L("分区")
-    )
-    val metaValue = when (editMeta) {
-        "name" -> entity.name
-        "type" -> entity.type
-        "folder" -> entity.folder
-        else -> null
-    }
-
-    if (editMeta != null && metaValue != null) {
-        TextInputDialog(
-            title = L("修改%s").format(metaLabels[editMeta] ?: ""),
-            fields = listOf(InputField("v", metaLabels[editMeta] ?: "", "")),
-            initial = mapOf("v" to metaValue),
-            onDismiss = { editMeta = null },
-            onConfirm = { values ->
-                val v = values["v"]?.trim().orEmpty()
-                when (editMeta) {
-                    "name" -> if (v.isNotEmpty()) AppCore.memory.updateEntity(name, newName = v)
-                    "type" -> AppCore.memory.updateEntity(name, type = v)
-                    "folder" -> AppCore.memory.updateEntity(name, folder = v)
-                }
-                val newName = if (editMeta == "name" && v.isNotEmpty()) v else name
-                editMeta = null
-                onChanged()
-                if (newName != name) onOpen(newName)
+    fun save() {
+        val finalName = nameText.trim()
+        if (finalName.isEmpty()) {
+            toast(ctx, L("名字不能为空"))
+            return
+        }
+        val r = runCatching {
+            AppCore.memory.write(
+                name = finalName,
+                folder = folderText.trim(),
+                description = descText.trim(),
+                type = typeText.trim(),
+                body = bodyText,
+                links = links,
+                oldName = name
+            )
+        }.fold(
+            onSuccess = { it },
+            onFailure = {
+                toast(ctx, L("保存失败：%s").format(it.message ?: ""))
+                return
             }
         )
+        onChanged()
+        toast(ctx, if (r.created) L("已新建「%s」").format(r.name) else L("已保存「%s」").format(r.name))
+        onDone(r.name)
     }
 
-    if (addObs) {
+    if (addLink) {
         TextInputDialog(
-            title = L("添加观察"),
-            fields = listOf(InputField("v", L("一条事实"), L("一句话说清")),),
-            single = false,
-            onDismiss = { addObs = false },
-            onConfirm = { values ->
-                val v = values["v"]?.trim().orEmpty()
-                if (v.isNotEmpty()) {
-                    AppCore.memory.addObservations(name, v.lines().filter { it.isNotBlank() })
-                    onChanged()
-                }
-                addObs = false
-            }
-        )
-    }
-
-    if (addRel) {
-        TextInputDialog(
-            title = L("新建关系"),
+            title = L("添加关联"),
             fields = listOf(
-                InputField("to", L("目标实体"), allNames.firstOrNull() ?: L("另一个实体的名字")),
-                InputField("type", L("关系类型"), "PART_OF / INVOLVES / HAPPENS_AT …")
+                InputField("to", L("对方记忆"), allNames.firstOrNull() ?: L("对方的名字")),
+                InputField("type", L("关系类型"), L("例如：属于 / 依赖 / 相关"))
             ),
-            single = false,
-            onDismiss = { addRel = false },
+            onDismiss = { addLink = false },
             onConfirm = { values ->
                 val to = values["to"]?.trim().orEmpty()
-                val type = values["type"]?.trim().orEmpty().ifBlank { "RELATED_TO" }
-                if (to.isNotEmpty()) {
-                    AppCore.memory.createRelations(listOf(Triple(name, to, type)))
-                    onChanged()
+                val type = values["type"]?.trim().orEmpty().ifBlank { L("相关") }
+                if (to.isNotEmpty() && to != nameText.trim()) {
+                    links = links.filterNot { it.to == to } + MemoryLink(to, type)
                 }
-                addRel = false
+                addLink = false
             }
         )
     }
@@ -606,22 +728,23 @@ private fun MemoryDetailPage(
             onDismissRequest = { confirmDelete = false },
             containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除实体"), fontSize = 20.sp) },
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            title = { Text(L("删除这条记忆？"), fontSize = 20.sp) },
             text = {
                 Text(
-                    L("确定删除「%s」吗？它的观察和 %s 条关系都会一起删掉。").format(entity.name, relations.size),
+                    L("「%s」会被删除，指向它的关联也会从别的记忆里去掉。这一步不能撤销。").format(nameText),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    AppCore.memory.deleteEntities(listOf(name))
                     confirmDelete = false
-                    toast(ctx, L("已删除「%s」").format(name))
+                    AppCore.memory.delete(listOf(nameText))
                     onChanged()
+                    toast(ctx, L("已删除「%s」").format(nameText))
                     onBack()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
+                }) { Text(L("删除"), color = Sem.bad) }
             },
             dismissButton = {
                 TextButton(onClick = { confirmDelete = false }) {
@@ -631,201 +754,184 @@ private fun MemoryDetailPage(
         )
     }
 
-    deleteObs?.let { obs ->
-        AlertDialog(
-            onDismissRequest = { deleteObs = null },
-            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除这条观察"), fontSize = 19.sp) },
-            text = {
-                Text(obs, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppCore.memory.deleteObservations(name, listOf(obs))
-                    deleteObs = null
-                    onChanged()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteObs = null }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
-
-    deleteRel?.let { rel ->
-        AlertDialog(
-            onDismissRequest = { deleteRel = null },
-            containerColor = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(28.dp),
-            title = { Text(L("删除这条关系"), fontSize = 19.sp) },
-            text = {
-                Text(
-                    "${rel.from} ──${rel.type}──▸ ${rel.to}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    AppCore.memory.deleteRelations(listOf(Triple(rel.from, rel.to, rel.type)))
-                    deleteRel = null
-                    onChanged()
-                }) { Text(L("删除"), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteRel = null }) {
-                    Text(L("取消"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        )
-    }
-
     PageScaffold(
         scroll = scroll,
-        title = entity.name,
+        title = if (name == null) L("新建记忆") else L("编辑记忆"),
         onBack = onBack,
-        bottomPadding = 24.dp
-    ) {
-
-        GroupLabel(L("基本信息"))
-        CardGroup(
-            listOf(
-                RowSpec(
-                    title = L("名称"), subtitle = entity.name, subtitleMaxLines = 2,
-                    icon = Icons.Filled.Edit, onClick = { editMeta = "name" }
-                ),
-                RowSpec(
-                    title = L("类型"), subtitle = entity.type.ifBlank { L("未设置") }, subtitleMaxLines = 2,
-                    icon = Icons.Filled.Edit, onClick = { editMeta = "type" }
-                ),
-                RowSpec(
-                    title = L("分区"), subtitle = entity.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER }, subtitleMaxLines = 2,
-                    icon = Icons.Filled.Edit, onClick = { editMeta = "folder" }
-                )
-            )
-        )
-
-        GroupLabel(L("观察（%s）").format(entity.observations.size))
-        if (entity.observations.isEmpty()) {
-            Column(Modifier.padding(horizontal = 18.dp)) { EmptyHint(L("还没有观察。点下面的按钮加一条。")) }
-        } else {
-            Column(
-                Modifier.padding(horizontal = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                entity.observations.take(obsShown).forEach { o ->
-                    val shape = RoundedCornerShape(20.dp)
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(shape)
-                            .background(cardColor(MaterialTheme.colorScheme.surfaceContainer))
-                            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            o,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.sp,
-                            lineHeight = 18.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        RoundIconButton(
-                            Icons.Filled.Delete, L("删除"),
-                            tint = MaterialTheme.colorScheme.error,
-                            size = 34
-                        ) { deleteObs = o }
-                    }
+        bottomPadding = 28.dp,
+        actions = {
+            if (name != null) {
+                IconButton(onClick = { confirmDelete = true }) {
+                    Icon(Icons.Filled.Delete, L("删除"), tint = Sem.bad, modifier = Modifier.size(20.dp))
                 }
             }
-            PagedHint(obsShown, entity.observations.size)
         }
-        Spacer(Modifier.height(8.dp))
-        Column(Modifier.padding(horizontal = 14.dp)) {
-            PillButton(
-                L("添加观察"), Modifier.fillMaxWidth(), outlined = true,
-                color = MaterialTheme.colorScheme.primary, compact = true
-            ) { addObs = true }
+    ) {
+        Spacer(Modifier.height(10.dp))
+        Column(
+            Modifier.padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = nameText,
+                onValueChange = { nameText = it },
+                label = { Text(L("名字"), fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = folderText,
+                onValueChange = { folderText = it },
+                label = { Text(L("分区"), fontSize = 12.sp) },
+                placeholder = { Text(folders.firstOrNull().orEmpty(), fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (folders.isNotEmpty()) {
+                CategoryPillRow(
+                    items = listOf(L("未分类")) + folders,
+                    selected = if (folderText.isBlank()) 0 else folders.indexOf(folderText) + 1,
+                    contentPadding = PaddingValues(0.dp)
+                ) { index -> folderText = if (index == 0) "" else folders[index - 1] }
+            }
+            OutlinedTextField(
+                value = descText,
+                onValueChange = { descText = it },
+                label = { Text(L("简介"), fontSize = 12.sp) },
+                placeholder = { Text(L("一句话说清这条记忆是什么"), fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = typeText,
+                onValueChange = { typeText = it },
+                label = { Text(L("类型"), fontSize = 12.sp) },
+                placeholder = { Text(L("例如：项目 / 人物 / 偏好"), fontSize = 12.sp) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = bodyText,
+                onValueChange = { bodyText = it },
+                label = { Text(L("正文"), fontSize = 12.sp) },
+                placeholder = { Text(L("正文，支持 Markdown"), fontSize = 12.sp) },
+                minLines = 8,
+                shape = RoundedCornerShape(16.dp),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
-        GroupLabel(L("关系（%s）").format(relations.size))
-        if (relations.isEmpty()) {
-            Column(Modifier.padding(horizontal = 18.dp)) { EmptyHint(L("还没有关系。用它把两条记忆连起来。")) }
-        } else {
-            Column(
-                Modifier.padding(horizontal = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                relations.forEach { r ->
-                    val outgoing = r.from == entity.name
-                    val other = if (outgoing) r.to else r.from
-                    val linked = AppCore.memory.hasEntity(other)
-                    // 按下底色 160ms + primary ripple；对端不存在就点不动（也就没有反馈）
-                    PressCardBox(
-                        onClick = { onOpen(other) },
-                        shape = RoundedCornerShape(20.dp),
-                        enabled = linked,
-                        contentPadding = PaddingValues(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp)
+        // ------------------------------------------------------------ 关联
+        Spacer(Modifier.height(18.dp))
+        Column(Modifier.padding(horizontal = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    L("关联"),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { addLink = true }) {
+                    Icon(Icons.Filled.Add, L("添加关联"), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                }
+            }
+            if (edges.isEmpty()) {
+                Text(
+                    L("还没有关联。"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.5.sp,
+                    modifier = Modifier.padding(vertical = 6.dp)
+                )
+            } else {
+                edges.forEach { e ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (e.outgoing) "${e.type} → ${e.to}" else "← ${e.type} ${e.from}",
+                                color = if (e.outgoing) Sem.info else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                            if (e.peerDescription.isNotBlank()) {
                                 Text(
-                                    (if (outgoing) "▸ " else "◂ ") + other,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp,
+                                    e.peerDescription,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.5.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    r.type,
-                                    color = Sem.info,
-                                    fontSize = 11.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.padding(top = 2.dp)
+                            }
+                        }
+                        if (e.outgoing) {
+                            IconButton(onClick = {
+                                links = links.filterNot { it.to == e.to && it.type == e.type }
+                            }) {
+                                Icon(
+                                    Icons.Filled.Close, L("移除关联"),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            RoundIconButton(
-                                Icons.Filled.Delete, L("删除"),
-                                tint = MaterialTheme.colorScheme.error,
-                                size = 34
-                            ) { deleteRel = r }
                         }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Column(Modifier.padding(horizontal = 14.dp)) {
-            PillButton(
-                L("新建关系"), Modifier.fillMaxWidth(), outlined = true,
-                color = MaterialTheme.colorScheme.primary, compact = true
-            ) { addRel = true }
-        }
 
+        // ------------------------------------------------------------ 保存
         Spacer(Modifier.height(20.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
             PillButton(
-                L("删除这个实体"),
+                L("保存"),
                 Modifier.fillMaxWidth(),
-                outlined = true,
-                color = MaterialTheme.colorScheme.error
-            ) { confirmDelete = true }
+                color = MaterialTheme.colorScheme.primary
+            ) { save() }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                L("保存后写回对应的 Markdown 文件。改名会同时把文件挪过去，指向旧名字的关联也会自动跟上。"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.5.sp,
+                lineHeight = 16.sp
+            )
         }
+        Spacer(Modifier.height(20.dp))
     }
 }
 
-/* -------------------------------------------------------------------- 弹窗 */
+/* ------------------------------------------------------------------ 辅助 */
+
+private data class ImportPayload(
+    /** zip 里 memory/files/ 下的记忆文件（相对路径 → 文本）。 */
+    val files: Map<String, String> = emptyMap(),
+    /** 旧版 graph.json 的原文。 */
+    val legacyJson: String? = null
+)
 
 private data class InputField(val key: String, val label: String, val hint: String)
 
-/**
- * 通用文本输入弹窗。单字段时自动聚焦，多字段时纵向排列。
- * 用系统 Dialog；内容多时整体限高 + 滚动，长内容也不会把按钮挤出屏幕。
- */
+/** 从上传的文件里解析出导入内容：优先当 zip 备份，其次当旧版 JSON。 */
+private fun parseImport(bytes: ByteArray): ImportPayload? {
+    // zip 以 "PK\u0003\u0004" 开头
+    if (bytes.size > 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
+        val bundle = runCatching { Backup.readZip(bytes) }.getOrNull() ?: return null
+        val partText = bundle.parts[Backup.Part.MEMORY]
+        if (bundle.memoryFiles.isNotEmpty()) return ImportPayload(files = bundle.memoryFiles)
+        if (partText != null) return ImportPayload(legacyJson = partText)
+        return null
+    }
+    val text = bytes.toString(Charsets.UTF_8)
+    if (!text.contains("\"entities\"") && !text.contains("\"relations\"")) return null
+    return ImportPayload(legacyJson = text)
+}
+
 @Composable
 private fun TextInputDialog(
     title: String,
@@ -840,7 +946,7 @@ private fun TextInputDialog(
     }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        androidx.compose.material3.Surface(
+        Surface(
             color = chromeColor(MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(28.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)

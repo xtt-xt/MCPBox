@@ -24,18 +24,18 @@ Location: **Settings → App → Backup & restore**. Four parts:
 
 | Part | Contents |
 |---|---|
-| Memory | Entities / observations / relations |
+| Memory | One Markdown file per note (folders + links) |
 | Settings | All setting keys (optionally **including the access token**) |
 | Custom tools | Tool definitions |
 | Stats | Requests / uptime / launches |
 
-- **Export**: either one **zip** (`manifest.json` + `memory.json` + `settings.json` + `custom-tools.json` + `stats.json`), or per-part JSON. The backup page uses **switches** to pick parts, and the token is a sub-row of "Settings" (it collapses when settings are off). You pick a destination folder; file names look like `memory-20261001-0030.json`.
+- **Export**: either one **zip** (`manifest.json` + `memory/memory.json` manifest + `memory/files/**` notes + `settings.json` + `custom-tools.json` + `stats.json`), or one zip per part. The backup page uses **switches** to pick parts, and the token is a sub-row of "Settings" (it collapses when settings are off). You pick a destination folder; file names look like `mcpbox-memory-20261001-0030.zip`.
 - **Restore takes two steps**:
   1. Pick the parts (zips / multi-file selections go through this step; a single file jumps to step 2);
   2. Choose **merge / replace** per part (one pill toggles it).
 - **Settings are always replaced wholesale** (no mode question); memory and custom tools only ask when the current data is non-empty.
 - **Token policy**: a backup may or may not embed the token; when it does, restore shows a "restore the access token too" switch, **off by default** — otherwise restoring a backup would kick every MCP client offline (their URLs carry the old token).
-- **Sniffing rules**: single files are identified by their `_type` field (`mcpbox.settings` / `mcpbox.custom-tools` / stats); memory files have no `_type` and are recognized by their `entities` / `relations` keys — so **backups from older versions (1.1.0-55) still work**.
+- **Sniffing rules**: files are identified by their `_type` field (`mcpbox.settings` / `mcpbox.custom-tools` / stats / `mcpbox.memory`); legacy memory files without `_type` are recognized by their `entities` / `relations` keys and converted to Markdown on restore, so **backups from older versions (1.1.0-55) still work**.
 
 ## First-run onboarding
 

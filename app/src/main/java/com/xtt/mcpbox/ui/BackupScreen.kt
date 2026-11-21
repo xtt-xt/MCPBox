@@ -135,7 +135,7 @@ fun BackupScreen(
     val picked = restoreItems.filter { it.selected }
 
     fun textOf(part: Backup.Part): String = when (part) {
-        Backup.Part.MEMORY -> AppCore.memory.exportJson()
+        Backup.Part.MEMORY -> AppCore.memory.exportManifest()
         Backup.Part.SETTINGS -> Backup.exportSettings(AppCore.prefs, includeToken)
         Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.exportJson()
         Backup.Part.STATS -> AppCore.stats.exportJson()
@@ -157,7 +157,7 @@ fun BackupScreen(
         runCatching { Backup.readZip(bytes) }.fold(
             onSuccess = { bundle ->
                 restoreItems = bundle.parts.map { (part, text) ->
-                    RestoreItem.ready(part, text, bundle.blobs)
+                    RestoreItem.ready(part, text, bundle.blobs, bundle.memoryFiles)
                 }
                 restoreMeta = RestoreMeta(bundle.exportedAt, bundle.app, bundle.tokenIncluded)
                 result = null
@@ -176,9 +176,11 @@ fun BackupScreen(
                     }.getOrNull() ?: return@flatMap emptyList()
                     // 单部分导出的是压缩包（PK 魔数）：按 zip 解，背景还能带上文件副本
                     if (bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
-                        runCatching { Backup.readZip(bytes) }.getOrNull()
-                            ?.parts?.map { (part, text) -> RestoreItem.ready(part, text, emptyMap()) }
-                            .orEmpty()
+                        runCatching { Backup.readZip(bytes) }.getOrNull()?.let { b ->
+                            b.parts.map { (part, text) ->
+                                RestoreItem.ready(part, text, b.blobs, b.memoryFiles)
+                            }
+                        }.orEmpty()
                     } else {
                         val text = bytes.toString(Charsets.UTF_8)
                         val part = Backup.sniff(text)
@@ -211,7 +213,8 @@ fun BackupScreen(
                     customTools = AppCore.customTools,
                     stats = AppCore.stats,
                     backdropDir = java.io.File(AppCore.app.filesDir, "backdrop"),
-                    blobs = item.blobs
+                    blobs = item.blobs,
+                    memoryFiles = item.memoryFiles
                 )
             }.fold(
                 onSuccess = { L("%s：%s").format(partLabel(item.part), it) },
@@ -302,7 +305,14 @@ fun BackupScreen(
                         // 整体导出：一个 zip，每个部分一个子文件夹（memory/…、settings/…），
                         // 背景附件在 backdrop/files/ 下
                         val blobs = chosen.flatMap { blobsOf(it).entries }.associate { it.key to it.value }
-                        val bytes = Backup.zip(parts = parts, includeToken = withToken, blobs = blobs)
+                        val memoryFiles =
+                            if (chosen.contains(Backup.Part.MEMORY)) AppCore.memory.filesSnapshot() else emptyMap()
+                        val bytes = Backup.zip(
+                            parts = parts,
+                            includeToken = withToken,
+                            blobs = blobs,
+                            memoryFiles = memoryFiles
+                        )
                         writeIntoFolder(
                             resolver, uri, "application/zip",
                             "mcpbox-backup-$stamps.zip", bytes
@@ -315,6 +325,7 @@ fun BackupScreen(
                                 parts = mapOf(part to text),
                                 includeToken = withToken,
                                 blobs = blobsOf(part),
+                                memoryFiles = if (part == Backup.Part.MEMORY) AppCore.memory.filesSnapshot() else emptyMap(),
                                 // 单部分：文件平铺在 zip 根目录（只有一个部分，不再套一层子文件夹）
                                 nested = false
                             )
@@ -524,6 +535,8 @@ private data class RestoreItem(
     val text: String,
     /** 背景文件副本（zip 里 backdrop/ 下的那些）；其它部分为空。 */
     val blobs: Map<String, ByteArray> = emptyMap(),
+    /** 记忆文件（zip 里 memory/files/ 下的那些，相对路径 → 文本）；其它部分为空。 */
+    val memoryFiles: Map<String, String> = emptyMap(),
     val selected: Boolean = true,
     /** 合并 / 覆盖；设置这一部分永远走覆盖，不参与询问。 */
     val merge: Boolean = true,
@@ -537,11 +550,17 @@ private data class RestoreItem(
          * 设置的默认模式是**覆盖**（跟「把备份整份还原回去」的直觉一致），
          * 记忆库和自定义工具默认合并，至于要不要问用户，交给恢复页判断。
          */
-        fun ready(part: Backup.Part, text: String, blobs: Map<String, ByteArray> = emptyMap()): RestoreItem =
+        fun ready(
+            part: Backup.Part,
+            text: String,
+            blobs: Map<String, ByteArray> = emptyMap(),
+            memoryFiles: Map<String, String> = emptyMap()
+        ): RestoreItem =
             RestoreItem(
                 part = part,
                 text = text,
                 blobs = blobs,
+                memoryFiles = memoryFiles,
                 // 设置与背景都是「整份还原成备份那一刻」，不问合并 / 覆盖
                 merge = part != Backup.Part.SETTINGS && part != Backup.Part.BACKDROP
             )
@@ -570,8 +589,8 @@ private fun BackupHomePage(
 ) {
     var showPick by remember { mutableStateOf(false) }
 
-    val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
-    val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
+    val memoryCount = remember(revision) { AppCore.memory.notes.size }
+    val relationCount = remember(revision) { AppCore.memory.notes.sumOf { it.links.size } }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
     val settingCount = remember(revision) { AppCore.prefs.all().size }
     val statsCount = remember(revision) { AppCore.stats.snapshot().requestsTotal }
@@ -706,8 +725,8 @@ private fun BackupCreatePage(
     onIncludeToken: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
-    val memoryCount = remember(revision) { AppCore.memory.graph.entities.size }
-    val relationCount = remember(revision) { AppCore.memory.graph.relations.size }
+    val memoryCount = remember(revision) { AppCore.memory.notes.size }
+    val relationCount = remember(revision) { AppCore.memory.notes.sumOf { it.links.size } }
     val toolCount = remember(revision) { AppCore.customTools.tools.size }
     val stats = remember(revision) { AppCore.stats.snapshot() }
 
@@ -1096,10 +1115,9 @@ private fun partIcon(part: Backup.Part) = when (part) {
  * 需要选合并还是覆盖的时候，弹窗里会说清楚。
  */
 private fun restoreSummary(item: RestoreItem): String = when (item.part) {
-    Backup.Part.MEMORY -> L("%s 个实体 · %s 条关系").format(
-        AppCore.memory.graph.entities.size,
-        AppCore.memory.graph.relations.size
-    )
+    Backup.Part.MEMORY -> if (item.memoryFiles.isNotEmpty()) {
+        L("%s 条记忆").format(item.memoryFiles.size)
+    } else L("旧版记忆数据（导入后会自动转成 Markdown）")
 
     // 设置是整份覆盖、不问模式，所以这里得留一句短的
     Backup.Part.SETTINGS -> (if (Backup.settingsHasToken(item.text)) L("含访问令牌")
@@ -1151,8 +1169,7 @@ private fun backdropFiles(): List<java.io.File> =
 
 /** 这一部分现在有没有内容（空的就不用问合并还是覆盖）。 */
 private fun targetNotEmpty(part: Backup.Part): Boolean = when (part) {
-    Backup.Part.MEMORY ->
-        AppCore.memory.graph.entities.isNotEmpty() || AppCore.memory.graph.relations.isNotEmpty()
+    Backup.Part.MEMORY -> AppCore.memory.notes.isNotEmpty()
 
     Backup.Part.CUSTOM_TOOLS -> AppCore.customTools.tools.isNotEmpty()
     Backup.Part.SETTINGS -> true

@@ -49,13 +49,13 @@ Token:     already included in the URL above
 
 | Feature | In one line | Details |
 |---|---|---|
-| **74 MCP tools** | Files, shell, UI, browser, location, memory, custom tools, token | [01](docs/en/01-tools.md) |
+| **69 MCP tools** | Files, shell, UI, browser, location, memory, custom tools, token | [01](docs/en/01-tools.md) |
 | **Tool packs** | The AI sees only 22 tools by default; open more on demand, or let the AI manage packs itself | [03](docs/en/03-packs-and-sessions.md) |
 | **Permissions & approvals** | 9 permission keys with three states, path / command rules, four-state per-tool policy; approvals via overlay or notification | [02](docs/en/02-permissions.md) |
 | **Built-in terminal** | App sandbox / Root / Shizuku identities; dangerous commands ask first | [01](docs/en/01-tools.md) |
 | **Built-in browser** | The AI browses by itself: read text, click, fill forms, scroll, run JS, screenshot, search; per-page cookies and UA; no Root needed | [06](docs/en/06-browser-and-ui-automation.md) |
 | **UI automation** | Screenshot, dump the view tree, tap / swipe / type Chinese / launch apps (needs Root or Shizuku) | [06](docs/en/06-browser-and-ui-automation.md) |
-| **Memory store** | Long-term memory for the AI: entities + observations + relations, browsable and editable in the app | [04](docs/en/04-memory.md) |
+| **Memory store** | Long-term memory for the AI: one Markdown file per memory, editable as a whole in the app | [04](docs/en/04-memory.md) |
 | **File transfer & static hosting** | `POST /upload` / `GET /download`, whole directories as one zip, and `/web` to preview web artifacts straight from the phone | [05](docs/en/05-file-transfer-and-web.md) |
 | **SSH / SFTP** | A built-in server so a client's SSH workspace can read and write phone files; switched separately from the MCP service | [11](docs/en/11-ssh.md) |
 | **Backup · stats · localization** | One-tap backup of memory / settings / custom tools / stats / backdrop; request heatmap; Chinese and English | [07](docs/en/07-stats-backup-onboarding.md) |
@@ -114,10 +114,10 @@ Full docs live in [`docs/en/`](docs/en/) (English) and [`docs/`](docs/) (Chinese
 
 | Doc | Contents |
 |---|---|
-| [01 Tools](docs/en/01-tools.md) | All 74 tools: pack, permission key, what it does |
+| [01 Tools](docs/en/01-tools.md) | All 69 tools: pack, permission key, what it does |
 | [02 Permissions & approvals](docs/en/02-permissions.md) | Permission matrix, preset sessions, per-tool policy, path / command rules, timeouts, approval modes |
 | [03 Packs & sessions](docs/en/03-packs-and-sessions.md) | Why packs exist, their contents and defaults, AI pack control, `/mcp/p/<name>` session isolation |
-| [04 Memory](docs/en/04-memory.md) | Entities / observations / relations, storage and UI, import & export, merge vs replace |
+| [04 Memory](docs/en/04-memory.md) | One note per Markdown file, format and links, UI, import & export, legacy migration |
 | [05 File transfer & web](docs/en/05-file-transfer-and-web.md) | Upload/download, upload page, zip directories, `/web` hosting, private app dirs, console security |
 | [06 Browser & UI automation](docs/en/06-browser-and-ui-automation.md) | The 18 browser tools, per-page login state, floating window, known limits; the 8 UI automation tools |
 | [07 Stats, backup, onboarding](docs/en/07-stats-backup-onboarding.md) | What stats count, backup & restore, first-run wizard, developer mode, localization |

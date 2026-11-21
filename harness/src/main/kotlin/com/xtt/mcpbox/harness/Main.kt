@@ -872,88 +872,135 @@ fun main() {
         )
         check("批量请求里混了别的工具就不放行", bareBatch.code == 401, "code=${bareBatch.code}")
 
-        println("\n[32] 记忆库图结构")
+        println("\n[32] 记忆库：一条记忆一个 md（纯内存）")
         val ms = MemoryStore(null)
-        val c1 = ms.createEntities(
-            listOf(
-                Triple("项目：MCPBox", "项目", "projects"),
-                Triple("用户偏好：深色主题", "用户偏好", "xtt")
-            )
+        val w1 = ms.write(
+            name = "项目：MCPBox",
+            folder = "项目",
+            description = "手机上的 MCP 文件服务器",
+            type = "项目",
+            body = "用 Kotlin\n用 Compose"
         )
-        check("新建两个实体", c1.created == 2 && c1.skipped == 0)
-        val c2 = ms.createEntities(listOf(Triple("项目：MCPBox", "项目", "projects")))
-        check("重名实体只跳过不重复建", c2.created == 0 && c2.skipped == 1)
-        check("实体数量正确", ms.graph.entities.size == 2)
-        check("按名字能取到", ms.entity("项目：MCPBox")?.folder == "projects")
-        check("观察去重：加两条", ms.addObservations("项目：MCPBox", listOf("用 Kotlin", "用 Compose")) == 2)
-        check("重复观察会被跳过", ms.addObservations("项目：MCPBox", listOf("用 Kotlin")) == 0)
-        check("观察总数正确", ms.entity("项目：MCPBox")?.observations?.size == 2)
-        // 同一批里传了重复内容，也只能算一条（回归：曾经漏了对 texts 自身的去重）
-        check(
-            "同一批里的重复项只算一次",
-            ms.addObservations("项目：MCPBox", listOf("批次重复", "批次重复", "批次重复")) == 1,
-            "实际 ${ms.addObservations("项目：MCPBox", listOf("批次重复"))}"
+        check("写入一篇记忆", w1.created && ms.notes.size == 1)
+        check("按名字能取到", ms.note("项目：MCPBox")?.folder == "项目")
+        check("简介读得出来", ms.note("项目：MCPBox")?.description == "手机上的 MCP 文件服务器")
+        ms.write(name = "星天", folder = "", type = "人物", description = "用这台手机写 App", body = "用这台手机写 App")
+        check("再写一篇", ms.notes.size == 2)
+        val w2 = ms.write(name = "项目：MCPBox", links = listOf(MemoryLink("星天", "属于")))
+        check("整篇写入不会重复建", !w2.created && ms.notes.size == 2)
+        check("关联写进去了", ms.note("项目：MCPBox")?.links?.firstOrNull()?.to == "星天")
+        check("出边能查到邻居", ms.neighbours("项目：MCPBox") == listOf("星天"))
+        check("入边也算邻居", ms.neighbours("星天") == listOf("项目：MCPBox"))
+        check("关联带对方简介", ms.edgesOf("项目：MCPBox").firstOrNull()?.peerDescription == "用这台手机写 App")
+        ms.append("项目：MCPBox", "又多一句")
+        check("追加到正文", ms.note("项目：MCPBox")?.body?.contains("又多一句") == true)
+        check("追加不覆盖旧内容", ms.note("项目：MCPBox")?.body?.contains("用 Kotlin") == true)
+        check("搜索命中正文", ms.search("Compose").any { it.name == "项目：MCPBox" })
+        check("搜索命中简介", ms.search("文件服务器").any { it.name == "项目：MCPBox" })
+        check("搜索命中关联", ms.search("星天").isNotEmpty())
+        check("搜索会带上邻居", ms.search("MCPBox").any { it.name == "星天" })
+        check("分区过滤生效", ms.list("项目").size == 1)
+        check("空分区算未分类", ms.list("未分类").single().name == "星天")
+        check("统计文本含条数", ms.statsText().contains("记忆：2"))
+        val rn = ms.write(name = "项目：MCPBox v2", oldName = "项目：MCPBox")
+        check("改名成功", rn.renamed && ms.note("项目：MCPBox v2") != null)
+        check("旧名字没了", ms.note("项目：MCPBox") == null)
+        check("改名后关联还在", ms.note("项目：MCPBox v2")?.links?.firstOrNull()?.to == "星天")
+        check("删掉一篇", ms.delete(listOf("星天")) == 1)
+        check("删完指向它的关联也清掉", ms.note("项目：MCPBox v2")?.links?.isEmpty() == true)
+
+        // —— 落盘：真目录写一遍再读一遍
+        val memDir = File(root, "memory-md-roundtrip")
+        memDir.deleteRecursively()
+        val mdDisk = MemoryStore(memDir)
+        mdDisk.write(name = "落盘", folder = "分区甲", description = "简介", body = "正文")
+        check("md 文件真的写出来了", File(memDir, "分区甲/落盘.md").isFile)
+        check("md 里有 front-matter", File(memDir, "分区甲/落盘.md").readText().startsWith("---"))
+        val mdReopened = MemoryStore(memDir)
+        check("重新扫一遍还在", mdReopened.note("落盘")?.description == "简介")
+        check("正文原样读回", mdReopened.note("落盘")?.body == "正文")
+        // 回归：write / append 曾在同步块里直接 return，跳过 notifyChanged，UI 收不到变化
+        var notifyCount = 0
+        val l: () -> Unit = { notifyCount += 1 }
+        mdDisk.addListener(l)
+        mdDisk.write(name = "落盘", body = "改过")
+        mdDisk.append("落盘", "追加")
+        mdDisk.removeListener(l)
+        check("写入与追加都会通知监听者", notifyCount == 2, "$notifyCount")
+        check("追加接到了正文末尾（空行分隔）", mdDisk.note("落盘")?.body == "改过\n\n追加", mdDisk.note("落盘")?.body ?: "")
+
+        // —— 旧版数据检测：根目录躺着 graph.json 就整库禁用
+        val mdLegacyDir = File(root, "memory-md-legacy")
+        mdLegacyDir.deleteRecursively()
+        mdLegacyDir.mkdirs()
+        File(mdLegacyDir, "graph.json").writeText(
+            """{"entities":[{"name":"老实体","type":"旧","folder":"projects","observations":["一条观察","又一条"]}],"relations":[]}"""
         )
-        check(
-            "批次重复确实只留一条",
-            ms.entity("项目：MCPBox")?.observations?.count { it == "批次重复" } == 1
-        )
-        check("清掉批次重复", ms.deleteObservations("项目：MCPBox", listOf("批次重复")) == 1)
-        check("删除指定观察", ms.deleteObservations("项目：MCPBox", listOf("用 Compose")) == 1)
-        check("建立关系", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 1)
-        check("重复关系不重加", ms.createRelations(listOf(Triple("用户偏好：深色主题", "项目：MCPBox", "PART_OF"))).created == 0)
-        check("能查到邻居", ms.neighbours("项目：MCPBox") == listOf("用户偏好：深色主题"))
-        check("搜索命中实体名", ms.search("MCPBox").entities.any { it.name == "项目：MCPBox" })
-        check("搜索命中观察内容", ms.search("Kotlin").entities.any { it.name == "项目：MCPBox" })
-        check("搜索会带上邻居", ms.search("MCPBox").entities.size == 2)
-        check("分区过滤生效", ms.snapshot(folder = "xtt").entities.size == 1)
-        check("类型过滤生效", ms.snapshot(type = "项目").entities.size == 1)
-        check("统计文本含实体数", ms.statsText().contains("实体：2"))
-        check("重命名会带动关系", ms.updateEntity("项目：MCPBox", newName = "项目：MCPBox v2"))
-        check(
-            "关系两端都改名了",
-            ms.graph.relations.first().to == "项目：MCPBox v2" && ms.hasEntity("项目：MCPBox v2")
-        )
-        check("删实体连带删关系", ms.deleteEntities(listOf("用户偏好：深色主题")) == 1 && ms.graph.relations.isEmpty())
+        val mdLegacy = MemoryStore(mdLegacyDir)
+        check("检测到旧版数据", mdLegacy.hasLegacy && mdLegacy.state == MemoryStore.State.LEGACY)
+        check("旧版时读不到内容", mdLegacy.notes.isEmpty())
+        val autoBackup = mdLegacy.ensureLegacyBackup()
+        check("自动备份生成了", autoBackup != null && autoBackup.isFile, autoBackup?.path ?: "null")
+        check("重复调用不会多备份一份", mdLegacy.ensureLegacyBackup()?.name == autoBackup?.name)
+        val migrated = mdLegacy.migrateLegacy()
+        check("迁移出 1 条记忆", migrated.notes == 1)
+        check("观察拼成了正文", mdLegacy.note("老实体")?.body?.contains("又一条") == true)
+        check("迁移时用正文首行生成简介", mdLegacy.note("老实体")?.description == "一条观察", mdLegacy.note("老实体")?.description ?: "")
+        check("迁移后状态正常", !mdLegacy.hasLegacy && mdLegacy.state == MemoryStore.State.READY)
+        check("原 graph.json 已移走", !File(mdLegacyDir, "graph.json").exists())
+        check("迁移后能继续写", mdLegacy.write(name = "新的", body = "x").created)
 
         println("\n[33] 记忆工具（走 MCP）")
         answer("记忆", ApprovalDecision.ALLOW_ALWAYS)
-        val createRes = http(
+        val memWriteRes = http(
             "POST", "$base/mcp",
-            """{"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":"create_entities","arguments":{"entities":[{"name":"事件：修好了构建","entityType":"事件","folder":"dev","observations":["aapt2 用 qemu 包装解决"]}]}}}""",
+            """{"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":"memory_write","arguments":{"name":"事件：修好了构建","folder":"dev","description":"aapt2 的问题","type":"事件","content":"aapt2 用 qemu 包装解决","links":[{"to":"星天","type":"相关"}]}}}""",
             sessionHeaders
         )
-        check("create_entities 成功", createRes.body.contains("已创建 1 个实体"), createRes.body.take(200))
-        val relRes = http(
+        check("memory_write 成功", memWriteRes.body.contains("已新建记忆"), memWriteRes.body.take(200))
+        val memReadRes = http(
             "POST", "$base/mcp",
-            """{"jsonrpc":"2.0","id":52,"method":"tools/call","params":{"name":"create_relations","arguments":{"relations":[{"from":"事件：修好了构建","to":"事件：修好了构建","relationType":"PART_OF"}]}}}""",
+            """{"jsonrpc":"2.0","id":52,"method":"tools/call","params":{"name":"memory_read","arguments":{"name":"事件：修好了构建"}}}""",
             sessionHeaders
         )
-        check("create_relations 成功", relRes.body.contains("已建立"), relRes.body.take(200))
-        val searchRes = http(
+        check("memory_read 读得到正文", memReadRes.body.contains("qemu"), memReadRes.body.take(200))
+        check("memory_read 带上关联", memReadRes.body.contains("星天"), memReadRes.body.take(200))
+        val memListRes = http(
             "POST", "$base/mcp",
-            """{"jsonrpc":"2.0","id":53,"method":"tools/call","params":{"name":"search_nodes","arguments":{"query":"aapt2"}}}""",
+            """{"jsonrpc":"2.0","id":53,"method":"tools/call","params":{"name":"memory_list","arguments":{}}}""",
             sessionHeaders
         )
-        check("search_nodes 搜到观察内容", searchRes.body.contains("qemu"), searchRes.body.take(200))
-        val statsRes = http(
+        check("memory_list 列得出来", memListRes.body.contains("事件：修好了构建"), memListRes.body.take(200))
+        val memSearchRes = http(
             "POST", "$base/mcp",
-            """{"jsonrpc":"2.0","id":54,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}""",
+            """{"jsonrpc":"2.0","id":54,"method":"tools/call","params":{"name":"memory_search","arguments":{"query":"aapt2"}}}""",
             sessionHeaders
         )
-        check("memory_stats 有输出", statsRes.body.contains("实体："), statsRes.body.take(200))
-        val delRes = http(
+        check("memory_search 搜得到正文", memSearchRes.body.contains("事件：修好了构建"), memSearchRes.body.take(200))
+        val memAppendRes = http(
             "POST", "$base/mcp",
-            """{"jsonrpc":"2.0","id":55,"method":"tools/call","params":{"name":"delete_entities","arguments":{"names":["事件：修好了构建"]}}}""",
+            """{"jsonrpc":"2.0","id":55,"method":"tools/call","params":{"name":"memory_append","arguments":{"name":"事件：修好了构建","text":"补一句"}}}""",
             sessionHeaders
         )
-        check("delete_entities 成功", delRes.body.contains("已删除 1 个实体"), delRes.body.take(200))
-        check("删完记忆库空了", server.memory.graph.entities.isEmpty())
+        check("memory_append 成功", memAppendRes.body.contains("已追加"), memAppendRes.body.take(200))
+        val memStatsRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":56,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}""",
+            sessionHeaders
+        )
+        check("memory_stats 有输出", memStatsRes.body.contains("记忆："), memStatsRes.body.take(200))
+        val memDelRes = http(
+            "POST", "$base/mcp",
+            """{"jsonrpc":"2.0","id":57,"method":"tools/call","params":{"name":"memory_delete","arguments":{"names":["事件：修好了构建"]}}}""",
+            sessionHeaders
+        )
+        check("memory_delete 成功", memDelRes.body.contains("已删除 1 条记忆"), memDelRes.body.take(200))
+        check("删完记忆库空了", server.memory.notes.isEmpty())
 
         println("\n[34] 记忆库总开关")
         config.memoryEnabled = false
         val offList = http("POST", "$base/mcp", """{"jsonrpc":"2.0","id":56,"method":"tools/list"}""", sessionHeaders)
-        check("关掉后记忆工具消失", !offList.body.contains("\"create_entities\""))
+        check("关掉后记忆工具消失", !offList.body.contains("\"memory_write\""))
         val offCall = http(
             "POST", "$base/mcp",
             """{"jsonrpc":"2.0","id":57,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}""",
@@ -1067,7 +1114,7 @@ fun main() {
         server.profiles.reset("包测试")
         val fresh = http("POST", pkUrl, """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""", sessionHeaders)
         check("新会话拿得到 read_file", fresh.body.contains("\"read_file\""))
-        check("新会话拿得到记忆工具", fresh.body.contains("\"create_entities\""))
+        check("新会话拿得到记忆工具", fresh.body.contains("\"memory_list\""))
         check("新会话拿得到包管理工具", fresh.body.contains("\"list_packs\""))
         check("新会话拿不到 write_file（文件写入没激活）", !fresh.body.contains("\"write_file\""))
         check("新会话拿不到 run_shell", !fresh.body.contains("\"run_shell\""))
@@ -1178,7 +1225,7 @@ fun main() {
         check("关掉后基础能力还在", "server_info" in offNames && "get_token" in offNames, offNames.toString())
         check(
             "关掉后已激活包的工具照常可见",
-            "read_file" in offNames && "create_entities" in offNames, offNames.toString()
+            "read_file" in offNames && "memory_list" in offNames, offNames.toString()
         )
         check(
             "关掉后未激活包的工具仍然不可见",
@@ -1478,91 +1525,63 @@ fun main() {
         config.shellTimeoutMs = 0L
         val (infInfoOk, infInfoText) = call("shell_info", "{}")
         check("shell_info 显示「不限制」", infInfoOk && infInfoText.contains("不限制"), infInfoText.take(200))
-        println("\n[46] 记忆库导入导出")
+        println("\n[46] 记忆库导入导出与迁移")
 
-        // —— 存储层：导出 → 覆盖导入（往返）
+        // —— md 文件：导出快照 → 覆盖导入（往返）
         val memA = MemoryStore(null)
-        memA.createEntities(
-            listOf(
-                Triple("项目：甲", "项目", "projects"),
-                Triple("工具：乙", "工具", "tools")
-            )
+        memA.write(
+            name = "项目：甲", folder = "projects", description = "甲项目",
+            type = "项目", body = "一条观察\n又一条观察"
         )
-        memA.addObservations("项目：甲", listOf("一条观察", "又一条观察"))
-        memA.createRelations(listOf(Triple("工具：乙", "项目：甲", "USES")))
-        val dump = memA.exportJson()
-        check("导出的是 JSON", dump.contains("\"entities\"") && dump.contains("又一条观察"), dump.take(120))
+        memA.write(name = "工具：乙", folder = "tools", links = listOf(MemoryLink("项目：甲", "USES")))
+        val snap = memA.filesSnapshot()
+        check("快照按分区列出 md", snap.keys.contains("projects/项目：甲.md"), snap.keys.toString())
+        check("md 带 front-matter", snap.getValue("projects/项目：甲.md").startsWith("---"))
+        check("md 里有正文", snap.getValue("projects/项目：甲.md").contains("又一条观察"))
 
         val memB = MemoryStore(null)
-        val rt = memB.importJson(dump, merge = false)
-        check("覆盖导入：结果标记为 replaced", rt.replaced)
-        check("覆盖导入：实体数一致", memB.graph.entities.size == 2, "${memB.graph.entities.size}")
-        check("覆盖导入：观察带过来了", memB.entity("项目：甲")?.observations?.size == 2)
-        check("覆盖导入：关系带过来了", memB.graph.relations.size == 1)
+        val rt = memB.importFiles(snap, replace = true)
+        check("导入：两条记忆", memB.notes.size == 2, "${memB.notes.size}")
+        check("导入：正文保留", memB.note("项目：甲")?.body?.contains("又一条观察") == true)
+        check("导入：简介保留", memB.note("项目：甲")?.description == "甲项目")
+        check("导入：分区保留", memB.note("项目：甲")?.folder == "projects")
+        check("导入：关联保留", memB.note("工具：乙")?.links?.firstOrNull()?.to == "项目：甲")
+        check("导入：结果计数", rt.added == 2 && rt.removed == 0, "新增 ${rt.added} / 更新 ${rt.updated}")
 
-        // —— 合并导入：不覆盖已有内容，只补空字段 / 去重追加观察
+        // —— 合并导入不删已有内容
         val memC = MemoryStore(null)
-        memC.createEntities(listOf(Triple("项目：甲", "", "")))
-        memC.addObservations("项目：甲", listOf("原有观察"))
-        val mg = memC.importJson(dump, merge = true)
-        check(
-            "合并：同名实体算「补全」而不是新建",
-            mg.entitiesAdded == 1 && mg.entitiesMerged == 1,
-            "新增 ${mg.entitiesAdded} / 补全 ${mg.entitiesMerged}"
-        )
-        check("合并：原有观察没被覆盖", memC.entity("项目：甲")?.observations?.contains("原有观察") == true)
-        check(
-            "合并：新观察去重后追加（1 旧 + 2 新）",
-            memC.entity("项目：甲")?.observations?.size == 3,
-            "${memC.entity("项目：甲")?.observations?.size}"
-        )
-        check(
-            "合并：原来空着的类型 / 分区被补上",
-            memC.entity("项目：甲")?.type == "项目" && memC.entity("项目：甲")?.folder == "projects",
-            "${memC.entity("项目：甲")?.type} / ${memC.entity("项目：甲")?.folder}"
-        )
-        check("合并：关系也加进来了", memC.graph.relations.size == 1)
-        val again = memC.importJson(dump, merge = true)
-        check(
-            "合并：再导入一次不会产生重复数据",
-            again.entitiesAdded == 0 && again.relationsAdded == 0 &&
-                memC.entity("项目：甲")?.observations?.size == 3,
-            "新增 ${again.entitiesAdded} / 关系 ${again.relationsAdded}"
-        )
-        check("合并：非法 JSON 会抛异常", runCatching { memC.importJson("{ 不是 json", true) }.isFailure)
+        memC.write(name = "原有的", body = "原内容")
+        memC.importFiles(snap, replace = false)
+        check("合并：原有内容还在", memC.note("原有的") != null)
+        check("合并：快照内容加进来", memC.note("项目：甲") != null && memC.notes.size == 3, "${memC.notes.size}")
 
-        // —— 走 MCP：memory_export / memory_import
+        // —— 旧版 graph JSON → md
+        val legacyJson = """{"entities":[{"name":"老实体","type":"旧","folder":"projects","observations":["一条观察","又一条观察"]},{"name":"老关系目标","type":"旧","folder":"projects","observations":[]}],"relations":[{"from":"老实体","to":"老关系目标","type":"PART_OF"}]}"""
+        val impLegacy = MemoryStore(null)
+        val oldImp = impLegacy.importLegacyJson(legacyJson, replace = true)
+        check("旧版 JSON 能导入", oldImp.added == 2, "新增 ${oldImp.added}")
+        check("观察拼成正文", impLegacy.note("老实体")?.body?.contains("又一条观察") == true)
+        check("旧版关系转成关联", impLegacy.note("老实体")?.links?.firstOrNull()?.to == "老关系目标")
+
+        // —— 渲染 / 解析往返
+        val round = MemoryNote(
+            name = "往返", folder = "x", description = "简介一句", type = "类型",
+            body = "正文一行\n第二行", links = listOf(MemoryLink("别的", "属于"))
+        )
+        val text = MemoryStore.render(round)
+        val back = MemoryStore.parse(text, "fallback", "x")
+        check("往返：名字", back.name == "往返")
+        check("往返：简介", back.description == "简介一句")
+        check("往返：类型", back.type == "类型")
+        check("往返：正文", back.body == "正文一行\n第二行", back.body)
+        check("往返：关联", back.links.single().to == "别的" && back.links.single().type == "属于")
+        check("往返：分区", back.folder == "x")
+
+        // —— 走 MCP 铺数据
         answer("记忆", ApprovalDecision.ALLOW_ALWAYS)
-        // 上一段把记忆库清空了，这里自己铺一份数据
-        server.memory.createEntities(
-            listOf(
-                Triple("项目：甲", "项目", "projects"),
-                Triple("工具：乙", "工具", "tools")
-            )
-        )
-        server.memory.addObservations("项目：甲", listOf("一条观察"))
-        server.memory.createRelations(listOf(Triple("工具：乙", "项目：甲", "USES")))
-        val (okEx, exText) = call("memory_export", """{"path":"xtt/memory/backup.json"}""")
-        check("memory_export 成功", okEx, exText.take(200))
-        val backup = File(root, "xtt/memory/backup.json")
-        check("导出文件真的写出来了", backup.isFile && backup.length() > 0, backup.path)
-        check("导出内容含实体名", backup.isFile && backup.readText().contains("项目：甲"))
-
-        server.memory.deleteEntities(server.memory.graph.entities.map { it.name })
-        check("清空后记忆库是空的", server.memory.graph.entities.isEmpty())
-
-        val (okImp, impText) = call("memory_import", """{"path":"xtt/memory/backup.json","mode":"replace"}""")
-        check("memory_import（覆盖）成功", okImp, impText.take(240))
-        check("覆盖导入后实体回来了", server.memory.graph.entities.size == 2, "${server.memory.graph.entities.size}")
-        check("覆盖导入后关系也回来了", server.memory.graph.relations.size == 1)
-
-        val (okImp2, impText2) = call("memory_import", """{"path":"xtt/memory/backup.json"}""")
-        check("memory_import（不给 mode 时默认合并）成功", okImp2, impText2.take(240))
-        check("合并导入不会重复加实体", server.memory.graph.entities.size == 2, "${server.memory.graph.entities.size}")
-
-        File(root, "xtt/bad-memory.json").writeText("这不是 JSON")
-        val (okBadImp, badImpText) = call("memory_import", """{"path":"xtt/bad-memory.json"}""")
-        check("导入非法文件会报错", !okBadImp, badImpText.take(200))
+        server.memory.write(name = "项目：甲", folder = "projects", body = "一条观察")
+        server.memory.write(name = "工具：乙", folder = "tools", links = listOf(MemoryLink("项目：甲", "USES")))
+        check("MCP 侧写入后共两条", server.memory.notes.size == 2, "${server.memory.notes.size}")
 
         println("\n[47] 备份与恢复")
 
@@ -1574,8 +1593,7 @@ fun main() {
             putString(Config.Keys.ROOTS, "/sdcard")
         }
         val memX = MemoryStore(null).also {
-            it.createEntities(listOf(Triple("备份：甲", "项目", "projects")))
-            it.addObservations("备份：甲", listOf("一条观察"))
+            it.write(name = "备份：甲", folder = "projects", body = "一条观察")
         }
         val toolsX = CustomToolStore(Config(MemorySettings()), MemorySettings())
 
@@ -1643,23 +1661,37 @@ fun main() {
         check("类型还原：整数键仍是整数", typed.getInt(Config.Keys.PORT, 0) == 19999)
 
         // —— 记忆部分：合并 / 覆盖都走通
-        val memDump = memX.exportJson()
+        val memDump = memX.exportManifest()
+        val memFiles = memX.filesSnapshot()
         check("记忆导出：能嗅探出类型", Backup.sniff(memDump) == Backup.Part.MEMORY)
-        val memPlain = MemoryStore(null).also { it.createEntities(listOf(Triple("原有", "类型", "x"))) }
+        check("记忆导出：清单里记了文件名", memDump.contains("projects/备份：甲.md"), memDump.take(200))
+        val memPlain = MemoryStore(null).also { it.write(name = "原有", folder = "x") }
         Backup.apply(
             Backup.Part.MEMORY, memDump, Backup.Mode.MERGE, restoreToken = false,
-            settings = MemorySettings(), memory = memPlain, customTools = toolsX
+            settings = MemorySettings(), memory = memPlain, customTools = toolsX,
+            memoryFiles = memFiles
         )
-        check("记忆合并：原有内容没丢", memPlain.entity("原有") != null)
-        check("记忆合并：备份内容加进来了", memPlain.entity("备份：甲") != null)
+        check("记忆合并：原有内容没丢", memPlain.note("原有") != null)
+        check("记忆合并：备份内容加进来了", memPlain.note("备份：甲") != null)
 
-        val memWipe = MemoryStore(null).also { it.createEntities(listOf(Triple("会被清掉", "类型", "x"))) }
+        val memWipe = MemoryStore(null).also { it.write(name = "会被清掉", folder = "x") }
         Backup.apply(
             Backup.Part.MEMORY, memDump, Backup.Mode.REPLACE, restoreToken = false,
-            settings = MemorySettings(), memory = memWipe, customTools = toolsX
+            settings = MemorySettings(), memory = memWipe, customTools = toolsX,
+            memoryFiles = memFiles
         )
-        check("记忆覆盖：旧内容被清掉", memWipe.entity("会被清掉") == null)
-        check("记忆覆盖：备份内容进来了", memWipe.entity("备份：甲") != null)
+        check("记忆覆盖：旧内容被清掉", memWipe.note("会被清掉") == null)
+        check("记忆覆盖：备份内容进来了", memWipe.note("备份：甲") != null)
+
+        // —— 老格式（裸 graph JSON）也能恢复
+        val legacyMem = MemoryStore(null)
+        Backup.apply(
+            Backup.Part.MEMORY,
+            """{"entities":[{"name":"旧格式实体","type":"旧","folder":"x","observations":["一句"]}],"relations":[]}""",
+            Backup.Mode.REPLACE, restoreToken = false,
+            settings = MemorySettings(), memory = legacyMem, customTools = toolsX
+        )
+        check("老格式记忆能恢复成 md", legacyMem.note("旧格式实体")?.body == "一句")
 
         // —— 自定义工具部分
         val toolDump = toolsX.exportJson()
@@ -1675,13 +1707,15 @@ fun main() {
                 Backup.Part.CUSTOM_TOOLS to toolDump,
                 Backup.Part.STATS to statsDump
             ),
-            includeToken = true
+            includeToken = true,
+            memoryFiles = memFiles
         )
         check("zip：产出了非空字节", zipBytes.isNotEmpty(), "${zipBytes.size} 字节")
         val bundle = Backup.readZip(zipBytes)
         check("zip：解出四部分", bundle.parts.size == 4, "${bundle.parts.keys}")
         check("zip：含令牌标记为 true", bundle.tokenIncluded)
-        check("zip：解出的记忆和原稿一致", bundle.parts[Backup.Part.MEMORY] == memDump)
+        check("zip：解出的记忆清单一致", bundle.parts[Backup.Part.MEMORY] == memDump)
+        check("zip：解出的记忆文件一致", bundle.memoryFiles == memFiles, "${bundle.memoryFiles.keys}")
         check("zip：解出的设置和原稿一致", bundle.parts[Backup.Part.SETTINGS] == settingsWithToken)
         check("zip：版本号写进了 manifest", bundle.app == ServerMeta.fullVersion, "${bundle.app}")
 

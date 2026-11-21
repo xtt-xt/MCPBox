@@ -22,9 +22,72 @@ tools/release.sh 1.1.0        # 发行版：发布版本改成 1.1.0 并打 tag
 
 ---
 
-## v1.4.1-171 · 2026-11-14
+## v1.5.0 · 2026-11-21
 
 <details open>
+<summary><b>中文</b></summary>
+
+### 浏览器
+
+- **后台页面休眠**：标签页太久没动就销毁页面、只留地址，切回时重新加载并回到原来的位置
+- 新增「后台页面休眠」设置（始终不休眠 / 5 / 15 / 30 / 60 分钟，默认 15）
+- 审批球和浏览器球合成一个：有待审批时显示数量，否则显示浏览器图标
+- 长按小球弹出环形菜单，滑到「浏览器 / 审批」松手就打开那一项
+- 新增「设置 → 外观与语言 → 悬浮球」，可以改小球吸附方式、重置位置
+
+### 记忆库
+
+- **改成一个 Markdown 文件一条记忆**：正文就是文件内容，手改也行
+- 记忆工具换成 7 个：列出、读取、写入、追加、搜索、删除、统计
+- 详情页默认只看预览，点右上角的笔才进入编辑
+- 正文支持完整的 Markdown 渲染（表格、任务列表、代码块、引用都认），外面套一张圆角卡片
+- 旧版数据库可以一键迁移，迁移前自动备份；没迁移时每次打开 App 都会提醒，也可以把旧版数据库另存到指定位置
+
+### 备份
+
+- 记忆部分跟着改成整个目录，一条记忆一个文件；导入旧版备份会自动转成 Markdown
+
+### 修复
+
+- 审批悬浮窗不跟随主题色，一直是默认蓝
+- 单部分备份导入时，背景图片 / 视频的副本会丢
+
+</details>
+
+<details>
+<summary><b>English</b></summary>
+
+### Browser
+
+- **Background page sleep**: a tab that has been idle too long has its page destroyed with only the address kept; switching back reloads it and restores the scroll position
+- New "Sleep inactive pages" setting (Never / 5 / 15 / 30 / 60 minutes, 15 by default)
+- The approval ball and the browser ball are now one: it shows the pending count when there is one, otherwise the browser icon
+- Long-press the ball for a ring menu; slide to "Browser" or "Approvals" and release to open it
+- New "Settings → Appearance → Floating ball" page for snapping and resetting the position
+
+### Memory
+
+- **One Markdown file per memory**: the body is the file itself, so hand-editing works too
+- Seven memory tools replace the old set: list, read, write, append, search, delete, stats
+- The detail page opens in preview; tap the pencil to edit
+- Bodies render as full Markdown (tables, task lists, code blocks, quotes) inside a rounded card
+- The legacy database migrates in one tap with an automatic backup first; the app prompts on every launch until it is migrated, and the legacy database can be saved to a location you choose
+
+### Backup
+
+- The memory part is now a whole folder, one file per note; importing an old backup converts it to Markdown
+
+### Fixes
+
+- The approval overlay ignored the theme color and stayed default blue
+- Importing a single-part backup dropped the background image / video copies
+
+</details>
+---
+
+## v1.4.1-171 · 2026-11-14
+
+<details>
 <summary><b>中文</b></summary>
 
 ### 新增

@@ -2,52 +2,92 @@
 
 [← Back to README](../../README.en.md) ｜ [中文](../04-记忆库.md)
 
-Long-term memory for the AI, stored as classic knowledge-graph triples:
+Long-term memory for the AI. **Each memory is a Markdown file**, and the AI reads and writes whole notes.
 
-| Concept | Meaning |
+```
+files/memory/
+  projects/MCPBox.md
+  people/Xing Tian.md
+  unsorted/Scratch.md
+  _backup/graph-20261121-161500.json    ← backup of the legacy database (for migration)
+```
+
+- **Name** = file name, globally unique.
+- **Folder** = parent directory; a note in the memory root shows up as "Unsorted".
+- Renaming moves the file and updates links that point to the old name; deleting a note removes links to it elsewhere.
+
+## File format
+
+```markdown
+---
+title: MCPBox
+description: MCP file server on a phone
+type: project
+created: 1763700000000
+updated: 1763700000000
+links:
+  - to: Xing Tian
+    type: belongs to
+---
+
+Body text, Markdown as usual.
+```
+
+| Field | Meaning |
 |---|---|
-| **Entity** | A node: project, tool, event, person, user preference… **names are unique** |
-| **Observation** | One fact per line, attached to an entity (duplicates are skipped) |
-| **Relation** | A directed edge between two entities: `from ──PART_OF──▸ to` |
+| `title` | Note name, equal to the file name |
+| `description` | One-line summary shown in lists, search results and links |
+| `type` | Free text (project / person / preference…) |
+| `links` | Outgoing links, each `to` + `type`; incoming links are not written here — they are derived by scanning |
+| Body | Everything after the closing `---` |
 
-Entity types, folders and relation predicates are all **free text** — no enumeration. The AI naturally grows structures like "project fact / user preference / event", and predicates are usually UPPER_SNAKE_CASE (`PART_OF`, `HAPPENS_AT`, `INVOLVES`, `CORRECTS`, `UPDATES`…).
+Unknown keys in the front matter are ignored. Hand-editing is fine; the app rescans the directory.
 
-- **Behaviour**: entities with the same name are skipped, never overwritten; renaming syncs both ends of relations; deleting an entity deletes its relations too.
-- **Search**: `search_nodes` results include the **direct neighbours** of each hit, so the AI can follow a thread.
-- **Storage**: `filesDir/memory/graph.json`, written atomically (write `.tmp`, then rename) — a power loss costs at most the last write.
-- **Tools**: 12 `memory_*` / entity / relation tools, see [01 Tools](01-tools.md#memory--memory-store-10-on-by-default).
-- **Master switch**: turning off "Settings → AI & tools → Memory" removes the memory tools from `tools/list` entirely.
+## Tools (7)
 
-## Browsing and editing in the app
+| Tool | What it does |
+|---|---|
+| `memory_list` | List notes (folder + name + summary), optionally one folder |
+| `memory_read` | Read one note: summary, type, body, plus links in both directions |
+| `memory_write` | Write a whole note; `oldName` renames |
+| `memory_append` | Append a paragraph to the body |
+| `memory_search` | Keyword search; hits include direct neighbours |
+| `memory_delete` | Delete notes |
+| `memory_stats` | Note / link counts and folder / type breakdown |
+
+The master switch lives in "Settings → AI & tools → Memory"; turning it off removes these 7 tools from `tools/list`.
+
+## Editing in the app
 
 Location: **Settings → AI & tools → Memory**.
 
-- Search and filter by folder;
-- Open an entity to change its **name / type / folder** and add or remove observations and relations;
-- Tapping a relation jumps to the entity on the other end;
-- The "⋯" menu in the top right has **Export / Import**.
+- List page: search (name / summary / body), folder pills, tap a card to open it;
+- Detail page: name, folder, summary, type, body and links are all editable; "Save" writes back to the file;
+- Links can be added (pick a target and a type) and removed (only outgoing ones — incoming links belong to the other note);
+- The "⋯" menu offers export, import and "export the last legacy database".
 
-## Export / import
+## Import / export
 
-### In the app
+Both are manual, in the app — they do not use up tool slots.
 
 | Action | Notes |
 |---|---|
-| Export | Uses the system file picker (CreateDocument) and writes one JSON file |
-| Import · merge (default) | For entities with the same name only **blank** types/folders are filled in; observations are de-duplicated and appended, existing ones are never overwritten; duplicate relations are skipped |
-| Import · replace | Wipes the whole store first, then writes the file's contents (with a second confirmation) |
+| Export all | One zip: `memory/memory.json` is a manifest, `memory/files/**` are the notes |
+| Import from file | Accepts the zip above, and a legacy `graph.json` |
+| Import mode | Merge (keep existing) / Replace (wipe first) |
 
-On a merge import, "**uncategorized**" counts as blank: if the file carries a folder it is filled in, while a folder you chose explicitly stays untouched.
+## Migrating from the old format
 
-### Letting the AI do it
+The old store was `files/memory/graph.json` (entities + observations + relations).
 
-Two tools do the same thing:
-
-- `memory_export`: write the whole store to a given JSON file.
-- `memory_import`: import from JSON with `mode=merge` (default, safe) or `mode=replace` (wipe, then write).
-
-> ⚠️ These two tools are **not part of any tool pack yet**, so they do not appear in `tools/list` — packs only expose the tools listed in them. For now call them via `tools/call`, or use the app. Once they are added to the `memory` pack they will show up normally.
+- While `graph.json` still sits in the root, the memory page shows only an "Update to the new memory database" banner and every memory tool returns an error;
+- Tapping the banner offers **Migrate** / **Save legacy memories** (to a location you pick) / **Later** (keeps memory disabled);
+- When legacy data is detected a backup is written to `files/memory/_backup/graph-<time>.json` and the path is shown;
+- Migration turns each entity into `<folder>/<name>.md`, joins observations line by line into the body, moves relations into `links` of the source note, and removes `graph.json` (the backup stays);
+- The backup can be exported later from "⋯ → Export last legacy database".
 
 ## Included in backups
 
-The memory store is the first part of "Backup & restore" and can be packed into a single zip together with settings, custom tools and stats — see [07 Stats, backup, onboarding](07-stats-backup-onboarding.md).
+The memory part of "Backup & restore" is the whole directory: `memory/files/` holds the notes and
+`memory/memory.json` is just the manifest. A legacy `graph.json` inside an old backup is converted to
+Markdown on restore. See [07 Stats, backup, onboarding](07-stats-backup-onboarding.md).

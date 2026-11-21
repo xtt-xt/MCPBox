@@ -44,7 +44,7 @@ mcpcore/src/main/kotlin/com/xtt/mcpbox/core/
   PathSandbox.kt / Trash.kt / FileBridge.kt / FileGateway.kt
   Shell.kt / ShellMirror.kt            Shell backends (app / root / Shizuku) and AI command mirroring
   WebConsole.kt / WebSites.kt / Config.kt / CustomTools.kt / EventLog.kt
-  Memory.kt                            Memory store: entities + observations + relations, atomic graph.json
+  Memory.kt                            Memory store: one Markdown file per note, legacy graph.json migration
   Backup.kt                            Backup & restore: four parts, two modes, sniffing
   Stats.kt                             Usage stats (heatmap data, uptime, launch counts)
   ToolPack.kt                          Tool packs: built-in definitions + custom pack storage

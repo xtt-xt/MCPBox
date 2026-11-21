@@ -79,12 +79,11 @@ object BuiltinPacks {
     val MEMORY = ToolPack(
         id = "memory",
         title = "记忆库",
-        description = "长期记忆（知识图谱）：建实体、连关系、加观察、搜索、读全图、看统计。" +
+        description = "长期记忆（每条记忆是一个 Markdown 文件）：列出、读取、整篇写入、追加、搜索、删除、看统计。" +
             "想把事实记下来以后还用得上时激活它；只想看文件不必激活。",
         tools = listOf(
-            "create_entities", "create_relations", "add_observations",
-            "delete_entities", "delete_relations", "delete_observations",
-            "read_graph", "search_nodes", "open_nodes", "memory_stats"
+            "memory_list", "memory_read", "memory_write", "memory_append",
+            "memory_search", "memory_delete", "memory_stats"
         ),
         builtin = true,
         defaultActive = true

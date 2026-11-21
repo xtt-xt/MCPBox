@@ -4,505 +4,322 @@
 package com.xtt.mcpbox.core
 
 import kotlinx.serialization.json.JsonObject
-import java.io.File
 
 /**
- * 记忆库工具：让 AI 自己维护一份跨对话的长期记忆。
+ * 记忆库工具：每条记忆是一个 Markdown 文件，AI 直接整篇读写。
  *
- * 设计对齐官方 knowledge-graph memory server：
- * 建实体、建关系、加观察、删、读全图、搜索、按名取。
- * 所有文本（实体名 / 类型 / 分区 / 关系谓词）都是自由文本，不强制枚举。
+ * 和旧版的区别：不再有「实体 + 观察列表 + 关系边」那套拆分，
+ * 写一篇就是写一个文件，改一处就是改一篇。
  */
 object ToolsMemory {
 
     fun specs(store: MemoryStore): List<ToolSpec> = listOf(
-        createEntities(store),
-        createRelations(store),
-        addObservations(store),
-        readGraph(store),
-        searchNodes(store),
-        openNodes(store),
-        memoryStats(store),
-        memoryExport(store),
-        memoryImport(store),
-        deleteEntities(store),
-        deleteRelations(store),
-        deleteObservations(store)
+        memoryList(store),
+        memoryRead(store),
+        memoryWrite(store),
+        memoryAppend(store),
+        memorySearch(store),
+        memoryDelete(store),
+        memoryStats(store)
     )
 
-    // ------------------------------------------------------------ create_entities
-
-    private fun createEntities(store: MemoryStore) = ToolSpec(
-        name = "create_entities",
-        title = "记忆：新建实体",
-        description = "在记忆库里创建实体（节点）。实体可以是项目、工具、事件、用户偏好等任何东西。" +
-            "name 是唯一标识，已存在的实体不会被覆盖，只会补上空着的类型/分区。" +
-            "type 和 folder 都是自由文本：type 建议用「项目事实」「用户偏好」「事件」「工具」「人物」这类词，" +
-            "folder 用来分区（如 dev / projects / xtt / skills），不填则进「未分类」。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            props = mapOf(
-                "entities" to arr(
-                    "要创建的实体列表",
-                    Schema.obj(
-                        mapOf(
-                            "name" to Schema.str("实体名，唯一标识，例如「MCPBox 构建环境」"),
-                            "entityType" to Schema.str("实体类型，例如「项目事实」「用户偏好」「事件」（可用 type 代替）"),
-                            "type" to Schema.str("同 entityType（二选一即可）"),
-                            "folder" to Schema.str("分区/文件夹，例如 projects、xtt（可选）"),
-                            "observations" to arr("顺便带上的观察短句（可选）", Schema.str("一条事实，一句话说清"))
-                        ),
-                        listOf("name")
-                    )
-                )
-            ),
-            required = listOf("entities")
-        )
-    ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, L("记忆：新建实体"))
-        val items = ctx.args.arr("entities")?.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val name = o.str("name")?.trim().orEmpty()
-            if (name.isEmpty()) return@mapNotNull null
-            Triple(
-                name,
-                o.str("entityType") ?: o.str("type") ?: "",
-                o.str("folder") ?: ""
+    /** 处于旧版未迁移状态时，所有记忆工具都直接报错。 */
+    private fun CallContext.requireReady(store: MemoryStore) {
+        if (store.hasLegacy) {
+            fail(
+                L("记忆库还是旧版数据，暂时不能读写。请先在 App 的「设置 → AI 与工具 → 记忆库」里完成迁移。")
             )
-        }.orEmpty()
-        if (items.isEmpty()) ctx.fail(L("entities 不能为空（每项至少要有 name）"))
-
-        val r = store.createEntities(items)
-        // 顺带把 observations 塞进去
-        var obsAdded = 0
-        ctx.args.arr("entities")?.forEach { el ->
-            val o = el as? JsonObject ?: return@forEach
-            val name = o.str("name")?.trim().orEmpty()
-            val texts = o.arr("observations")?.mapNotNull { it.toString().trim('"').takeIf { s -> s.isNotBlank() } }.orEmpty()
-            if (name.isNotEmpty() && texts.isNotEmpty()) obsAdded += store.addObservations(name, texts)
         }
-        val names = items.map { it.first }
-        ToolResult(
-            buildString {
-                append(L("已创建 %s 个实体，已存在 %s 个").format(r.created, r.skipped))
-                if (obsAdded > 0) append(L("，附带 %s 条观察").format(obsAdded))
-                append(L("。\n"))
-                names.forEach { append("  · ").append(it).append('\n') }
-                append(
-                    L("\n当前记忆库共 %s 个实体、%s 条关系。")
-                        .format(store.graph.entities.size, store.graph.relations.size)
-                )
-            }
-        )
     }
 
-    // ----------------------------------------------------------- create_relations
+    // -------------------------------------------------------------- memory_list
 
-    private fun createRelations(store: MemoryStore) = ToolSpec(
-        name = "create_relations",
-        title = "记忆：建立关系",
-        description = "在两个实体之间建立有向关系（边）：from -关系类型-> to。" +
-            "关系类型是自由文本，建议用大写下划线，例如 HAPPENS_AT（发生于）、PART_OF（属于）、" +
-            "INVOLVES（涉及）、CORRECTS（纠正）、UPDATES（更新）、RELATES_TO（相关）、FOLLOWS（先后）。" +
-            "两端的实体建议先用 create_entities 建好。",
+    private fun memoryList(store: MemoryStore) = ToolSpec(
+        name = "memory_list",
+        title = "记忆：列出",
+        description = "列出记忆库里的所有记忆（分区 + 名字 + 一句简介）。" +
+            "想先看看记过什么、或者找某篇的名字时用它。folder 可以只看某个分区。",
         perm = PermKey.MEMORY,
         schema = Schema.obj(
             props = mapOf(
-                "relations" to arr(
-                    "关系列表",
-                    Schema.obj(
-                        mapOf(
-                            "from" to Schema.str("起点实体名"),
-                            "to" to Schema.str("终点实体名"),
-                            "relationType" to Schema.str("关系类型，例如 PART_OF（可用 type 代替）"),
-                            "type" to Schema.str("同 relationType（二选一即可）")
-                        ),
-                        listOf("from", "to")
-                    )
-                )
-            ),
-            required = listOf("relations")
+                "folder" to Schema.str("只看这个分区（省略 = 全部）")
+            )
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, L("记忆：建立关系"))
-        val items = ctx.args.arr("relations")?.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val from = o.str("from")?.trim().orEmpty()
-            val to = o.str("to")?.trim().orEmpty()
-            if (from.isEmpty() || to.isEmpty()) return@mapNotNull null
-            Triple(from, to, o.str("relationType") ?: o.str("type") ?: "RELATED_TO")
-        }.orEmpty()
-        if (items.isEmpty()) ctx.fail(L("relations 不能为空（每项要有 from 和 to）"))
-
-        val r = store.createRelations(items)
-        val missing = items.flatMap { listOf(it.first, it.second) }
-            .filterNot { store.hasEntity(it) }.distinct()
-        ToolResult(
-            buildString {
-                append(L("已建立 %s 条关系，已存在 %s 条。\n").format(r.created, r.skipped))
-                items.forEach { append("  ").append(it.first).append(" ──").append(it.third).append("──▸ ").append(it.second).append('\n') }
-                if (missing.isNotEmpty()) {
-                    append(L("\n注意：这些实体还不存在，建议补建："))
-                    append(missing.joinToString(L("、"))).append('\n')
-                }
-                append(
-                    L("\n当前记忆库共 %s 个实体、%s 条关系。")
-                        .format(store.graph.entities.size, store.graph.relations.size)
-                )
-            }
-        )
-    }
-
-    // ---------------------------------------------------------- add_observations
-
-    private fun addObservations(store: MemoryStore) = ToolSpec(
-        name = "add_observations",
-        title = "记忆：追加观察",
-        description = "给已有实体追加「观察」——一条条独立的事实短句。重复的内容会自动跳过。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            props = mapOf(
-                "observations" to arr(
-                    "要追加的观察",
-                    Schema.obj(
-                        mapOf(
-                            "entityName" to Schema.str("实体名"),
-                            "contents" to arr("这个实体的若干条事实", Schema.str("一句话说清一条事实"))
-                        ),
-                        listOf("entityName", "contents")
-                    )
-                )
-            ),
-            required = listOf("observations")
-        )
-    ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, L("记忆：追加观察"))
-        val items = ctx.args.arr("observations")?.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val name = o.str("entityName")?.trim().orEmpty()
-            val texts = o.arr("contents")?.mapNotNull { it.strValue() }.orEmpty()
-            if (name.isEmpty() || texts.isEmpty()) return@mapNotNull null
-            name to texts
-        }.orEmpty()
-        if (items.isEmpty()) {
-            ctx.fail(L("observations 不能为空（每项要有 entityName 和 contents）"))
+        ctx.guard(PermKey.MEMORY, null, L("查看记忆列表"))
+        ctx.requireReady(store)
+        val folder = ctx.args.str("folder")
+        val list = store.list(folder)
+        if (list.isEmpty()) {
+            return@ToolSpec ToolResult(
+                if (folder.isNullOrBlank()) L("记忆库是空的。")
+                else L("分区「%s」下没有记忆。").format(folder)
+            )
         }
-
         val sb = StringBuilder()
-        var total = 0
-        items.forEach { (name, texts) ->
-            if (!store.hasEntity(name)) {
-                sb.append(L("  ! 跳过「%s」：实体不存在\n").format(name))
-                return@forEach
+        sb.append(L("记忆 %s 条").format(list.size))
+        if (!folder.isNullOrBlank()) sb.append(L("（分区：%s）").format(folder))
+        sb.append('\n')
+        var lastFolder = "\u0000"
+        list.forEach { n ->
+            if (n.folderLabel != lastFolder) {
+                lastFolder = n.folderLabel
+                sb.append("\n【").append(lastFolder).append("】\n")
             }
-            val n = store.addObservations(name, texts)
-            total += n
-            sb.append(L("  · %s：新增 %s 条").format(name, n))
-                .append(if (n < texts.size) L("（跳过 %s 条重复）").format(texts.size - n) else "")
-                .append('\n')
+            sb.append("▸ ").append(n.name)
+            if (n.type.isNotBlank()) sb.append("  <").append(n.type).append('>')
+            if (n.description.isNotBlank()) sb.append(" — ").append(n.description)
+            sb.append('\n')
         }
-        ToolResult(L("已追加 %s 条观察。\n%s").format(total, sb.toString()).trimEnd())
+        ToolResult(sb.toString().trimEnd())
     }
 
-    // ---------------------------------------------------------------- read_graph
+    // -------------------------------------------------------------- memory_read
 
-    private fun readGraph(store: MemoryStore) = ToolSpec(
-        name = "read_graph",
-        title = "记忆：读取记忆库",
-        description = "读取记忆库的全部内容（实体 + 关系）。可以用 folder / type 过滤、用 limit 限制条数。" +
-            "内容多的时候建议先用 search_nodes 或 memory_stats 定位。",
+    private fun memoryRead(store: MemoryStore) = ToolSpec(
+        name = "memory_read",
+        title = "记忆：读取",
+        description = "按名字读一篇记忆的全文：简介、类型、正文，以及它的全部关联（关联项会带上对方的简介）。" +
+            "关联分「它指向的」和「指向它的」两种。",
         perm = PermKey.MEMORY,
         schema = Schema.obj(
             props = mapOf(
-                "folder" to Schema.str("只看某个分区（可选）"),
-                "type" to Schema.str("只看某个实体类型（可选）"),
-                "limit" to Schema.int("最多返回多少个实体，默认 50", 50, 1, 500)
-            )
+                "name" to Schema.str("记忆名（就是文件名，不带 .md）")
+            ),
+            required = listOf("name")
         )
     ) { ctx ->
-        ctx.guard(PermKey.MEMORY, null, L("记忆：读取记忆库"))
-        val g = store.snapshot(
-            folder = ctx.args.str("folder"),
-            type = ctx.args.str("type"),
-            limit = ctx.args.intOr("limit", 50)
-        )
-        if (g.entities.isEmpty()) {
-            ToolResult(L("记忆库还是空的（或该过滤条件下没有内容）。用 create_entities 开始记录吧。"))
-        } else {
-            ToolResult(renderGraph(store, g, L("记忆库")))
-        }
+        val name = ctx.str("name")?.trim().orEmpty()
+        if (name.isEmpty()) ctx.fail(L("name 不能为空"))
+        ctx.guard(PermKey.MEMORY, null, L("读取记忆「%s」").format(name))
+        ctx.requireReady(store)
+        val note = store.note(name) ?: ctx.fail(L("没有叫「%s」的记忆。").format(name))
+        ToolResult(renderNote(store, note))
     }
 
-    // -------------------------------------------------------------- search_nodes
+    // ------------------------------------------------------------- memory_write
 
-    private fun searchNodes(store: MemoryStore) = ToolSpec(
-        name = "search_nodes",
-        title = "记忆：搜索",
-        description = "按关键词搜索记忆库，匹配实体名 / 类型 / 分区 / 观察内容。" +
-            "结果会连带返回命中实体之间的关系和它们的直接邻居，方便顺着线索读下去。",
+    private fun memoryWrite(store: MemoryStore) = ToolSpec(
+        name = "memory_write",
+        title = "记忆：写入",
+        description = "整篇写入一篇记忆（不存在就新建，存在就按给出的字段覆盖）。" +
+            "不传的字段保持原样 —— 只想改正文就别传 description / type / links。" +
+            "links 是这篇记忆指向别人的关联，每项 {to, type}，type 比如「属于」「依赖」「相关」。" +
+            "改名用 oldName 指定旧名字，文件会跟着挪，别人指向它的关联也自动跟上。",
         perm = PermKey.MEMORY,
         schema = Schema.obj(
             props = mapOf(
-                "query" to Schema.str("关键词，例如「构建」「用户偏好」「token」"),
-                "limit" to Schema.int("最多返回多少个命中实体，默认 20", 20, 1, 200)
+                "name" to Schema.str("记忆名（就是文件名，不带 .md）"),
+                "folder" to Schema.str("分区目录名，省略或留空 = 未分类"),
+                "description" to Schema.str("一句话简介，列表里显示的就是它"),
+                "type" to Schema.str("类型，自由文本，比如「项目」「人物」「偏好」"),
+                "content" to Schema.str("正文，Markdown"),
+                "links" to arr(
+                    "这篇记忆指向别人的关联",
+                    Schema.obj(
+                        mapOf(
+                            "to" to Schema.str("对方记忆的名字"),
+                            "type" to Schema.str("关系类型，比如「属于」「依赖」「相关」")
+                        ),
+                        listOf("to")
+                    )
+                ),
+                "oldName" to Schema.str("改名时填旧名字（可选）")
+            ),
+            required = listOf("name")
+        )
+    ) { ctx ->
+        val name = ctx.str("name")?.trim().orEmpty()
+        if (name.isEmpty()) ctx.fail(L("name 不能为空"))
+        val oldName = ctx.str("oldName")?.trim()
+        ctx.guard(
+            PermKey.MEMORY, null,
+            if (oldName.isNullOrBlank() || oldName == name) L("写入记忆「%s」").format(name)
+            else L("重命名记忆「%s」→「%s」").format(oldName, name)
+        )
+        ctx.requireReady(store)
+        val links = ctx.args.arr("links")?.mapNotNull { el ->
+            val o = el as? JsonObject ?: return@mapNotNull null
+            val to = o.str("to")?.trim().orEmpty()
+            if (to.isEmpty()) null else MemoryLink(to, o.str("type")?.trim().orEmpty())
+        }
+        val r = runCatching {
+            store.write(
+                name = name,
+                folder = ctx.args.str("folder"),
+                description = ctx.args.str("description"),
+                type = ctx.args.str("type"),
+                body = ctx.args.str("content"),
+                links = links,
+                oldName = oldName
+            )
+        }.getOrElse { e -> ctx.fail(e.message ?: L("写入失败")) }
+        val note = store.note(r.name)
+        ToolResult(
+            buildString {
+                when {
+                    r.renamed -> append(L("已把「%s」改名为「%s」").format(oldName, r.name))
+                    r.created -> append(L("已新建记忆「%s」").format(r.name))
+                    else -> append(L("已更新记忆「%s」").format(r.name))
+                }
+                if (note != null) {
+                    append('\n').append(L("分区：")).append(note.folderLabel)
+                    if (note.description.isNotBlank()) append(" · ").append(note.description)
+                    append('\n').append(L("正文 ")).append(note.body.length).append(L(" 字 · 关联 "))
+                        .append(note.links.size).append(L(" 条"))
+                }
+                append('\n').append(L("当前记忆库共 %s 条。").format(store.notes.size))
+            }
+        )
+    }
+
+    // ------------------------------------------------------------ memory_append
+
+    private fun memoryAppend(store: MemoryStore) = ToolSpec(
+        name = "memory_append",
+        title = "记忆：追加",
+        description = "往一篇记忆的正文末尾追加一段（换行隔开）。这篇记忆不存在时会新建。",
+        perm = PermKey.MEMORY,
+        schema = Schema.obj(
+            props = mapOf(
+                "name" to Schema.str("记忆名"),
+                "text" to Schema.str("要追加的内容，Markdown")
+            ),
+            required = listOf("name", "text")
+        )
+    ) { ctx ->
+        val name = ctx.str("name")?.trim().orEmpty()
+        val text = ctx.str("text")
+        if (name.isEmpty()) ctx.fail(L("name 不能为空"))
+        if (text.isNullOrBlank()) ctx.fail(L("text 不能为空"))
+        ctx.guard(PermKey.MEMORY, null, L("给记忆「%s」追加内容").format(name))
+        ctx.requireReady(store)
+        val existed = store.has(name)
+        val note = store.append(name, text) ?: ctx.fail(L("追加失败"))
+        ToolResult(
+            if (existed) L("已追加到「%s」，现在正文 %s 字。").format(note.name, note.body.length)
+            else L("没有叫「%s」的记忆，已新建，正文 %s 字。").format(note.name, note.body.length)
+        )
+    }
+
+    // ------------------------------------------------------------ memory_search
+
+    private fun memorySearch(store: MemoryStore) = ToolSpec(
+        name = "memory_search",
+        title = "记忆：搜索",
+        description = "按关键词搜索记忆：匹配名字 / 简介 / 类型 / 分区 / 正文 / 关联。" +
+            "命中后会顺带把它们的直接邻居也带出来，方便顺着线索往下读。",
+        perm = PermKey.MEMORY,
+        schema = Schema.obj(
+            props = mapOf(
+                "query" to Schema.str("关键词"),
+                "limit" to Schema.int("最多返回多少条（默认 20）", 20, 1, 200)
             ),
             required = listOf("query")
         )
     ) { ctx ->
-        val query = ctx.args.str("query")?.trim().orEmpty()
-        if (query.isEmpty()) ctx.fail(L("query 不能为空"))
-        ctx.guard(PermKey.MEMORY, null, L("记忆：搜索「%s」").format(query))
-        val g = store.search(query, ctx.args.intOr("limit", 20))
-        if (g.entities.isEmpty()) {
-            ToolResult(L("没有找到和「%s」相关的记忆。").format(query))
-        } else {
-            ToolResult(renderGraph(store, g, L("搜索「%s」").format(query)))
-        }
+        val q = ctx.str("query")?.trim().orEmpty()
+        if (q.isEmpty()) ctx.fail(L("query 不能为空"))
+        ctx.guard(PermKey.MEMORY, null, L("搜索记忆：「%s」").format(q))
+        ctx.requireReady(store)
+        val limit = ctx.args.intOr("limit", 20)
+        val hits = store.search(q, limit)
+        ToolResult(renderList(hits, L("搜索「%s」：命中 %s 条").format(q, hits.size)))
     }
 
-    // ---------------------------------------------------------------- open_nodes
+    // ------------------------------------------------------------ memory_delete
 
-    private fun openNodes(store: MemoryStore) = ToolSpec(
-        name = "open_nodes",
-        title = "记忆：按名读取",
-        description = "按名字精确读取若干实体的完整内容（含它们的观察与关系）。",
+    private fun memoryDelete(store: MemoryStore) = ToolSpec(
+        name = "memory_delete",
+        title = "记忆：删除",
+        description = "删除若干篇记忆（按名字）。指向它们的关联会一并从别的记忆里去掉。删之前建议先确认一下名字。",
         perm = PermKey.MEMORY,
         schema = Schema.obj(
             props = mapOf(
-                "names" to arr("实体名列表", Schema.str("实体名"))
+                "names" to arr("要删除的记忆名", Schema.str("记忆名"))
             ),
             required = listOf("names")
         )
     ) { ctx ->
-        val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
+        val names = ctx.args.arr("names")?.mapNotNull { el ->
+            el.strValue()?.takeIf { it.isNotBlank() }
+        }.orEmpty()
         if (names.isEmpty()) ctx.fail(L("names 不能为空"))
-        ctx.guard(PermKey.MEMORY, null, L("记忆：读取 %s 个实体").format(names.size))
-        val found = names.mapNotNull { store.entity(it) }
-        val missing = names.filterNot { store.hasEntity(it) }
-        if (found.isEmpty()) {
-            ToolResult(L("这些实体都不存在：") + missing.joinToString(L("、")))
-        } else {
-            val sb = StringBuilder(
-                renderGraph(
-                    store,
-                    MemoryGraph(found, store.graph.relations, store.graph.revision),
-                    L("记忆")
-                )
-            )
-            if (missing.isNotEmpty()) {
-                sb.append(L("\n\n以下实体不存在：")).append(missing.joinToString(L("、")))
+        ctx.guard(PermKey.MEMORY, null, L("删除记忆：%s").format(names.joinToString(L("、"))))
+        ctx.requireReady(store)
+        val removed = store.delete(names)
+        val gone = names.filterNot { store.has(it) }
+        ToolResult(
+            buildString {
+                append(L("已删除 %s 条记忆").format(removed))
+                if (gone.isNotEmpty()) append(L("（不存在：%s）").format(gone.joinToString(L("、"))))
+                append(L("。当前共 %s 条。").format(store.notes.size))
             }
-            ToolResult(sb.toString())
-        }
+        )
     }
 
-    // --------------------------------------------------------------- memory_stats
+    // ------------------------------------------------------------- memory_stats
 
     private fun memoryStats(store: MemoryStore) = ToolSpec(
         name = "memory_stats",
         title = "记忆库统计",
-        description = "查看记忆库的规模：实体数、关系数、分区 / 类型 / 关系谓词的分布。写完记忆后可以用它自查结构乱不乱。",
+        description = "查看记忆库的规模：记忆条数、关联条数、分区 / 类型 / 关联类型的分布。写完记忆后可以用它自查结构乱不乱。",
         perm = PermKey.MEMORY,
         schema = Schema.obj(emptyMap())
     ) { ctx ->
         ctx.guard(PermKey.MEMORY, null, L("查看记忆库统计"))
+        ctx.requireReady(store)
         ToolResult(store.statsText())
     }
 
-    // -------------------------------------------------------------- memory_export
+    // -------------------------------------------------------------------- 渲染
 
-    private fun memoryExport(store: MemoryStore) = ToolSpec(
-        name = "memory_export",
-        title = "记忆：导出全库",
-        description = "把整个记忆库导出成一个 JSON 文件（实体 + 关系 + 观察），用来备份或搬到别的设备。" +
-            "path 省略时自动命名到 根目录/xtt/memory/memory-<时间>.json。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            mapOf("path" to Schema.str("导出到的文件路径，省略则写到 根目录/xtt/memory/"))
-        )
-    ) { ctx ->
-        val defaultPath = File(ctx.sandbox.primaryRoot(), "xtt/memory/memory-${stamp()}.json").path
-        val file = ctx.path("path", default = defaultPath)
-        if (file.isDirectory) ctx.fail(L("目标是一个目录：%s").format(file.path))
-        val json = store.exportJson()
-        ctx.guard(
-            PermKey.MEMORY, file,
-            L("导出记忆库（%s 个实体 · %s 条关系）到 %s")
-                .format(store.graph.entities.size, store.graph.relations.size, file.name),
-            file.path,
-            json.length.toLong()
-        )
-        file.parentFile?.mkdirs()
-        file.writeText(json)
-        ToolResult(
-            L("已导出记忆库：%s 个实体 · %s 条关系 · %s 条观察\n文件：%s\n大小：%s").format(
-                store.graph.entities.size,
-                store.graph.relations.size,
-                store.graph.entities.sumOf { it.observations.size },
-                file.path,
-                ctx.sandbox.humanSize(file.length())
-            )
-        )
-    }
-
-    // -------------------------------------------------------------- memory_import
-
-    private fun memoryImport(store: MemoryStore) = ToolSpec(
-        name = "memory_import",
-        title = "记忆：导入全库",
-        description = "从 JSON 文件导入记忆库（memory_export 导出的格式，也可以是只带 entities / relations 的 JSON）。" +
-            "mode=merge（默认、安全）合并：同名实体只补空着的类型 / 分区，观察去重后追加，绝不覆盖已有观察，关系重复的跳过；" +
-            "mode=replace 覆盖：先清空整个记忆库，再写入文件里的内容。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            mapOf(
-                "path" to Schema.str("JSON 文件路径"),
-                "mode" to Schema.str(
-                    "merge = 合并（默认，安全）；replace = 清空后整份覆盖",
-                    "merge",
-                    listOf("merge", "replace")
-                )
-            ),
-            listOf("path")
-        )
-    ) { ctx ->
-        val file = ctx.path(mustExist = true)
-        if (file.isDirectory) ctx.fail(L("这是一个目录：%s").format(file.path))
-        if (file.length() > 16L * 1024 * 1024) {
-            ctx.fail(L("文件太大（%s）").format(ctx.sandbox.humanSize(file.length())))
+    /** 一篇记忆的完整文本：元信息 + 正文 + 关联（带对方简介）。 */
+    private fun renderNote(store: MemoryStore, note: MemoryNote): String = buildString {
+        append("# ").append(note.name).append('\n')
+        append(L("分区：")).append(note.folderLabel)
+        if (note.type.isNotBlank()) append(" · ").append(L("类型：")).append(note.type)
+        append('\n')
+        if (note.description.isNotBlank()) {
+            append(L("简介：")).append(note.description).append('\n')
         }
-        val replace = ctx.args.str("mode").equals("replace", ignoreCase = true)
-        ctx.guard(
-            PermKey.MEMORY, file,
-            if (replace) L("用 %s 覆盖整个记忆库").format(file.name)
-            else L("从 %s 合并导入记忆库").format(file.name),
-            L("文件：%s\n大小：%s").format(file.path, ctx.sandbox.humanSize(file.length())),
-            file.length()
-        )
-        val result = runCatching { store.importJson(file.readText(), merge = !replace) }
-            .getOrElse { e -> ctx.fail(L("解析失败：%s").format(e.message ?: L("不是合法的记忆文件"))) }
-        ToolResult(
-            result.describe() +
-                L("\n当前：%s 个实体 · %s 条关系")
-                    .format(store.graph.entities.size, store.graph.relations.size)
-        )
-    }
+        append('\n').append(note.body.ifBlank { L("（正文为空）") }).append('\n')
 
-    /** 出现在默认文件名里的时间戳，如 20260928-2019。 */
-    private fun stamp(): String =
-        java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-
-    // ------------------------------------------------------------ delete_entities
-
-    private fun deleteEntities(store: MemoryStore) = ToolSpec(
-        name = "delete_entities",
-        title = "记忆：删除实体",
-        description = "删除若干实体。**与它们相连的关系会一并删除**。删之前建议先 search_nodes 确认一下。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            props = mapOf("names" to arr("要删除的实体名", Schema.str("实体名"))),
-            required = listOf("names")
-        )
-    ) { ctx ->
-        val names = ctx.args.arr("names")?.mapNotNull { it.strValue() }.orEmpty()
-        if (names.isEmpty()) ctx.fail(L("names 不能为空"))
-        ctx.guard(PermKey.MEMORY, null, L("记忆：删除实体 %s").format(names.joinToString(L("、"))))
-        val n = store.deleteEntities(names)
-        ToolResult(
-            L("已删除 %s 个实体（连带的关系也一起删了）。\n剩余：%s 个实体、%s 条关系。")
-                .format(n, store.graph.entities.size, store.graph.relations.size)
-        )
-    }
-
-    // ----------------------------------------------------------- delete_relations
-
-    private fun deleteRelations(store: MemoryStore) = ToolSpec(
-        name = "delete_relations",
-        title = "记忆：删除关系",
-        description = "删除指定的关系。只给 from / to、不给 relationType 时，会删掉这两点之间的所有关系。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            props = mapOf(
-                "relations" to arr(
-                    "要删除的关系",
-                    Schema.obj(
-                        mapOf(
-                            "from" to Schema.str("起点实体名"),
-                            "to" to Schema.str("终点实体名"),
-                            "relationType" to Schema.str("关系类型（可选，不填删全部）")
-                        ),
-                        listOf("from", "to")
-                    )
-                )
-            ),
-            required = listOf("relations")
-        )
-    ) { ctx ->
-        val items = ctx.args.arr("relations")?.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val from = o.str("from")?.trim().orEmpty()
-            val to = o.str("to")?.trim().orEmpty()
-            if (from.isEmpty() || to.isEmpty()) return@mapNotNull null
-            Triple(from, to, o.str("relationType") ?: o.str("type"))
-        }.orEmpty()
-        if (items.isEmpty()) ctx.fail(L("relations 不能为空"))
-        ctx.guard(PermKey.MEMORY, null, L("记忆：删除 %s 条关系").format(items.size))
-        val n = store.deleteRelations(items)
-        ToolResult(L("已删除 %s 条关系。剩余 %s 条。").format(n, store.graph.relations.size))
-    }
-
-    // -------------------------------------------------------- delete_observations
-
-    private fun deleteObservations(store: MemoryStore) = ToolSpec(
-        name = "delete_observations",
-        title = "记忆：删除观察",
-        description = "删掉某个实体上的若干条观察（需要一字不差地给出原文）。",
-        perm = PermKey.MEMORY,
-        schema = Schema.obj(
-            props = mapOf(
-                "deletions" to arr(
-                    "要删除的观察",
-                    Schema.obj(
-                        mapOf(
-                            "entityName" to Schema.str("实体名"),
-                            "contents" to arr("要删掉的观察原文", Schema.str("观察原文"))
-                        ),
-                        listOf("entityName", "contents")
-                    )
-                )
-            ),
-            required = listOf("deletions")
-        )
-    ) { ctx ->
-        val items = ctx.args.arr("deletions")?.mapNotNull { el ->
-            val o = el as? JsonObject ?: return@mapNotNull null
-            val name = o.str("entityName")?.trim().orEmpty()
-            val texts = o.arr("contents")?.mapNotNull { it.strValue() }.orEmpty()
-            if (name.isEmpty() || texts.isEmpty()) return@mapNotNull null
-            name to texts
-        }.orEmpty()
-        if (items.isEmpty()) ctx.fail(L("deletions 不能为空"))
-        ctx.guard(PermKey.MEMORY, null, L("记忆：删除观察"))
-        var total = 0
-        val sb = StringBuilder()
-        items.forEach { (name, texts) ->
-            if (!store.hasEntity(name)) {
-                sb.append(L("  ! 跳过「%s」：实体不存在\n").format(name))
-                return@forEach
+        val edges = store.edgesOf(note.name)
+        if (edges.isNotEmpty()) {
+            append('\n').append(L("关联 %s 条：").format(edges.size)).append('\n')
+            edges.forEach { e ->
+                if (e.outgoing) {
+                    append("  → ").append(e.type).append(" → ").append(e.to)
+                } else {
+                    append("  ← ").append(e.type).append(" ← ").append(e.from)
+                }
+                if (!e.peerExists) append(L("（对方还没有记忆）"))
+                else if (e.peerDescription.isNotBlank()) append("：").append(e.peerDescription)
+                append('\n')
             }
-            val n = store.deleteObservations(name, texts)
-            total += n
-            sb.append(L("  · %s：删掉 %s 条\n").format(name, n))
         }
-        ToolResult(L("共删除 %s 条观察。\n%s").format(total, sb.toString()).trimEnd())
+    }
+
+    /** 一串记忆的列表文本。 */
+    private fun renderList(list: List<MemoryNote>, title: String): String {
+        if (list.isEmpty()) return title + L("。没有结果。")
+        val sb = StringBuilder(title).append('\n')
+        var lastFolder = "\u0000"
+        list.forEach { n ->
+            if (n.folderLabel != lastFolder) {
+                lastFolder = n.folderLabel
+                sb.append("\n【").append(lastFolder).append("】\n")
+            }
+            sb.append("▸ ").append(n.name)
+            if (n.type.isNotBlank()) sb.append("  <").append(n.type).append('>')
+            if (n.description.isNotBlank()) sb.append(" — ").append(n.description)
+            sb.append('\n')
+        }
+        return sb.toString().trimEnd()
     }
 
     // -------------------------------------------------------------------- 辅助
-
-    /** `["a","b"]` 里的元素转字符串。 */
-    private fun kotlinx.serialization.json.JsonElement.strValue(): String? =
-        (this as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString || it.content.isNotBlank() }?.content
-            ?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun arr(desc: String, items: JsonObject): JsonObject = jo(
         "type" to "array",
@@ -510,35 +327,9 @@ object ToolsMemory {
         "items" to items
     )
 
-    /** 把一张（子）图渲染成给 AI 看的纯文本。 */
-    private fun renderGraph(store: MemoryStore, g: MemoryGraph, title: String): String {
-        val sb = StringBuilder()
-        sb.append(title).append("\n")
-        sb.append(L("实体 %s 个 · 关系 %s 条\n").format(g.entities.size, g.relations.size))
-
-        val byFolder = g.entities.groupBy { it.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER } }
-        byFolder.forEach { (folder, list) ->
-            sb.append("\n【").append(folder).append("】\n")
-            list.forEach { e ->
-                sb.append("▸ ").append(e.name)
-                if (e.type.isNotBlank()) sb.append("  <").append(e.type).append('>')
-                sb.append('\n')
-                e.observations.forEach { o -> sb.append("    · ").append(o).append('\n') }
-                g.relations.filter { it.from == e.name }.forEach { r ->
-                    sb.append("    → ").append(r.type).append(" → ").append(r.to).append('\n')
-                }
-                g.relations.filter { it.to == e.name }.forEach { r ->
-                    sb.append("    ← ").append(r.type).append(" ← ").append(r.from).append('\n')
-                }
-            }
-        }
-        // 两端都被引用但没显示出来的实体名（比如邻居被 limit 截掉）
-        val shown = g.entities.map { it.name }.toSet()
-        val dangling = g.relations.flatMap { listOf(it.from, it.to) }.filterNot { it in shown }.distinct()
-        if (dangling.isNotEmpty()) {
-            sb.append(L("\n（还有未展开的关联实体：")).append(dangling.joinToString(L("、")))
-                .append(L("）\n"))
-        }
-        return sb.toString().trimEnd()
-    }
+    /** `["a","b"]` 里的元素转字符串。 */
+    private fun kotlinx.serialization.json.JsonElement.strValue(): String? =
+        (this as? kotlinx.serialization.json.JsonPrimitive)
+            ?.takeIf { it.isString || it.content.isNotBlank() }
+            ?.content?.trim()?.takeIf { it.isNotEmpty() }
 }

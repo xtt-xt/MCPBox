@@ -153,8 +153,8 @@ fun SettingsScreen(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
-                    entityCount = AppCore.memory.graph.entities.size,
-                    relationCount = AppCore.memory.graph.relations.size,
+                    entityCount = AppCore.memory.notes.size,
+                    relationCount = AppCore.memory.notes.sumOf { it.links.size },
                     onPage = onPage
                 )
             }
@@ -219,7 +219,6 @@ fun SettingsScreen(
                 )
                 "memory" -> MemoryScreen(
                     ctx = ctx,
-                    revision = revision,
                     onChanged = onChanged,
                     onBack = back
                 )
@@ -286,8 +285,8 @@ fun SettingsScreen(
                         scroll = homeScroll,
                         scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
-                    entityCount = AppCore.memory.graph.entities.size,
-                    relationCount = AppCore.memory.graph.relations.size,
+                    entityCount = AppCore.memory.notes.size,
+                    relationCount = AppCore.memory.notes.sumOf { it.links.size },
                     onPage = onPage,
                 )
             }
@@ -492,7 +491,7 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        L("记忆库（实体 · 观察 · 关系）和统计不受影响。"),
+                        L("记忆库（Markdown 文件）和统计不受影响。"),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 13.sp
                     )
@@ -568,7 +567,7 @@ private fun SettingsHomePage(
                 ) { onPage("tools") },
                 entrySpec(
                     L("记忆库"),
-                    L("给 AI 的长期记忆：%s 个实体 · %s 条关系").format(entityCount, relationCount),
+                    L("给 AI 的长期记忆：%s 条记忆 · %s 条关联").format(entityCount, relationCount),
                     Icons.Filled.Star
                 ) { onPage("memory") }
             )

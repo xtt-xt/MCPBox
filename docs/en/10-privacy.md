@@ -16,7 +16,7 @@ Everything the App produces is written to its **private app directory** on this 
 
 3.1 Settings, access token, port, permission rules, tool pack state — stored in local SharedPreferences.
 3.2 Sessions (which tool packs are active) — JSON files under `profiles/`.
-3.3 Memory store (entities, observations, relations written by the AI) — `memory/graph.json`.
+3.3 Memory store (notes written by the AI, one Markdown file each) — `files/memory/`.
 3.4 Usage statistics (daily request counts, uptime, launch count) — `stats/stats.json`.
 3.5 Custom backdrop — a copy of the image or video you picked, inside the private directory.
 3.6 Custom tools and custom icons — likewise inside the private directory.

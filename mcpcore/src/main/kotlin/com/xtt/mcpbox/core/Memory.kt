@@ -3,501 +3,621 @@
 
 package com.xtt.mcpbox.core
 
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
- * 记忆图谱：给 AI 用的长期记忆。
+ * 一条记忆：**一个 Markdown 文件**。
  *
- * 结构就是经典的知识图谱三元组：
- *  - [MemoryEntity]  一个实体/节点（人、项目、工具、事件…）
- *  - [MemoryRelation] 实体之间的一条有向边（from -type-> to）
- *  - observations    实体自己的一串"观察"短句，用来放事实细节
+ * 文件本身既是数据也是可读的文档，front-matter 里放元信息，后面全是正文：
  *
- * `type` / `folder` / 关系谓词都是**自由文本**，不强制枚举：
- * AI 自己会自然长出「项目事实」「用户偏好」「事件」这类结构。
+ * ```
+ * ---
+ * title: MCPBox
+ * description: 手机上的 MCP 文件服务器
+ * type: 项目
+ * created: 1763700000000
+ * updated: 1763700000000
+ * links:
+ *   - to: 星天
+ *     type: 属于
+ * ---
+ * 正文随便写。
+ * ```
+ *
+ * 名字全局唯一，文件放在 `记忆根目录/<分区>/<名字>.md`；分区为空时直接放在根目录，
+ * 界面上显示成「未分类」。
  */
-@Serializable
-data class MemoryEntity(
+data class MemoryLink(
+    val to: String = "",
+    val type: String = ""
+)
+
+data class MemoryNote(
     val name: String = "",
+    val folder: String = "",
+    val description: String = "",
     val type: String = "",
-    val folder: String = DEFAULT_FOLDER,
-    val observations: List<String> = emptyList(),
+    val body: String = "",
+    val links: List<MemoryLink> = emptyList(),
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L
 ) {
+    /** 界面上展示的分区名（空分区 = 未分类）。 */
+    val folderLabel: String get() = folder.ifBlank { UNFILED }
+
     companion object {
-        const val DEFAULT_FOLDER = "未分类"
+        const val UNFILED = "未分类"
     }
 }
 
-@Serializable
-data class MemoryRelation(
-    val from: String = "",
-    val to: String = "",
-    val type: String = "",
-    val createdAt: Long = 0L
+/** 一条关联，带对方的简介 —— 读 / 搜的时候用来顺着线索往下走。 */
+data class MemoryEdge(
+    val from: String,
+    val to: String,
+    val type: String,
+    /** 出边还是入边（站在谁的角度看）。 */
+    val outgoing: Boolean,
+    /** 对方的简介（对方不存在时为空）。 */
+    val peerDescription: String,
+    /** 对方是否真的存在。 */
+    val peerExists: Boolean
 )
 
-@Serializable
-data class MemoryGraph(
-    val entities: List<MemoryEntity> = emptyList(),
-    val relations: List<MemoryRelation> = emptyList(),
-    val revision: Int = 0
-)
+/** 旧版图谱（graph.json）里的数据结构 —— 只用于导入与迁移，不再参与日常读写。 */
+internal object LegacyMemory {
+    @kotlinx.serialization.Serializable
+    data class Entity(
+        val name: String = "",
+        val type: String = "",
+        val folder: String = "未分类",
+        val observations: List<String> = emptyList(),
+        val createdAt: Long = 0L,
+        val updatedAt: Long = 0L
+    )
+
+    @kotlinx.serialization.Serializable
+    data class Relation(
+        val from: String = "",
+        val to: String = "",
+        val type: String = "",
+        val createdAt: Long = 0L
+    )
+
+    @kotlinx.serialization.Serializable
+    data class Graph(
+        val entities: List<Entity> = emptyList(),
+        val relations: List<Relation> = emptyList(),
+        val revision: Int = 0
+    )
+
+    val JSON = kotlinx.serialization.json.Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        prettyPrint = true
+    }
+
+    fun parse(text: String): Graph = JSON.decodeFromString(Graph.serializer(), text.trim())
+
+    fun encode(g: Graph): String = JSON.encodeToString(Graph.serializer(), g)
+}
 
 /**
- * 记忆库的存储与读写。
+ * 记忆库：一个装着 Markdown 文件的目录树。
  *
- * [file] 为 null 时纯内存运行（单元测试用）；否则原子写入（先写 .tmp 再改名），
- * 中途断电最多丢最后一次写入，不会把文件写坏。
+ * - `root` 为 null 时纯内存运行（单元测试 / harness 用）。
+ * - 每次写入都直接落盘（先写 `.tmp` 再改名），断电最多丢最后一次写入。
+ * - 根目录下还有旧版的 `graph.json` 时，整库处于 [State.LEGACY]：不读不写，
+ *   等用户在 App 里迁移。迁移完成后 `graph.json` 会被移进 `_backup/`。
  */
-class MemoryStore(private val file: File? = null) {
+class MemoryStore(private val root: File? = null) {
 
-    @Volatile var graph: MemoryGraph = MemoryGraph()
+    enum class State {
+        /** 一条记忆都没有。 */
+        EMPTY,
+
+        /** 正常可用。 */
+        READY,
+
+        /** 还躺着旧版的 graph.json，没迁移之前整个记忆功能不可用。 */
+        LEGACY
+    }
+
+    /** 当前所有记忆，按「分区 → 名字」排好序。 */
+    @Volatile
+    var notes: List<MemoryNote> = emptyList()
+        private set
+
+    /** 旧版图谱的原文（非 null 即处于 [State.LEGACY]）。 */
+    @Volatile
+    var legacyJson: String? = null
+        private set
+
+    /** 版本号：每次落盘 +1，UI 用它判断要不要重读。 */
+    @Volatile
+    var revision: Long = 0
         private set
 
     private val lock = Any()
-
-    /** 版本号：每次落盘 +1，UI 用它判断要不要重读。 */
-    @Volatile var revision: Long = 0
-        private set
-
+    private val mem = LinkedHashMap<String, MemoryNote>()
     private var listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
 
-    init { load() }
+    val state: State
+        get() = when {
+            legacyJson != null -> State.LEGACY
+            notes.isEmpty() -> State.EMPTY
+            else -> State.READY
+        }
+
+    init { reload() }
 
     fun addListener(l: () -> Unit) { listeners.add(l) }
+
+    fun removeListener(l: () -> Unit) { listeners.remove(l) }
 
     private fun notifyChanged() {
         revision++
         listeners.forEach { runCatching { it() } }
     }
 
-    // ------------------------------------------------------------------ 持久化
+    // ------------------------------------------------------------------ 目录
 
-    fun load() {
-        val f = file ?: return
-        val text = runCatching { if (f.isFile) f.readText() else null }.getOrNull()
-        if (text.isNullOrBlank()) {
-            graph = MemoryGraph()
+    private val notesDir: File? get() = root
+    private val legacyFile: File? get() = root?.let { File(it, "graph.json") }
+    private val backupDir: File? get() = root?.let { File(it, "_backup") }
+
+    // ------------------------------------------------------------------ 读取
+
+    /** 重新扫描目录。 */
+    fun reload() {
+        val dir = notesDir
+        if (dir == null) {
+            synchronized(lock) { notes = sorted(mem.values) }
             return
         }
-        graph = runCatching { JSON.decodeFromString(MemoryGraph.serializer(), text) }
-            .getOrElse { MemoryGraph() }
+        val legacy = legacyFile?.takeIf { it.isFile }?.let { f ->
+            runCatching { f.readText() }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
+        if (legacy != null) {
+            synchronized(lock) {
+                legacyJson = legacy
+                notes = emptyList()
+                mem.clear()
+            }
+            return
+        }
+        val found = LinkedHashMap<String, MemoryNote>()
+        if (dir.isDirectory) {
+            dir.walkTopDown()
+                .onEnter { it == dir || !it.name.startsWith("_") }
+                .filter { it.isFile && it.extension.equals("md", ignoreCase = true) }
+                .sortedBy { it.absolutePath }
+                .forEach { f ->
+                    val parsed = runCatching { parseFile(f, dir) }.getOrNull() ?: return@forEach
+                    // 重名时保留先扫到的（按路径排序，稳定）
+                    if (parsed.name.isNotBlank() && !found.containsKey(parsed.name)) {
+                        found[parsed.name] = parsed
+                    }
+                }
+        }
+        synchronized(lock) {
+            legacyJson = null
+            mem.clear()
+            mem.putAll(found)
+            notes = sorted(mem.values)
+        }
     }
 
-    /** 只清空内存，不动文件。 */
-    fun clear() {
+    private fun sorted(list: Collection<MemoryNote>): List<MemoryNote> =
+        list.sortedWith(compareBy({ it.folderLabel }, { it.name }))
+
+    fun note(name: String): MemoryNote? {
+        val n = name.trim()
+        if (n.isEmpty()) return null
+        synchronized(lock) { return mem[n] }
+    }
+
+    fun has(name: String): Boolean = note(name) != null
+
+    /** 按分区过滤；[folder] 为空 = 全部。 */
+    fun list(folder: String? = null): List<MemoryNote> {
+        val f = folder?.trim().orEmpty()
+        val all = synchronized(lock) { notes }
+        if (f.isEmpty()) return all
+        val want = if (f == MemoryNote.UNFILED) "" else f
+        return all.filter { it.folder == want }
+    }
+
+    /** 所有分区（含空的「未分类」），按数量降序。 */
+    fun folders(): List<Pair<String, Int>> = synchronized(lock) { notes }
+        .groupingBy { it.folderLabel }
+        .eachCount()
+        .entries
+        .map { it.key to it.value }
+        .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+
+    fun types(): List<Pair<String, Int>> = synchronized(lock) { notes }
+        .filter { it.type.isNotBlank() }
+        .groupingBy { it.type }
+        .eachCount()
+        .entries
+        .map { it.key to it.value }
+        .sortedByDescending { it.second }
+
+    /**
+     * 一条记忆的全部关联：它自己写出去的和别人指向它的都算。
+     */
+    fun edgesOf(name: String): List<MemoryEdge> {
+        val n = name.trim()
+        val all = synchronized(lock) { notes }
+        val byName = all.associateBy { it.name }
+        val out = (byName[n]?.links ?: emptyList())
+            .filter { it.to.isNotBlank() }
+            .map { l ->
+                val peer = byName[l.to]
+                MemoryEdge(n, l.to, l.type.ifBlank { DEFAULT_LINK }, true, peer?.description.orEmpty(), peer != null)
+            }
+        val inc = all.asSequence()
+            .filter { it.name != n }
+            .flatMap { src -> src.links.asSequence().filter { it.to == n }.map { src to it } }
+            .map { (src, l) ->
+                val peer = byName[src.name]
+                MemoryEdge(src.name, n, l.type.ifBlank { DEFAULT_LINK }, false, peer?.description.orEmpty(), true)
+            }
+            .toList()
+        return out + inc
+    }
+
+    /** 直接邻居（出边 + 入边，去重）。 */
+    fun neighbours(name: String): List<String> = edgesOf(name)
+        .map { if (it.outgoing) it.to else it.from }
+        .filter { it != name }
+        .distinct()
+
+    /**
+     * 关键词搜索：名字 / 简介 / 类型 / 分区 / 正文 / 关联目标。
+     * 命中后顺带把它们的直接邻居也带出来。
+     */
+    fun search(query: String, limit: Int = 20): List<MemoryNote> {
+        val q = query.trim().lowercase()
+        val all = synchronized(lock) { notes }
+        if (q.isEmpty()) return if (limit > 0) all.take(limit) else all
+        val hit = all.filter { n ->
+            n.name.lowercase().contains(q) ||
+                n.description.lowercase().contains(q) ||
+                n.type.lowercase().contains(q) ||
+                n.folderLabel.lowercase().contains(q) ||
+                n.body.lowercase().contains(q) ||
+                n.links.any { it.to.lowercase().contains(q) || it.type.lowercase().contains(q) }
+        }.take(if (limit > 0) limit else Int.MAX_VALUE)
+        val names = LinkedHashSet(hit.map { it.name })
+        hit.forEach { n -> neighbours(n.name).forEach { names.add(it) } }
+        val byName = all.associateBy { it.name }
+        return names.mapNotNull { byName[it] }
+    }
+
+    // ------------------------------------------------------------------ 写入
+
+    /** 写入结果：新建 / 更新 / 改名。 */
+    data class WriteResult(val created: Boolean, val renamed: Boolean, val name: String)
+
+    /**
+     * 整篇写入。不传的字段保持原样（新建时为空）。
+     *
+     * [oldName] 非空且与 [name] 不同时表示改名（旧文件会被删掉，指向它的关联不用动 ——
+     * 关联只认名字，所以要把所有指向旧名的 links 一起改写）。
+     */
+    fun write(
+        name: String,
+        folder: String? = null,
+        description: String? = null,
+        type: String? = null,
+        body: String? = null,
+        links: List<MemoryLink>? = null,
+        oldName: String? = null
+    ): WriteResult {
+        val finalName = sanitizeName(name)
+        require(finalName.isNotBlank()) { L("记忆名不能为空") }
+        val from = oldName?.trim()?.takeIf { it.isNotBlank() }
+        val result: WriteResult
         synchronized(lock) {
-            graph = MemoryGraph()
-            persistLocked()
+            val existing: MemoryNote? = if (from != null) mem[from] else mem[finalName]
+            val now = System.currentTimeMillis()
+            val note = MemoryNote(
+                name = finalName,
+                folder = folder?.let { cleanFolder(it) } ?: existing?.folder.orEmpty(),
+                description = description?.trim() ?: existing?.description.orEmpty(),
+                type = type?.trim() ?: existing?.type.orEmpty(),
+                body = body?.replace("\r\n", "\n") ?: existing?.body.orEmpty(),
+                links = links?.map { MemoryLink(sanitizeName(it.to), it.type.trim()) }
+                    ?.filter { it.to.isNotBlank() }
+                    ?.distinctBy { it.to to it.type }
+                    ?: existing?.links.orEmpty(),
+                createdAt = existing?.createdAt?.takeIf { it > 0 } ?: now,
+                updatedAt = now
+            )
+            if (from != null && from != finalName) {
+                deleteFileLocked(from)
+                mem.remove(from)
+                // 别人指向旧名字的关联一起改写
+                mem.replaceAll { _, n ->
+                    if (n.links.any { it.to == from }) {
+                        n.copy(links = n.links.map { l -> if (l.to == from) l.copy(to = finalName) else l })
+                    } else n
+                }
+                mem.values.forEach { persistLocked(it) }
+            }
+            mem[finalName] = note
+            persistLocked(note)
+            notes = sorted(mem.values)
+            result = WriteResult(created = existing == null, renamed = from != null && from != finalName, name = finalName)
         }
         notifyChanged()
+        return result
     }
 
-    private fun persistLocked() {
-        val f = file ?: return
+    /** 往正文末尾追加一段。不存在就新建。 */
+    fun append(name: String, text: String): MemoryNote? {
+        val n = name.trim()
+        if (n.isEmpty()) return null
+        val add = text.trim()
+        if (add.isEmpty()) return note(n)
+        val result: MemoryNote
+        synchronized(lock) {
+            val old = mem[n]
+            val note = if (old == null) {
+                MemoryNote(name = n, body = add, createdAt = System.currentTimeMillis(), updatedAt = System.currentTimeMillis())
+            } else {
+                // 用空行分隔：正文若以引用 / 列表结尾，只加一个换行会被 Markdown 的
+                // 懒续行规则并进上一块（多见于 `> 引用` 后面接普通段落）。
+                val sep = when {
+                    old.body.isBlank() -> ""
+                    old.body.endsWith("\n\n") -> ""
+                    old.body.endsWith("\n") -> "\n"
+                    else -> "\n\n"
+                }
+                old.copy(body = old.body + sep + add, updatedAt = System.currentTimeMillis())
+            }
+            mem[n] = note
+            persistLocked(note)
+            notes = sorted(mem.values)
+            result = note
+        }
+        notifyChanged()
+        return result
+    }
+
+    /** 只改某一项元信息。 */
+    fun updateMeta(
+        name: String,
+        description: String? = null,
+        type: String? = null,
+        folder: String? = null
+    ): Boolean {
+        val n = name.trim()
+        synchronized(lock) {
+            val old = mem[n] ?: return false
+            val note = old.copy(
+                description = description?.trim() ?: old.description,
+                type = type?.trim() ?: old.type,
+                folder = folder?.let { cleanFolder(it) } ?: old.folder,
+                updatedAt = System.currentTimeMillis()
+            )
+            mem[n] = note
+            persistLocked(note)
+            notes = sorted(mem.values)
+        }
+        notifyChanged()
+        return true
+    }
+
+    /** 删除若干条记忆。返回真正删掉的条数。 */
+    fun delete(names: List<String>): Int {
+        val set = names.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        if (set.isEmpty()) return 0
+        var removed = 0
+        synchronized(lock) {
+            set.forEach { n ->
+                if (mem.remove(n) != null) {
+                    deleteFileLocked(n)
+                    removed++
+                }
+            }
+            // 指向它们的关联也一并清掉
+            if (removed > 0) {
+                mem.replaceAll { _, note ->
+                    val kept = note.links.filterNot { it.to in set }
+                    if (kept.size != note.links.size) note.copy(links = kept) else note
+                }
+                mem.values.forEach { persistLocked(it) }
+            }
+            notes = sorted(mem.values)
+        }
+        notifyChanged()
+        return removed
+    }
+
+    // ------------------------------------------------------------------ 落盘
+
+    private fun persistLocked(note: MemoryNote) {
+        val dir = notesDir ?: return
         runCatching {
-            f.parentFile?.mkdirs()
-            val tmp = File(f.parentFile, f.name + ".tmp")
-            tmp.writeText(JSON.encodeToString(MemoryGraph.serializer(), graph))
-            if (f.exists()) f.delete()
-            if (!tmp.renameTo(f)) {
-                f.writeText(tmp.readText())
+            val target = fileFor(note)
+            target.parentFile?.mkdirs()
+            val tmp = File(target.parentFile, target.name + ".tmp")
+            tmp.writeText(render(note))
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                target.writeText(tmp.readText())
                 tmp.delete()
             }
         }
     }
 
-    private fun commit() {
-        persistLocked()
-        notifyChanged()
+    private fun deleteFileLocked(name: String) {
+        val dir = notesDir ?: return
+        runCatching { fileForName(dir, name)?.delete() }
     }
 
-    // -------------------------------------------------------------------- 查询
+    private fun fileFor(note: MemoryNote): File =
+        File(root!!, if (note.folder.isBlank()) "${note.name}.md" else "${note.folder}/${note.name}.md")
 
-    fun entity(name: String): MemoryEntity? = graph.entities.firstOrNull { it.name == name }
+    /** 按名字找现有文件（可能在任何分区目录下）。 */
+    private fun fileForName(dir: File, name: String): File? = dir.walkTopDown()
+        .onEnter { it == dir || !it.name.startsWith("_") }
+        .firstOrNull { it.isFile && it.nameWithoutExtension == name && it.extension.equals("md", true) }
 
-    fun hasEntity(name: String): Boolean = entity(name) != null
+    // ------------------------------------------------------------------ 导入 / 导出
 
-    fun relationsOf(name: String): List<MemoryRelation> =
-        graph.relations.filter { it.from == name || it.to == name }
-
-    /** 直接邻居（顺着关系走出去一步，不含自己）。 */
-    fun neighbours(name: String): List<String> = relationsOf(name)
-        .map { if (it.from == name) it.to else it.from }
-        .filter { it != name }
-        .distinct()
-
-    /** 全图，可按分区 / 类型过滤。 */
-    fun snapshot(folder: String? = null, type: String? = null, limit: Int = 0): MemoryGraph {
-        val ents = graph.entities.filter {
-            (folder.isNullOrBlank() || it.folder == folder) &&
-                (type.isNullOrBlank() || it.type == type)
-        }.let { if (limit > 0) it.take(limit) else it }
-        val names = ents.map { it.name }.toSet()
-        // 只保留两端都在结果集里的关系
-        val rels = graph.relations.filter { it.from in names && it.to in names }
-        return MemoryGraph(ents, rels, graph.revision)
-    }
-
-    /** 关键词搜索：命中实体 + 顺带把它们之间的关系和直接邻居一起带出来。 */
-    fun search(query: String, limit: Int = 20): MemoryGraph {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return snapshot(limit = limit)
-        val hit = graph.entities.filter { e ->
-            e.name.lowercase().contains(q) ||
-                e.type.lowercase().contains(q) ||
-                e.folder.lowercase().contains(q) ||
-                e.observations.any { it.lowercase().contains(q) }
-        }.take(if (limit > 0) limit else Int.MAX_VALUE)
-
-        val names = hit.map { it.name }.toMutableSet()
-        // 邻居实体也带上，方便 AI 顺着关系读
-        hit.forEach { e -> neighbours(e.name).forEach { names.add(it) } }
-
-        val ents = graph.entities.filter { it.name in names }
-        val rels = graph.relations.filter { it.from in names && it.to in names }
-        return MemoryGraph(ents, rels, graph.revision)
-    }
-
-    // -------------------------------------------------------------------- 写入
-
-    data class Created(val created: Int, val skipped: Int)
-
-    fun createEntities(
-        items: List<Triple<String, String, String>> // name / type / folder
-    ): Created {
-        var created = 0
-        var skipped = 0
-        synchronized(lock) {
-            val now = System.currentTimeMillis()
-            var list = graph.entities
-            items.forEach { (rawName, type, folder) ->
-                val name = rawName.trim()
-                if (name.isEmpty()) return@forEach
-                if (list.any { it.name == name }) {
-                    // 已存在：不覆盖旧观察，只在原来空着的时候补上 type / folder
-                    list = list.map {
-                        if (it.name == name) it.copy(
-                            type = it.type.ifBlank { type.trim() },
-                            folder = it.folder.ifBlank { folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER } },
-                            updatedAt = now
-                        ) else it
-                    }
-                    skipped++
-                } else {
-                    list = list + MemoryEntity(
-                        name = name,
-                        type = type.trim(),
-                        folder = folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER },
-                        observations = emptyList(),
-                        createdAt = now,
-                        updatedAt = now
-                    )
-                    created++
-                }
-            }
-            graph = graph.copy(entities = list, revision = graph.revision + 1)
+    /** 记忆库的全部文件：相对路径（`分区/名字.md`，用 `/`）→ 文本。 */
+    fun filesSnapshot(): Map<String, String> = synchronized(lock) {
+        val out = LinkedHashMap<String, String>()
+        notes.forEach { n ->
+            out[if (n.folder.isBlank()) "${n.name}.md" else "${n.folder}/${n.name}.md"] = render(n)
         }
-        commit()
-        return Created(created, skipped)
+        out
     }
 
-    fun createRelations(
-        items: List<Triple<String, String, String>> // from / to / type
-    ): Created {
-        var created = 0
-        var skipped = 0
-        synchronized(lock) {
-            val now = System.currentTimeMillis()
-            var list = graph.relations
-            items.forEach { (rawFrom, rawTo, rawType) ->
-                val from = rawFrom.trim()
-                val to = rawTo.trim()
-                val type = rawType.trim().ifBlank { "RELATED_TO" }
-                if (from.isEmpty() || to.isEmpty()) return@forEach
-                if (list.any { it.from == from && it.to == to && it.type == type }) {
-                    skipped++
-                } else {
-                    list = list + MemoryRelation(from, to, type, now)
-                    created++
-                }
-            }
-            graph = graph.copy(relations = list, revision = graph.revision + 1)
-        }
-        commit()
-        return Created(created, skipped)
+    /**
+     * 备份清单（写进 zip 的 `memory/memory.json`）。真实内容在 `memory/files/` 下。
+     */
+    fun exportManifest(exportedAt: Long = System.currentTimeMillis()): String {
+        val files = filesSnapshot()
+        val obj = jo(
+            "_type" to Backup.TYPE_MEMORY,
+            "version" to 2,
+            "app" to ServerMeta.fullVersion,
+            "exportedAt" to exportedAt,
+            "count" to files.size,
+            "files" to jarr(files.map { (path, text) ->
+                jo("path" to path, "size" to text.toByteArray().size)
+            })
+        )
+        return LegacyMemory.JSON.encodeToString(
+            kotlinx.serialization.json.JsonObject.serializer(), obj
+        )
     }
 
-    /** 追加观察；已有一模一样的就跳过。返回真正新增的条数。 */
-    fun addObservations(name: String, texts: List<String>): Int {
+    data class ImportResult(val added: Int = 0, val updated: Int = 0, val removed: Int = 0) {
+        fun describe(): String =
+            L("记忆导入完成：新增 %s 条 · 更新 %s 条%s。")
+                .format(added, updated, if (removed > 0) L(" · 清掉旧内容 %s 条").format(removed) else "")
+    }
+
+    /**
+     * 从一批 md 文件导入。
+     *
+     * @param files 相对路径（`分区/名字.md`）→ 文本
+     * @param replace true = 先清空整个记忆库再写入
+     */
+    fun importFiles(files: Map<String, String>, replace: Boolean = false): ImportResult {
         var added = 0
+        var updated = 0
+        var removed = 0
         synchronized(lock) {
-            val now = System.currentTimeMillis()
-            graph = graph.copy(
-                entities = graph.entities.map { e ->
-                    if (e.name != name) e
-                    else {
-                        // 先去空、去重（同一批里传了重复的也算一次），再排掉已经存在的
-                        val fresh = texts.map { it.trim() }
-                            .filter { it.isNotEmpty() }
-                            .distinct()
-                            .filter { it !in e.observations }
-                        added = fresh.size
-                        if (fresh.isEmpty()) e.copy(updatedAt = now)
-                        else e.copy(observations = e.observations + fresh, updatedAt = now)
+            if (replace) {
+                removed = mem.size
+                mem.clear()
+                val dir = notesDir
+                if (dir != null && dir.isDirectory) {
+                    dir.listFiles()?.forEach { f ->
+                        if (f.isFile && f.extension.equals("md", true)) f.delete()
+                        else if (f.isDirectory && !f.name.startsWith("_")) f.deleteRecursively()
                     }
-                },
-                revision = graph.revision + 1
-            )
+                }
+            }
+            files.forEach { (path, text) ->
+                val rel = path.replace('\\', '/').trimStart('/')
+                if (!rel.endsWith(".md", true)) return@forEach
+                val parts = rel.split('/').filter { it.isNotBlank() }
+                val fileName = parts.last().removeSuffix(".md").removeSuffix(".MD")
+                val folder = if (parts.size > 1) parts.dropLast(1).joinToString("/") else ""
+                val note = runCatching { parse(text, fileName, folder) }.getOrNull() ?: return@forEach
+                val name = sanitizeName(note.name.ifBlank { fileName })
+                if (name.isBlank()) return@forEach
+                val existed = mem.containsKey(name)
+                val finalNote = note.copy(name = name, folder = cleanFolder(note.folder.ifBlank { folder }))
+                mem[name] = finalNote
+                persistLocked(finalNote)
+                if (existed) updated++ else added++
+            }
+            notes = sorted(mem.values)
+            legacyJson = null
         }
-        commit()
-        return added
+        notifyChanged()
+        return ImportResult(added, updated, removed)
     }
 
-    /** 覆盖式编辑（UI 用）：改名字 / 类型 / 分区 / 整份观察列表。 */
-    fun updateEntity(
-        name: String,
-        newName: String = name,
-        type: String? = null,
-        folder: String? = null,
-        observations: List<String>? = null
-    ): Boolean {
-        val target = entity(name) ?: return false
-        val finalName = newName.trim().ifBlank { name }
+    /** 老备份里的记忆是 graph.json 结构，导入时转成 md。 */
+    fun importLegacyJson(text: String, replace: Boolean = false): ImportResult {
+        val graph = runCatching { LegacyMemory.parse(text) }.getOrElse {
+            throw ToolFailure(L("不是合法的旧版记忆文件：%s").format(it.message ?: ""))
+        }
+        var added = 0
+        var updated = 0
+        var removed = 0
         synchronized(lock) {
+            if (replace) {
+                removed = mem.size
+                mem.clear()
+                val dir = notesDir
+                if (dir != null && dir.isDirectory) {
+                    dir.listFiles()?.forEach { f ->
+                        if (f.isFile && f.extension.equals("md", true)) f.delete()
+                        else if (f.isDirectory && !f.name.startsWith("_")) f.deleteRecursively()
+                    }
+                }
+            }
             val now = System.currentTimeMillis()
-            graph = graph.copy(
-                entities = graph.entities.map {
-                    if (it.name != name) it
-                    else it.copy(
-                        name = finalName,
-                        type = type?.trim() ?: it.type,
-                        folder = folder?.trim()?.ifBlank { MemoryEntity.DEFAULT_FOLDER } ?: it.folder,
-                        observations = observations?.map { o -> o.trim() }?.filter { o -> o.isNotEmpty() }
-                            ?: it.observations,
+            graph.entities.filter { it.name.isNotBlank() }.forEach { e ->
+                val name = sanitizeName(e.name)
+                if (name.isBlank()) return@forEach
+                val existed = mem.containsKey(name)
+                val old = mem[name]
+                val body = e.observations.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+                val merged = if (old != null && !replace) {
+                    old.copy(
+                        body = listOf(old.body, body).filter { it.isNotBlank() }.joinToString("\n"),
+                        type = old.type.ifBlank { e.type.trim() },
                         updatedAt = now
                     )
-                },
-                relations = if (finalName == name) graph.relations else graph.relations.map {
-                    it.copy(
-                        from = if (it.from == name) finalName else it.from,
-                        to = if (it.to == name) finalName else it.to
+                } else {
+                    MemoryNote(
+                        name = name,
+                        folder = cleanFolder(e.folder),
+                        description = deriveDescription(body),
+                        type = e.type.trim(),
+                        body = body,
+                        createdAt = e.createdAt,
+                        updatedAt = now
                     )
-                },
-                revision = graph.revision + 1
-            )
-        }
-        commit()
-        return true
-    }
-
-    /** 删除实体，连带删掉所有跟它相连的关系。返回删掉的实体数。 */
-    fun deleteEntities(names: List<String>): Int {
-        val set = names.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        if (set.isEmpty()) return 0
-        var removed = 0
-        synchronized(lock) {
-            val kept = graph.entities.filterNot { it.name in set }
-            removed = graph.entities.size - kept.size
-            graph = graph.copy(
-                entities = kept,
-                relations = graph.relations.filterNot { it.from in set || it.to in set },
-                revision = graph.revision + 1
-            )
-        }
-        commit()
-        return removed
-    }
-
-    fun deleteRelations(items: List<Triple<String, String, String?>>): Int {
-        var removed = 0
-        synchronized(lock) {
-            val kept = graph.relations.filterNot { r ->
-                val hit = items.any { (f, t, ty) ->
-                    r.from == f.trim() && r.to == t.trim() && (ty.isNullOrBlank() || r.type == ty.trim())
                 }
-                if (hit) removed++
-                hit
+                mem[name] = merged
+                persistLocked(merged)
+                if (existed) updated++ else added++
             }
-            graph = graph.copy(relations = kept, revision = graph.revision + 1)
-        }
-        commit()
-        return removed
-    }
-
-    fun deleteObservations(name: String, texts: List<String>): Int {
-        val set = texts.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
-        var removed = 0
-        synchronized(lock) {
-            graph = graph.copy(
-                entities = graph.entities.map { e ->
-                    if (e.name != name) e
-                    else {
-                        val kept = e.observations.filterNot { it in set }
-                        removed = e.observations.size - kept.size
-                        e.copy(observations = kept, updatedAt = System.currentTimeMillis())
-                    }
-                },
-                revision = graph.revision + 1
-            )
-        }
-        commit()
-        return removed
-    }
-
-    // --------------------------------------------------------------- 导入 / 导出
-
-    /** 导出成 JSON（实体 + 关系，含观察）。格式就是 [MemoryGraph] 本身。 */
-    fun exportJson(): String = JSON.encodeToString(MemoryGraph.serializer(), graph)
-
-    /**
-     * 导入结果。[replaced] = true 表示整库替换（不是合并）。
-     */
-    data class ImportResult(
-        val entitiesAdded: Int = 0,
-        val entitiesMerged: Int = 0,
-        val observationsAdded: Int = 0,
-        val relationsAdded: Int = 0,
-        val relationsSkipped: Int = 0,
-        val replaced: Boolean = false
-    ) {
-        /** 给工具 / 界面用的一句可读总结。 */
-        fun describe(): String = if (replaced) {
-            L("已覆盖导入：清空原库后写入 %s 个实体、%s 条关系。").format(entitiesAdded, relationsAdded)
-        } else {
-            L("合并导入完成：新增实体 %s · 补全既有实体 %s · 新增观察 %s · 新增关系 %s（跳过重复关系 %s）。")
-                .format(entitiesAdded, entitiesMerged, observationsAdded, relationsAdded, relationsSkipped)
-        }
-    }
-
-    /**
-     * 合并导入时的分区取舍：原来只是「未分类」（等于没填）就听导入文件的，
-     * 用户显式选过的分区一律不动。
-     */
-    private fun mergeFolder(old: String, incoming: String): String {
-        val o = old.trim()
-        if (o.isNotBlank() && o != MemoryEntity.DEFAULT_FOLDER) return o
-        return incoming.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER }
-    }
-
-    /**
-     * 从 JSON 导入。
-     *
-     * - `merge = true`：合并模式 —— 不删任何东西。同名实体只补空着的 type / folder，
-     *   观察去重后追加；关系三元组重复的跳过。
-     * - `merge = false`：覆盖模式 —— 先清空整库，再用文件里的内容替换。
-     *
-     * 解析失败（不是合法 JSON / 结构不对）会抛异常，由调用方兜住。
-     */
-    fun importJson(text: String, merge: Boolean = true): ImportResult {
-        val incoming = JSON.decodeFromString(MemoryGraph.serializer(), text.trim())
-        val result: ImportResult
-        synchronized(lock) {
-            if (!merge) {
-                val ents = incoming.entities
-                    .filter { it.name.isNotBlank() }
-                    .map { it.copy(folder = it.folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER }) }
-                val rels = incoming.relations.filter { it.from.isNotBlank() && it.to.isNotBlank() }
-                graph = MemoryGraph(ents, rels, graph.revision + 1)
-                result = ImportResult(ents.size, 0, 0, rels.size, 0, replaced = true)
-            } else {
-                val now = System.currentTimeMillis()
-                var added = 0
-                var merged = 0
-                var obsAdded = 0
-                // 用 LinkedHashMap 保证顺序：老实体原样在前，新增的按文件顺序追加
-                val byName = LinkedHashMap<String, MemoryEntity>()
-                graph.entities.forEach { byName[it.name] = it }
-                incoming.entities.forEach { inc ->
-                    val name = inc.name.trim()
-                    if (name.isEmpty()) return@forEach
-                    val old = byName[name]
-                    if (old == null) {
-                        byName[name] = inc.copy(
-                            name = name,
-                            type = inc.type.trim(),
-                            folder = inc.folder.trim().ifBlank { MemoryEntity.DEFAULT_FOLDER },
-                            observations = inc.observations.map { o -> o.trim() }.filter { o -> o.isNotEmpty() }.distinct(),
-                            createdAt = if (inc.createdAt > 0L) inc.createdAt else now,
-                            updatedAt = now
-                        )
-                        added++
-                    } else {
-                        // 已存在：只在原来空着的时候补 type / folder，观察去重后追加，绝不删旧的
-                        val fresh = inc.observations.map { o -> o.trim() }
-                            .filter { o -> o.isNotEmpty() }
-                            .distinct()
-                            .filter { o -> o !in old.observations }
-                        obsAdded += fresh.size
-                        byName[name] = old.copy(
-                            type = old.type.ifBlank { inc.type.trim() },
-                            folder = mergeFolder(old.folder, inc.folder),
-                            observations = old.observations + fresh,
-                            updatedAt = now
-                        )
-                        merged++
-                    }
-                }
-                var rels = graph.relations
-                var relAdded = 0
-                var relSkipped = 0
-                incoming.relations.forEach { r ->
-                    val from = r.from.trim()
-                    val to = r.to.trim()
-                    if (from.isEmpty() || to.isEmpty()) return@forEach
-                    if (rels.any { it.from == from && it.to == to && it.type == r.type }) {
-                        relSkipped++
-                    } else {
-                        rels = rels + r.copy(from = from, to = to)
-                        relAdded++
-                    }
-                }
-                graph = graph.copy(
-                    entities = byName.values.toList(),
-                    relations = rels,
-                    revision = graph.revision + 1
-                )
-                result = ImportResult(added, merged, obsAdded, relAdded, relSkipped, replaced = false)
+            graph.relations.forEach { r ->
+                val from = mem[sanitizeName(r.from)] ?: return@forEach
+                val to = sanitizeName(r.to)
+                if (to.isBlank()) return@forEach
+                if (from.links.any { it.to == to && it.type == r.type }) return@forEach
+                val next = from.copy(links = from.links + MemoryLink(to, r.type.trim().ifBlank { DEFAULT_LINK }))
+                mem[from.name] = next
+                persistLocked(next)
             }
+            notes = sorted(mem.values)
+            legacyJson = null
         }
-        commit()
-        return result
+        notifyChanged()
+        return ImportResult(added, updated, removed)
     }
 
-    // -------------------------------------------------------------------- 统计
-
-    fun folders(): List<Pair<String, Int>> = graph.entities
-        .groupingBy { it.folder.ifBlank { MemoryEntity.DEFAULT_FOLDER } }
-        .eachCount()
-        .entries
-        .map { e -> e.key to e.value }
-        .sortedByDescending { e -> e.second }
-
-    fun types(): List<Pair<String, Int>> = graph.entities
-        .filter { it.type.isNotBlank() }
-        .groupingBy { it.type }
-        .eachCount()
-        .entries
-        .map { e -> e.key to e.value }
-        .sortedByDescending { e -> e.second }
-
-    fun relationTypes(): List<Pair<String, Int>> = graph.relations
-        .groupingBy { it.type }
-        .eachCount()
-        .entries
-        .map { e -> e.key to e.value }
-        .sortedByDescending { e -> e.second }
+    // ------------------------------------------------------------------ 统计
 
     fun statsText(): String = buildString {
         append(L("记忆库")).append('\n')
-        append(L("  实体：")).append(graph.entities.size).append('\n')
-        append(L("  关系：")).append(graph.relations.size).append('\n')
-        val obs = graph.entities.sumOf { it.observations.size }
-        append(L("  观察：")).append(obs).append(L(" 条\n"))
+        append(L("  记忆：")).append(notes.size).append(L(" 条\n"))
+        val links = notes.sumOf { it.links.size }
+        append(L("  关联：")).append(links).append(L(" 条\n"))
         val f = folders()
         if (f.isNotEmpty()) {
             append(L("\n分区：\n"))
@@ -505,21 +625,304 @@ class MemoryStore(private val file: File? = null) {
         }
         val t = types()
         if (t.isNotEmpty()) {
-            append(L("\n实体类型：\n"))
+            append(L("\n类型：\n"))
             t.take(20).forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
         }
-        val r = relationTypes()
-        if (r.isNotEmpty()) {
-            append(L("\n关系类型：\n"))
-            r.take(20).forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
+        val rt = notes.flatMap { it.links }.filter { it.type.isNotBlank() }
+            .groupingBy { it.type }.eachCount().entries.map { it.key to it.value }
+            .sortedByDescending { it.second }
+        if (rt.isNotEmpty()) {
+            append(L("\n关联类型：\n"))
+            rt.take(20).forEach { (k, v) -> append("  ").append(k).append("：").append(v).append('\n') }
         }
     }.trimEnd()
 
+    // ------------------------------------------------------------------ 旧版迁移
+
+    /** 是否存在旧版数据（没迁移完）。 */
+    val hasLegacy: Boolean get() = legacyJson != null
+
+    /** `_backup/` 下所有旧版数据库备份，最新的在前。 */
+    fun legacyBackups(): List<File> {
+        val dir = backupDir ?: return emptyList()
+        if (!dir.isDirectory) return emptyList()
+        return (dir.listFiles() ?: emptyArray())
+            .filter { it.isFile && it.name.startsWith("graph-") && it.name.endsWith(".json") }
+            .sortedByDescending { it.name }
+    }
+
+    /**
+     * 把当前的 `graph.json` 复制一份进 `_backup/`（带时间戳）。
+     *
+     * 重复调用是安全的：已经备份过就不再生成第二份。
+     */
+    fun ensureLegacyBackup(): File? {
+        val dir = backupDir ?: return null
+        val src = legacyFile?.takeIf { it.isFile } ?: return null
+        val text = runCatching { src.readText() }.getOrNull() ?: return null
+        if (text.isBlank()) return null
+        runCatching {
+            dir.mkdirs()
+            val digest = java.security.MessageDigest.getInstance("MD5")
+                .digest(text.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+            val marker = File(dir, ".legacy-$digest")
+            if (marker.isFile) {
+                val prev = File(dir, marker.readText().trim())
+                if (prev.isFile) return prev
+            }
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                .format(java.util.Date())
+            val dst = File(dir, "graph-$stamp.json")
+            dst.writeText(text)
+            marker.writeText(dst.name)
+            return dst
+        }
+        return null
+    }
+
+    /** 迁移结果。 */
+    data class MigrateResult(
+        val notes: Int = 0,
+        val links: Int = 0,
+        val backup: File? = null
+    )
+
+    /**
+     * 把旧版 `graph.json` 拆成一批 Markdown。
+     *
+     * 规则：
+     *  - 每个实体 → `<分区>/<名字>.md`，观察每句一行拼成正文；
+     *  - 关系 → 起点那篇的 `links`；
+     *  - `graph.json` 不删，改成 `_backup/` 里那份（原文件删掉，备份就是它）。
+     */
+    fun migrateLegacy(): MigrateResult {
+        val text = legacyJson ?: return MigrateResult()
+        val graph = runCatching { LegacyMemory.parse(text) }.getOrElse {
+            throw ToolFailure(L("旧版记忆数据解析失败：%s").format(it.message ?: ""))
+        }
+        val backup = ensureLegacyBackup()
+        var count = 0
+        var links = 0
+        synchronized(lock) {
+            mem.clear()
+            graph.entities.filter { it.name.isNotBlank() }.forEach { e ->
+                val name = sanitizeName(e.name)
+                if (name.isBlank()) return@forEach
+                val body = e.observations.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+                mem[name] = MemoryNote(
+                    name = name,
+                    folder = cleanFolder(e.folder),
+                    description = deriveDescription(body),
+                    type = e.type.trim(),
+                    body = body,
+                    createdAt = e.createdAt,
+                    updatedAt = e.updatedAt
+                )
+                count++
+            }
+            // 关系挂到起点那篇的 links 上
+            graph.relations.forEach { r ->
+                val from = mem[sanitizeName(r.from)] ?: return@forEach
+                val to = sanitizeName(r.to)
+                if (to.isBlank()) return@forEach
+                if (from.links.any { it.to == to && it.type == r.type }) return@forEach
+                mem[from.name] = from.copy(
+                    links = from.links + MemoryLink(to, r.type.trim().ifBlank { DEFAULT_LINK })
+                )
+                links++
+            }
+            // 旧文件里的名字可能被 sanitize 改过，整体重写一遍映射
+            mem.values.forEach { persistLocked(it) }
+            notes = sorted(mem.values)
+            legacyJson = null
+        }
+        legacyFile?.delete()
+        notifyChanged()
+        return MigrateResult(count, links, backup)
+    }
+
+    /** 旧库没有简介：拿正文第一行顶上，方便在列表里认出来。 */
+    private fun deriveDescription(body: String): String {
+        val first = body.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() } ?: return ""
+        val clean = first.trimStart('-', '*', '+', ' ', '#', '>').trim()
+        return if (clean.length <= 60) clean else clean.take(60) + "…"
+    }
+
+    /** 旧版数据的原文（给「保存旧版记忆」用）。 */
+    fun legacyText(): String? = legacyJson ?: legacyFile?.takeIf { it.isFile }?.let {
+        runCatching { it.readText() }.getOrNull()
+    }
+
     companion object {
-        val JSON = Json {
-            ignoreUnknownKeys = true
-            isLenient = true
-            prettyPrint = true
+        const val DEFAULT_LINK = "相关"
+
+        /** 名字 / 分区里不能出现路径分隔符之类的东西。 */
+        fun sanitizeName(raw: String): String = raw.trim()
+            .replace('/', '／')
+            .replace('\\', '＼')
+            .replace('\u0000', ' ')
+            .trim('.')
+
+        fun cleanFolder(raw: String): String {
+            val f = sanitizeName(raw)
+            return if (f == MemoryNote.UNFILED) "" else f
+        }
+
+        // ---------------------------------------------------------- Markdown
+
+        /** 把一条记忆渲染成 md 全文。 */
+        fun render(note: MemoryNote): String = buildString {
+            append("---\n")
+            append("title: ").append(quote(note.name)).append('\n')
+            if (note.description.isNotBlank()) append("description: ").append(quote(note.description)).append('\n')
+            if (note.type.isNotBlank()) append("type: ").append(quote(note.type)).append('\n')
+            append("created: ").append(note.createdAt).append('\n')
+            append("updated: ").append(note.updatedAt).append('\n')
+            if (note.links.isNotEmpty()) {
+                append("links:\n")
+                note.links.forEach { l ->
+                    append("  - to: ").append(quote(l.to)).append('\n')
+                    append("    type: ").append(quote(l.type.ifBlank { DEFAULT_LINK })).append('\n')
+                }
+            }
+            append("---\n")
+            if (note.body.isNotBlank()) {
+                append('\n')
+                append(note.body.trim('\n'))
+                append('\n')
+            }
+        }
+
+        /** 解析一个 md 文件。 */
+        fun parseFile(file: File, root: File): MemoryNote {
+            val text = file.readText()
+            val folder = file.parentFile.relativeTo(root).invariantSeparatorsPath
+                .let { if (it == "." || it.isEmpty()) "" else it }
+            return parse(text, file.nameWithoutExtension, folder)
+        }
+
+        fun parse(text: String, fallbackName: String, folder: String): MemoryNote {
+            val norm = text.replace("\r\n", "\n")
+            val lines = norm.split('\n')
+            if (lines.isEmpty() || lines[0].trim() != "---") {
+                return MemoryNote(
+                    name = fallbackName,
+                    folder = cleanFolder(folder),
+                    body = norm.trim('\n')
+                )
+            }
+            var end = -1
+            for (i in 1 until lines.size) {
+                if (lines[i].trim() == "---") { end = i; break }
+            }
+            if (end < 0) {
+                return MemoryNote(name = fallbackName, folder = cleanFolder(folder), body = norm.trim('\n'))
+            }
+            var name = fallbackName
+            var description = ""
+            var type = ""
+            var createdAt = 0L
+            var updatedAt = 0L
+            val links = mutableListOf<MemoryLink>()
+            var i = 1
+            while (i < end) {
+                val raw = lines[i]
+                val line = raw.trimEnd()
+                if (line.isBlank()) { i++; continue }
+                // links 列表
+                if (line.trimStart().startsWith("- ")) {
+                    val bodyLine = line.trimStart().removePrefix("- ").trim()
+                    val (k, v) = splitKv(bodyLine)
+                    if (k == "to") {
+                        val to = v
+                        // 下一条可能是 type
+                        var lt = ""
+                        if (i + 1 < end) {
+                            val next = lines[i + 1]
+                            if (next.startsWith("    ") || next.startsWith("\t")) {
+                                val (nk, nv) = splitKv(next.trim())
+                                if (nk == "type") { lt = nv; i++ }
+                            }
+                        }
+                        if (to.isNotBlank()) links.add(MemoryLink(to, lt.ifBlank { DEFAULT_LINK }))
+                    }
+                    i++
+                    continue
+                }
+                val (k, v) = splitKv(line)
+                when (k) {
+                    "title" -> name = v.ifBlank { fallbackName }
+                    "description" -> description = v
+                    "type" -> type = v
+                    "created" -> createdAt = v.toLongOrNull() ?: 0L
+                    "updated" -> updatedAt = v.toLongOrNull() ?: 0L
+                }
+                i++
+            }
+            val body = lines.drop(end + 1).joinToString("\n").trim('\n')
+            return MemoryNote(
+                name = name.ifBlank { fallbackName },
+                folder = cleanFolder(folder),
+                description = description,
+                type = type,
+                body = body,
+                links = links,
+                createdAt = createdAt,
+                updatedAt = updatedAt
+            )
+        }
+
+        private fun splitKv(line: String): Pair<String, String> {
+            val idx = line.indexOf(':')
+            if (idx < 0) return "" to ""
+            return line.substring(0, idx).trim() to unquote(line.substring(idx + 1).trim())
+        }
+
+        private fun unquote(s: String): String {
+            if (s.length >= 2 && s.startsWith("\"") && s.endsWith("\"")) {
+                val inner = s.substring(1, s.length - 1)
+                val sb = StringBuilder()
+                var i = 0
+                while (i < inner.length) {
+                    val c = inner[i]
+                    if (c == '\\' && i + 1 < inner.length) {
+                        when (inner[i + 1]) {
+                            'n' -> { sb.append('\n'); i += 2 }
+                            't' -> { sb.append('\t'); i += 2 }
+                            '"' -> { sb.append('"'); i += 2 }
+                            '\\' -> { sb.append('\\'); i += 2 }
+                            else -> { sb.append(c); i++ }
+                        }
+                    } else {
+                        sb.append(c); i++
+                    }
+                }
+                return sb.toString()
+            }
+            return s
+        }
+
+        /** 值需要引号时加引号，并转义。 */
+        private fun quote(s: String): String {
+            val needs = s.isEmpty() ||
+                s != s.trim() ||
+                s.startsWith("-") ||
+                s.startsWith("#") ||
+                s.any { it == ':' || it == '"' || it == '\n' || it == '\t' }
+            if (!needs) return s
+            val sb = StringBuilder("\"")
+            s.forEach { c ->
+                when (c) {
+                    '"' -> sb.append("\\\"")
+                    '\\' -> sb.append("\\\\")
+                    '\n' -> sb.append("\\n")
+                    '\t' -> sb.append("\\t")
+                    else -> sb.append(c)
+                }
+            }
+            sb.append('"')
+            return sb.toString()
         }
     }
 }

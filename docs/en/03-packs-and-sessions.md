@@ -12,7 +12,7 @@ So tools are split into packs, and `tools/list` returns only the **core pack plu
 |---|---|---|
 | `core` Basics | 4 (+5 pack-management tools, hidden by default) | **always on** |
 | `file.read` Reading files | 8 | on |
-| `memory` Memory store | 10 | on |
+| `memory` Memory store | 7 | on |
 | `file.write` Writing files | 9 | off |
 | `shell` Commands & custom tools | 8 | off |
 | `ui` UI automation | 8 | off |

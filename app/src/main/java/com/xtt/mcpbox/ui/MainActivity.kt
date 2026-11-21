@@ -148,6 +148,10 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         // 条款更新提示：盖在 App 之上（底栏也盖住），但让引导先走
+                        if (!OnboardingState.visible && !LegalNotice.visible) {
+                            // 旧版记忆库没迁移：每次打开 App 都提示一次
+                            MemoryMigrateHost()
+                        }
                         if (!OnboardingState.visible) LegalNoticeHost()
                     }
                 }

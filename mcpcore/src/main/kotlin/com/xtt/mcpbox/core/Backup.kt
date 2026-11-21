@@ -43,6 +43,8 @@ object Backup {
     const val TYPE_STATS = StatsStore.TYPE
     /** 自定义背景：外观与语言 → 背景 里的全部选项 +（可选）背景图片 / 视频的副本。 */
     const val TYPE_BACKDROP = "mcpbox.backdrop"
+    /** 记忆库清单。真实内容是 zip 里 memory/files 下的 Markdown。 */
+    const val TYPE_MEMORY = "mcpbox.memory"
 
     /** 备份/恢复的粒度。 */
     enum class Part(val id: String, val file: String) {
@@ -97,6 +99,7 @@ object Backup {
             TYPE_TOOLS -> return Part.CUSTOM_TOOLS
             TYPE_STATS -> return Part.STATS
             TYPE_BACKDROP -> return Part.BACKDROP
+            TYPE_MEMORY -> return Part.MEMORY
             else -> {}
         }
         return when {
@@ -239,6 +242,7 @@ object Backup {
         includeToken: Boolean,
         exportedAt: Long = System.currentTimeMillis(),
         blobs: Map<String, ByteArray> = emptyMap(),
+        memoryFiles: Map<String, String> = emptyMap(),
         nested: Boolean = true
     ): ByteArray {
         val manifest = J.encodeToString(
@@ -267,6 +271,10 @@ object Backup {
             }
             // 背景附件：一个部分一个目录（backdrop/files/…）
             blobs.forEach { (name, bytes) -> putEntry("backdrop/files/$name", bytes) }
+            // 记忆库：每条记忆一个 md，放在 memory/files/<分区>/<名字>.md
+            memoryFiles.forEach { (rel, text) ->
+                putEntry("memory/files/" + rel.replace('\\', '/').trimStart('/'), text.toByteArray())
+            }
         }
         return out.toByteArray()
     }
@@ -278,26 +286,34 @@ object Backup {
         val exportedAt: Long,
         val app: String?,
         /** zip 里 `backdrop/` 下的文件（键 = 文件名）。 */
-        val blobs: Map<String, ByteArray> = emptyMap()
+        val blobs: Map<String, ByteArray> = emptyMap(),
+        /** zip 里 `memory/files/` 下的记忆文件（键 = 相对路径，如 `项目/MCPBox.md`）。 */
+        val memoryFiles: Map<String, String> = emptyMap()
     )
 
     /**
      * 读 zip。不是合法备份包就抛异常（让 UI 提示用户）。
      *
      * 三种结构都能读（判断只看「文件名」和「在不在 backdrop/ 下」，不看目录层级）：
-     *  · 新·整体：`<part.id>/<file>` + `backdrop/files/<附件>`
+     *  · 新·整体：`<part.id>/<file>` + `backdrop/files/<附件>` + `memory/files/<记忆>.md`
      *  · 新·单部分：`<file>` + `backdrop/files/<附件>`
      *  · 老版本：`<file>`（全平铺）+ `backdrop/<附件>`
      */
     fun readZip(bytes: ByteArray): Bundle {
         val files = LinkedHashMap<String, String>()
         val blobs = LinkedHashMap<String, ByteArray>()
+        val memoryFiles = LinkedHashMap<String, String>()
         ZipInputStream(bytes.inputStream()).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
                 if (entry.isDirectory) continue
                 val name = entry.name.substringAfterLast('/')
                 val data = zis.readBytes()
+                // 记忆库的 md：按相对路径收起来
+                if (entry.name.startsWith("memory/files/")) {
+                    memoryFiles[entry.name.removePrefix("memory/files/")] = data.toString(Charsets.UTF_8)
+                    continue
+                }
                 // 背景附件是二进制（图片 / 视频），别当文本读。
                 // `.json` 一律当文本 —— `backdrop/backdrop.json` 是背景那一部分的正文，
                 // 不能和附件混在一起（以前按 startsWith("backdrop/") 判断，会把它也当附件吞掉）。
@@ -325,7 +341,7 @@ object Backup {
             ?: false
         val exportedAt = manifest?.get("exportedAt")?.jsonPrimitive?.longOrNull ?: 0L
         val app = manifest?.get("app")?.jsonPrimitive?.contentOrNull
-        return Bundle(parts, tokenIncluded, exportedAt, app, blobs)
+        return Bundle(parts, tokenIncluded, exportedAt, app, blobs, memoryFiles)
     }
 
     // ---------------------------------------------------------------- 恢复
@@ -349,11 +365,24 @@ object Backup {
         /** 背景文件要落到的目录（`files/backdrop/`）；恢复背景时必填。 */
         backdropDir: java.io.File? = null,
         /** zip 里 `backdrop/` 下的文件（键 = 文件名）。 */
-        blobs: Map<String, ByteArray> = emptyMap()
+        blobs: Map<String, ByteArray> = emptyMap(),
+        /** zip 里 `memory/files/` 下的记忆文件（键 = 相对路径）。 */
+        memoryFiles: Map<String, String> = emptyMap()
     ): String = when (part) {
         Part.MEMORY -> {
-            val r = memory.importJson(text, merge = mode == Mode.MERGE)
-            r.describe()
+            // 新格式：清单（真实内容在 memoryFiles / 磁盘上的 memory/files）
+            // 老格式：一段裸 graph JSON（entities / relations）→ 转成 md
+            val obj = runCatching { JCompact.parseToJsonElement(text).jsonObject }.getOrNull()
+            val type = obj?.get("_type")?.jsonPrimitive?.contentOrNull
+            if (type == TYPE_MEMORY || memoryFiles.isNotEmpty()) {
+                if (memoryFiles.isEmpty()) {
+                    L("备份里没有记忆内容。")
+                } else {
+                    memory.importFiles(memoryFiles, replace = mode == Mode.REPLACE).describe()
+                }
+            } else {
+                memory.importLegacyJson(text, replace = mode == Mode.REPLACE).describe()
+            }
         }
 
         Part.CUSTOM_TOOLS -> {

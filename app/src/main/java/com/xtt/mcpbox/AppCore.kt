@@ -141,7 +141,7 @@ object AppCore {
             packs = PackStore(prefs)
             profiles = ProfileStore(java.io.File(application.filesDir, "profiles"), config)
             // 记忆库独立成文件，不塞进 SharedPreferences
-            memory = MemoryStore(java.io.File(application.filesDir, "memory/graph.json"))
+            memory = MemoryStore(java.io.File(application.filesDir, "memory")).also { it.ensureLegacyBackup() }
             // 统计也是独立文件：不进 SharedPreferences，所以「重置全部设置」不会把它清掉
             stats = StatsStore(java.io.File(application.filesDir, "stats/stats.json")).also { it.load() }
 
