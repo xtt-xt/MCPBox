@@ -4,6 +4,7 @@
 package com.xtt.mcpbox.harness
 
 import com.xtt.mcpbox.core.PluginHost
+import com.xtt.mcpbox.core.PluginRouteHost
 import com.xtt.mcpbox.core.PluginRuntime
 import com.xtt.mcpbox.core.PluginRuntimeException
 import com.xtt.mcpbox.core.PluginTimeoutException
@@ -59,6 +60,35 @@ class FakePluginRuntime : PluginRuntime {
         return results[scriptName] ?: "fake:$scriptName"
     }
 
+    /**
+     * 路由脚本的假实现：默认回一段写着脚本名的 JSON。
+     *
+     * 想测具体的响应 / 流式，挂 [onRoute]。
+     */
+    var onRoute: ((scriptName: String, host: PluginRouteHost) -> Unit)? = null
+
+    val routeCalls: MutableList<Call> = CopyOnWriteArrayList()
+
+    override fun runRoute(
+        script: String,
+        scriptName: String,
+        host: PluginRouteHost,
+        timeoutMs: Long
+    ) {
+        routeCalls.add(Call(scriptName, host.pluginId, host.req.path, timeoutMs))
+        failures[scriptName]?.let { throw it }
+        val hook = onRoute
+        if (hook != null) {
+            hook(scriptName, host)
+            return
+        }
+        host.respond(
+            status = 200,
+            body = "{\"route\":\"" + scriptName + "\"}",
+            headers = mapOf("X-Fake-Route" to "1")
+        )
+    }
+
     /** 便捷：让某个脚本超时。 */
     fun timeout(scriptName: String) {
         failures[scriptName] = PluginTimeoutException("脚本超时")
@@ -73,7 +103,9 @@ class FakePluginRuntime : PluginRuntime {
         results.clear()
         failures.clear()
         calls.clear()
+        routeCalls.clear()
         onRun = null
+        onRoute = null
         available = true
     }
 }

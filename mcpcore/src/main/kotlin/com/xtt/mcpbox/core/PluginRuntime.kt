@@ -12,11 +12,15 @@ class PluginRuntimeException(message: String) : Exception(message)
 /** 脚本跑太久，被引擎中断。 */
 class PluginTimeoutException(message: String) : Exception(message)
 
-/** 一次 HTTP 请求的结果（P2 的 `ctx.http` 用）。 */
+/** 一次 HTTP 请求的结果（`ctx.http.request` 用）。 */
 data class PluginHttpResponse(
     val status: Int,
     val headers: Map<String, String> = emptyMap(),
-    val body: String = ""
+    val body: String = "",
+    /** 最终地址（跟过重定向之后），脚本记日志用。 */
+    val url: String = "",
+    /** 正文超过上限被截断。 */
+    val truncated: Boolean = false
 )
 
 /**
@@ -71,13 +75,26 @@ interface PluginHost {
 
     // ---------------------------------------------------------------- 网络
 
-    /** 发一次 HTTP 请求；`network` 权限会弹审批。P2 才实现。 */
+    /** 发一次 HTTP 请求；`network` 权限会弹审批，按域名规则记住。 */
     fun httpRequest(
         method: String,
         url: String,
         headers: Map<String, String>,
         body: String?
     ): PluginHttpResponse
+
+    /**
+     * 发一次请求但先不读正文，返回一个可以逐行读的流（SSE 转发用）。
+     *
+     * 同样过域名规则与审批。用完必须 [PluginHttpStream.close]。
+     */
+    fun httpStream(
+        method: String,
+        url: String,
+        headers: Map<String, String>,
+        body: String?,
+        timeoutMs: Long
+    ): PluginHttpStream
 
     // ---------------------------------------------------------------- 其它工具
 
@@ -118,4 +135,80 @@ interface PluginRuntime {
      * @throws PluginRuntimeException 脚本抛异常 / 语法错误 / 契约不对
      */
     fun runTool(script: String, scriptName: String, host: PluginHost, timeoutMs: Long): String
+
+    /**
+     * 执行一条 HTTP 路由脚本。
+     *
+     * 脚本用 `ctx.res.respond(...)` 或 `ctx.sse.write(...)` 把结果写回去，
+     * 返回值忽略。脚本什么都不写时由路由层回 500。
+     *
+     * 超时只约束脚本自己的计算；流式阶段阻塞在 host 调用上不算 JS 时间。
+     *
+     * @throws PluginTimeoutException 脚本跑太久
+     * @throws PluginRuntimeException 脚本抛异常 / 语法错误
+     */
+    fun runRoute(script: String, scriptName: String, host: PluginRouteHost, timeoutMs: Long)
+}
+
+// ------------------------------------------------------------------ 服务类：路由
+
+/** 脚本看到的 `ctx.req`。 */
+data class PluginRouteRequest(
+    val method: String,
+    val path: String,
+    val query: Map<String, String>,
+    val headers: Map<String, String>,
+    val body: String,
+    val remote: String
+)
+
+/** 脚本给的响应（[PluginRouteHost.respond] 收下的东西）。 */
+data class PluginRouteResponse(
+    val status: Int = 200,
+    val headers: Map<String, String> = emptyMap(),
+    val body: ByteArray = ByteArray(0),
+    val contentType: String = "application/json; charset=utf-8"
+)
+
+/** 脚本写 SSE 的出口（`ctx.sse`）。 */
+interface PluginSse {
+    val closed: Boolean
+
+    /** 打开流（第一次 write 会自动开）。 */
+    fun open(extraHeaders: Map<String, String> = emptyMap()): Boolean
+
+    /** 写一帧 `data:`。返回 false 表示客户端已经断开。 */
+    fun write(data: String): Boolean
+
+    /** 写一条注释帧（保活）。 */
+    fun comment(text: String): Boolean
+
+    fun close()
+}
+
+/**
+ * 路由脚本的 host。
+ *
+ * 和工具用的 [PluginHost] 相比多了 `req` / `respond` / `sse`，
+ * 其余（设置、文件、命令、网络、日志）完全一样。
+ */
+interface PluginRouteHost : PluginHost {
+    val req: PluginRouteRequest
+
+    /** `stream: true` 的路由才有；其它路由为 null。 */
+    val sse: PluginSse?
+
+    /** 一次性响应。重复调用以第一次为准。 */
+    fun respond(
+        status: Int,
+        body: String,
+        headers: Map<String, String> = emptyMap(),
+        contentType: String = "application/json; charset=utf-8"
+    )
+
+    /** 脚本有没有给出响应（[respond] 或 [sse] 写成功过）。 */
+    val responded: Boolean
+
+    /** 脚本给的响应；没响应为 null。 */
+    val response: PluginRouteResponse?
 }

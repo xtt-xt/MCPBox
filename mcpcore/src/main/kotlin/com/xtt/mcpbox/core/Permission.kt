@@ -57,6 +57,11 @@ enum class PermKey(val id: String, val title: String, val desc: String, val defa
         "location", "获取位置",
         "读取手机定位：经纬度、精度、海拔（需要系统定位权限）",
         PermAction.ASK
+    ),
+    NETWORK(
+        "network", "插件联网",
+        "插件脚本访问外部网址（可对单个网站记住「始终允许」）",
+        PermAction.ASK
     );
 
     companion object {
@@ -106,9 +111,10 @@ enum class PermPreset(val id: String, val label: String, val action: PermAction?
 }
 
 /**
- * 一条规则，两种类型：
+ * 一条规则，三种类型：
  *  - path    ：按路径前缀匹配（`fs.read` @ /sdcard/DCIM）
  *  - command ：按命令匹配（`shell.exec` @ pm，prefix / exact / regex）
+ *  - domain  ：按主机名匹配（`network` @ api.example.com，支持 `*.example.com`）
  *
  * 早期版本只存路径规则，字段 path 保留用于兼容旧数据。
  */
@@ -133,10 +139,12 @@ data class Rule(
 
     val actionEnum: PermAction get() = PermAction.of(action) ?: PermAction.ASK
     val isCommand: Boolean get() = type == TYPE_COMMAND
+    val isDomain: Boolean get() = type == TYPE_DOMAIN
 
     companion object {
         const val TYPE_PATH = "path"
         const val TYPE_COMMAND = "command"
+        const val TYPE_DOMAIN = "domain"
         const val MATCH_PREFIX = "prefix"
         const val MATCH_EXACT = "exact"
         const val MATCH_REGEX = "regex"
@@ -290,9 +298,18 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
 
     fun rules(): List<Rule> = rules
 
-    fun pathRules(): List<Rule> = rules.filter { !it.isCommand }
+    /**
+     * 路径规则。
+     *
+     * 用「不是命令、也不是域名」来判断，而不是 `type == "path"` ——
+     * 早期数据里 type 字段可能是空、也可能是误填的字符串，那些都该按路径规则算。
+     */
+    fun pathRules(): List<Rule> = rules.filter { !it.isCommand && !it.isDomain }
 
     fun commandRules(): List<Rule> = rules.filter { it.isCommand }
+
+    /** 域名规则（插件联网时自动记住的那些）。 */
+    fun domainRules(): List<Rule> = rules.filter { it.isDomain }
 
     fun addRule(
         perm: String,
@@ -334,7 +351,11 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
     }
 
     fun clearRules(type: String? = null) {
-        rules = if (type == null) emptyList() else rules.filterNot { it.type == type || (type == Rule.TYPE_PATH && !it.isCommand) }
+        rules = when (type) {
+            null -> emptyList()
+            Rule.TYPE_PATH -> rules.filter { it.isCommand || it.isDomain }
+            else -> rules.filterNot { it.type == type }
+        }
         persist()
         notifyChanged()
     }
@@ -356,16 +377,16 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
     /**
      * 把一条规则挪到**同类型**里的第 [toIndex] 位（界面拖动排序用）。
      *
-     * 参数是「在命令规则 / 路径规则这一串里的下标」，不是整张 rules 表的下标 ——
-     * 两种规则混在同一张表里，界面看到的顺序与表里的位置不是一回事。
+     * 参数是「在命令规则 / 路径规则 / 域名规则这一串里的下标」，不是整张 rules 表的下标 ——
+     * 三种规则混在同一张表里，界面看到的顺序与表里的位置不是一回事。
      * 重排时只动同类型的槽位，另一类的相对位置保持不变。
      */
     fun moveRuleTo(id: String, toIndex: Int) {
         val list = rules.toMutableList()
         val idx = list.indexOfFirst { it.id == id }
         if (idx < 0) return
-        val isCmd = list[idx].isCommand
-        val same = list.filter { it.isCommand == isCmd }.toMutableList()
+        val type = list[idx].type
+        val same = list.filter { it.type == type }.toMutableList()
         val from = same.indexOfFirst { it.id == id }
         if (from < 0) return
         val to = toIndex.coerceIn(0, same.lastIndex)
@@ -374,7 +395,7 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
         same.add(to, item)
         var k = 0
         for (i in list.indices) {
-            if (list[i].isCommand == isCmd) {
+            if (list[i].type == type) {
                 list[i] = same[k]
                 k++
             }
@@ -386,7 +407,13 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
 
     fun snapshot(): Map<String, PermAction> = switches
 
-    fun decide(perm: PermKey, path: String? = null, command: String? = null): PermDecision {
+    fun decide(
+        perm: PermKey,
+        path: String? = null,
+        command: String? = null,
+        /** 插件联网时的主机名；配合 type=domain 的规则。 */
+        domain: String? = null
+    ): PermDecision {
         if (config.readOnly && (perm == PermKey.WRITE || perm == PermKey.DELETE)) {
             return PermDecision(PermAction.DENY, "只读模式已开启")
         }
@@ -405,11 +432,22 @@ class PermissionStore(private val config: Config, private val src: SettingsSourc
                 return PermDecision(hit.actionEnum, "命令规则「${hit.target}」（$how）", hit.id)
             }
         }
-        // 2) 路径规则：最长前缀优先
+        // 2) 域名规则：同样按顺序，第一条命中生效
+        if (!domain.isNullOrBlank()) {
+            val hit = rules.firstOrNull { r ->
+                r.isDomain && r.enabled && (r.perm == "*" || r.perm == perm.id) &&
+                    PluginNetwork.hostMatches(r.target, domain)
+            }
+            if (hit != null) {
+                return PermDecision(hit.actionEnum, "域名规则「${hit.target}」", hit.id)
+            }
+        }
+        // 3) 路径规则：最长前缀优先
         if (!path.isNullOrBlank()) {
             val normalized = normalize(path)
             val matching = rules.filter { r ->
-                !r.isCommand && (r.perm == "*" || r.perm == perm.id) && matchesPrefix(r.target, normalized)
+                !r.isCommand && !r.isDomain &&
+                    (r.perm == "*" || r.perm == perm.id) && matchesPrefix(r.target, normalized)
             }
             if (matching.isNotEmpty()) {
                 val best = matching.sortedWith(

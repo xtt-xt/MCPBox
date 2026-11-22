@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -42,14 +43,17 @@ import com.xtt.mcpbox.core.Rule
 import com.xtt.mcpbox.i18n.L
 
 /**
- * 规则页管哪一类：[PATH] 目录规则 / [COMMAND] 命令规则。
+ * 规则页管哪一类：[PATH] 目录规则 / [COMMAND] 命令规则 / [DOMAIN] 域名规则。
  *
- * 这两类各是一页（从「终端与命令」点哪一行进哪一页），别混在一页里 ——
+ * 这三类各是一页（点哪个入口进哪页），别混在一页里 ——
  * 否则两个入口点进去看到的页面一模一样，用户会以为点错了。
+ *
+ * 域名规则只能从审批弹窗的「始终允许」长出来，这里不做「添加」。
  */
 internal enum class RuleKind(val title: String, val subtitle: String) {
     PATH("路径规则", "给某个目录单独定允许 / 询问 / 拒绝"),
-    COMMAND("命令规则", "给某条命令定允许 / 询问 / 拒绝")
+    COMMAND("命令规则", "给某条命令定允许 / 询问 / 拒绝"),
+    DOMAIN("网站规则", "插件访问过的网站：允许 / 拒绝都可以在这里改")
 }
 
 /**
@@ -78,8 +82,92 @@ internal fun RulesSettingsPage(
                 onOpenNew = onOpenNew,
                 onOpenEdit = onOpenEdit
             )
+            RuleKind.DOMAIN -> DomainRulesSection(revision = revision, onChanged = onChanged)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/* ------------------------------------------------------------ 网站规则 */
+
+/**
+ * 插件联网时记住的网站。
+ *
+ * 没有「添加」：这类规则只从审批弹窗的「始终允许 / 始终拒绝」长出来 ——
+ * 手写一个域名比点一下弹窗更容易填错，也没必要。
+ */
+@Composable
+private fun DomainRulesSection(revision: Int, onChanged: () -> Unit) {
+    val rules = remember(revision) { AppCore.permissions.domainRules() }
+    var editing by remember { mutableStateOf<com.xtt.mcpbox.core.Rule?>(null) }
+
+    GroupLabel(L("网站规则（%s）").format(rules.size))
+    CardGroup(
+        rows = buildList {
+            if (rules.isEmpty()) {
+                add(
+                    RowSpec(
+                        title = L("还没有记住任何网站"),
+                        subtitle = L("插件访问外部网络时会问你；点「始终允许」就记住这个网站，之后不再问。"),
+                        subtitleMaxLines = 3,
+                        icon = Icons.Filled.Info
+                    )
+                )
+            } else {
+                rules.forEach { rule ->
+                    add(
+                        RowSpec(
+                            title = rule.target,
+                            subtitle = buildString {
+                                append(L(rule.actionEnum.label))
+                                if (!rule.enabled) append(" · ").append(L("已停用"))
+                                if (rule.note.isNotBlank()) append(" · ").append(rule.note)
+                            },
+                            subtitleMaxLines = 2,
+                            subtitleColor = if (rule.enabled) null else Sem.warn,
+                            icon = Icons.Filled.Share,
+                            iconTint = if (rule.enabled) null else Sem.warn,
+                            onClick = { editing = rule }
+                        )
+                    )
+                }
+            }
+        }
+    )
+
+    editing?.let { rule ->
+        val selected = when {
+            !rule.enabled -> 2
+            rule.actionEnum == com.xtt.mcpbox.core.PermAction.ALLOW -> 0
+            else -> 1
+        }
+        ChoiceDialog(
+            title = rule.target,
+            options = listOf(
+                L("允许"),
+                L("拒绝"),
+                if (rule.enabled) L("停用这条规则") else L("启用这条规则")
+            ),
+            selected = selected,
+            onDismiss = { editing = null },
+            onSelect = { index ->
+                val next = when (index) {
+                    0 -> rule.copy(action = com.xtt.mcpbox.core.PermAction.ALLOW.id, enabled = true)
+                    1 -> rule.copy(action = com.xtt.mcpbox.core.PermAction.DENY.id, enabled = true)
+                    else -> rule.copy(enabled = !rule.enabled)
+                }
+                AppCore.permissions.updateRule(next)
+                editing = null
+                onChanged()
+            },
+            deletable = { true },
+            deleteLabel = L("删除这条规则"),
+            onDelete = {
+                AppCore.permissions.removeRule(rule.id)
+                editing = null
+                onChanged()
+            }
+        )
     }
 }
 

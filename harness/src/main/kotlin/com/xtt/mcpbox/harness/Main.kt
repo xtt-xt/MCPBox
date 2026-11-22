@@ -3297,10 +3297,11 @@ fun main() {
         check("插件：ctx.log 写进 logs/plugin.log",
             store.logFile("demo_plug").let { it.isFile && it.readText().contains("来自脚本的日志") })
 
-        // 网络：P1 明确报「还不支持」
+        // 网络：P2 起会真的发请求，但默认「询问」→ 这里没人批准，必须被拒
         fake54.onRun = { _, host -> host.httpRequest("GET", "https://example.com", emptyMap(), null).body }
         val (okNet, netText) = toolText54("demo_plug__echo", "{}")
-        check("插件：网络访问在 P1 明确报不支持", !okNet && netText.contains("还不支持网络访问"), netText)
+        check("插件：网络访问默认要审批，不批准就拒绝",
+            !okNet && netText.contains("插件联网"), netText)
 
         // ---------------------------------------------------------- 审批（脚本调 shell）
         fake54.onRun = { _, host ->
@@ -3364,6 +3365,217 @@ fun main() {
         check("插件：升级后还是同一个 id", again.id == upgraded.id)
 
         srv54.stop()
+    }
+
+    // ================================================================ 插件路由（P2）
+    run {
+        println("\n[57] 插件路由：匹配 / Key / 对外服务授权 / 网络 / 域名规则 / 流式")
+
+        // ---------------------------------------------------------- 纯函数
+        check("路由：精确匹配", PluginRouter.pathMatches("/v1/models", "/v1/models"))
+        check("路由：末尾斜杠不影响", PluginRouter.pathMatches("/v1/models", "/v1/models/"))
+        check("路由：不一样就是不匹配", !PluginRouter.pathMatches("/v1/models", "/v1/model"))
+        check("路由：星号匹配下面全部", PluginRouter.pathMatches("/v1/*", "/v1/chat/completions"))
+        check("路由：星号不匹配前缀本身", !PluginRouter.pathMatches("/v1/*", "/v1"))
+        check("路由：localhost 算本机", PluginRouter.isLoopback("127.0.0.1"))
+        check("路由：局域网地址不算本机", !PluginRouter.isLoopback("192.168.1.7"))
+
+        check("域名规则：精确不放行子域名",
+            !PluginNetwork.hostMatches("api.example.com", "x.api.example.com"))
+        check("域名规则：通配放行子域名",
+            PluginNetwork.hostMatches("*.example.com", "api.example.com"))
+        check("域名规则：通配也放行裸域名",
+            PluginNetwork.hostMatches("*.example.com", "example.com"))
+        check("域名规则：别的域不沾边",
+            !PluginNetwork.hostMatches("*.example.com", "example.org"))
+        check("域名规则：从网址里取主机名",
+            PluginNetwork.parseHost("https://api.example.com:8443/v1/x?q=1") == "api.example.com")
+
+        // ---------------------------------------------------------- 起一个插件
+        val root57 = File(root, "plugins-57")
+        val stage57 = File(root, "plugin57-src")
+        File(stage57, "api").mkdirs()
+        listOf("models", "proxy", "open", "stream").forEach { n ->
+            File(stage57, "api/$n.js").writeText("x")
+        }
+        File(stage57, "plugin.json").writeText(
+            """{"id":"gw57","name":"网关","version":"1.0.0","description":"测试路由",
+               "http":{"bind":"loopback","key":{"prefix":"sk-"},"routes":[
+                 {"path":"/v1/models","handler":"api/models.js","methods":["GET"]},
+                 {"path":"/v1/open","handler":"api/open.js","methods":["GET"],"auth":"none"},
+                 {"path":"/v1/stream","handler":"api/stream.js","methods":["GET"],"stream":true},
+                 {"path":"/v1/*","handler":"api/proxy.js","methods":["GET","POST"]}
+               ]}}""".trimIndent()
+        )
+
+        val store57 = PluginStore(root57)
+        store57.install(stage57)
+        check("路由：装完默认不开对外服务", store57.byId("gw57")?.serving == false)
+        check("路由：没开对外服务时不算认领这个路径", !store57.byId("gw57")!!.serving)
+
+        val settings57 = MemorySettings()
+        settings57.putInt(Config.Keys.PORT, 18741)
+        settings57.putString(Config.Keys.TOKEN, "routetoken")
+        settings57.putBoolean(Config.Keys.TOKEN_ENABLED, true)
+        settings57.putString(Config.Keys.ROOTS, root.absolutePath)
+        settings57.putLong(Config.Keys.APPROVAL_TIMEOUT, 5000)
+
+        val cfg57 = Config(settings57)
+        val perms57 = PermissionStore(cfg57, settings57)
+        val appr57 = ApprovalCenter(cfg57, perms57, EventLog())
+        var approvals57 = 0
+        appr57.headlessResolver = { approvals57++; ApprovalDecision.ALLOW_ONCE }
+        val fake57 = FakePluginRuntime()
+        fake57.onRoute = { name, host ->
+            when (name) {
+                "api/stream.js" -> {
+                    host.sse!!.open()
+                    host.sse!!.write("第一帧")
+                    host.sse!!.comment("ping")
+                }
+                "api/open.js" -> host.respond(200, """{"open":true}""")
+                else -> host.respond(200, """{"route":"$name"}""", mapOf("X-Fake-Route" to "1"))
+            }
+        }
+
+        val srv57 = McpServer(
+            config = cfg57,
+            customTools = CustomToolStore(cfg57, settings57),
+            permissions = perms57,
+            approval = appr57,
+            log = EventLog(),
+            host = null,
+            packs = PackStore(settings57),
+            profiles = ProfileStore(null, cfg57),
+            plugins = store57,
+            pluginRuntime = fake57
+        )
+        check("路由：服务器起得来", srv57.start(), srv57.lastError ?: "")
+        val b57 = "http://127.0.0.1:18741"
+
+        // 没授权 → 不认这个路径，落到 404
+        val off = http("GET", "$b57/v1/models")
+        check("路由：没开对外服务时返回 404", off.code == 404, "${off.code} ${off.body}")
+
+        // 打开开关 = 同意授权
+        store57.setHttpEnabled("gw57", true)
+        check("路由：开开关即授权", store57.byId("gw57")?.serving == true)
+
+        val key57 = store57.keyOf("gw57").orEmpty()
+        check("路由：Key 带前缀 sk-", key57.startsWith("sk-"), key57)
+
+        val noKey = http("GET", "$b57/v1/models")
+        check("路由：没带 Key 返回 401", noKey.code == 401, "${noKey.code} ${noKey.body}")
+        val wrongKey = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to "sk-nope"))
+        check("路由：Key 不对返回 401", wrongKey.code == 401, "${wrongKey.code}")
+
+        val ok57 = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to key57))
+        check("路由：Key 对了能调", ok57.code == 200, "${ok57.code} ${ok57.body}")
+        check("路由：脚本拿到了自己那条路由", ok57.body.contains("api/models.js"), ok57.body)
+        check("路由：脚本给的响应头带出去了",
+            ok57.headers["X-Fake-Route"]?.contains("1") == true,
+            ok57.headers.toString())
+
+        val bearer = http("GET", "$b57/v1/models", null, mapOf("Authorization" to "Bearer $key57"))
+        check("路由：Authorization: Bearer 也认", bearer.code == 200, "${bearer.code}")
+
+        val wild = http("POST", "$b57/v1/chat/completions", """{"x":1}""", mapOf("X-API-Key" to key57))
+        check("路由：星号路由接住子路径", wild.code == 200 && wild.body.contains("proxy.js"), wild.body)
+
+        val badMethod = http("POST", "$b57/v1/models", "{}", mapOf("X-API-Key" to key57))
+        check("路由：方法不对返回 405", badMethod.code == 405, "${badMethod.code}")
+
+        val openLocal = http("GET", "$b57/v1/open")
+        check("路由：auth=none 从本机能调", openLocal.code == 200, "${openLocal.code}")
+
+        val streamResp = http("GET", "$b57/v1/stream", null, mapOf("X-API-Key" to key57))
+        check("路由：流式写出了 data 帧",
+            streamResp.code == 200 && streamResp.body.contains("data: 第一帧"), streamResp.body)
+        check("路由：流式保活注释也写了", streamResp.body.contains(": ping"), streamResp.body)
+
+        // 脚本什么都不写 → 500
+        fake57.onRoute = { _, _ -> }
+        val silent = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to key57))
+        check("路由：脚本没响应返回 500", silent.code == 500 && silent.body.contains("没有给出响应"),
+            "${silent.code} ${silent.body}")
+
+        // 脚本里被审批拒绝 → 403
+        fake57.failures["api/models.js"] =
+            com.xtt.mcpbox.core.PermissionDeniedException("测试拒绝")
+        val denied = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to key57))
+        check("路由：审批拒绝透出 403", denied.code == 403, "${denied.code} ${denied.body}")
+        fake57.failures.remove("api/models.js")
+
+        // 换 Key 后旧 Key 立刻失效
+        val oldKey = key57
+        store57.rotateKey("gw57")
+        val dead = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to oldKey))
+        check("路由：换 Key 后旧 Key 失效", dead.code == 401, "${dead.code}")
+
+        // 关掉对外服务 → 路径回到 404
+        store57.setHttpEnabled("gw57", false)
+        val again404 = http("GET", "$b57/v1/models", null, mapOf("X-API-Key" to store57.keyOf("gw57").orEmpty()))
+        check("路由：关掉对外服务后回到 404", again404.code == 404, "${again404.code}")
+
+        // ---------------------------------------------------------- 域名规则
+        perms57.clearRules()
+        perms57.addRule(PermKey.NETWORK.id, "*.example.com", PermAction.ALLOW, type = Rule.TYPE_DOMAIN)
+        check("域名规则：通配命中后判定为允许",
+            perms57.decide(PermKey.NETWORK, domain = "api.example.com").action == PermAction.ALLOW)
+        check("域名规则：没命的域名仍然是询问",
+            perms57.decide(PermKey.NETWORK, domain = "example.org").action == PermAction.ASK)
+        check("域名规则：出现在 domainRules 里而不是 pathRules 里",
+            perms57.domainRules().size == 1 && perms57.pathRules().isEmpty())
+
+        // ---------------------------------------------------------- 真发一次请求
+        val net57 = PluginNetwork(perms57, appr57, cfg57)
+        val local = com.sun.net.httpserver.HttpServer.create(
+            java.net.InetSocketAddress("127.0.0.1", 18742), 0
+        )
+        local.createContext("/json") { ex ->
+            val body = """{"ok":true}""".toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.use { it.write(body) }
+        }
+        local.start()
+        try {
+            perms57.clearRules()
+            perms57.setSwitch(PermKey.NETWORK, PermAction.ASK)
+            approvals57 = 0
+            val r1 = net57.request(
+                tool = "plugin.gw57.route", label = "插件「网关」",
+                method = "GET", url = "http://127.0.0.1:18742/json",
+                headers = emptyMap(), body = null
+            )
+            check("联网：真能发出去并读回正文", r1.status == 200 && r1.body.contains("\"ok\":true"),
+                "${r1.status} ${r1.body}")
+            check("联网：问了一次审批", approvals57 == 1, "asked=$approvals57")
+
+            // 选「始终允许」→ 记住这个域名
+            appr57.headlessResolver = { approvals57++; ApprovalDecision.ALLOW_ALWAYS }
+            val r2 = net57.request(
+                tool = "plugin.gw57.route", label = "插件「网关」",
+                method = "GET", url = "http://127.0.0.1:18742/json",
+                headers = emptyMap(), body = null
+            )
+            check("联网：第二次也成功", r2.status == 200, "${r2.status}")
+            check("联网：始终允许后写入域名规则",
+                perms57.domainRules().any { it.target == "127.0.0.1" && it.actionEnum == PermAction.ALLOW },
+                perms57.domainRules().toString())
+
+            val before = approvals57
+            net57.request(
+                tool = "plugin.gw57.route", label = "插件「网关」",
+                method = "GET", url = "http://127.0.0.1:18742/json",
+                headers = emptyMap(), body = null
+            )
+            check("联网：有域名规则后不再问", approvals57 == before, "asked=$approvals57 before=$before")
+        } finally {
+            local.stop(0)
+        }
+
+        srv57.stop()
     }
 
     println("\n====================================")

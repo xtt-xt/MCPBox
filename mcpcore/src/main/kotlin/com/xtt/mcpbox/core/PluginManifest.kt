@@ -71,7 +71,7 @@ data class PluginToolDecl(
     }
 }
 
-/** 一条 HTTP 路由。P2 才会真正分派，P1 只做校验。 */
+/** 一条 HTTP 路由。声明在 `plugin.json`，由 [PluginRouter] 分派到 `api/` 下的脚本。 */
 @Serializable
 data class PluginRouteDecl(
     val path: String = "",

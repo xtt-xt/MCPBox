@@ -260,6 +260,12 @@ private fun PermPageContent(
             onChanged = onChanged,
             onBack = onBack
         )
+        "perm/domains" -> RulesSettingsPage(
+            kind = RuleKind.DOMAIN,
+            revision = revision,
+            onChanged = onChanged,
+            onBack = onBack
+        )
         "shell" -> ShellPolicyPage(
             revision = revision,
             onChanged = onChanged,
@@ -443,7 +449,14 @@ private fun PermissionHomePage(
                             timeoutLabel(AppCore.config.approvalTimeoutMs)
                         ),
                     Icons.Filled.Notifications
-                ) { onPage("approval") }
+                ) { onPage("approval") },
+                entrySpec(
+                    L("插件联网"),
+                    L("%s 个网站 · 插件访问外部网络时按这里记住的放行").format(
+                        remember(revision) { AppCore.permissions.domainRules().size }
+                    ),
+                    Icons.Filled.Share
+                ) { onPage("perm/domains") }
             )
         )
 
@@ -556,6 +569,7 @@ internal fun permIcon(key: PermKey): ImageVector = when (key) {
     PermKey.SYSTEM -> Icons.Filled.Info
     PermKey.LOCATION -> Icons.Filled.Place
     PermKey.MEMORY -> Icons.Filled.Star
+    PermKey.NETWORK -> Icons.Filled.Share
 }
 
 fun actionColor(action: PermAction): Color = when (action) {

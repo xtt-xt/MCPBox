@@ -421,63 +421,117 @@ ToolPack(
 
 ### 8.1 Dispatch order
 
-`McpServer.dispatch` currently runs "local only → web password → routes". Plugin routes slot in
-after the last step:
+`McpServer.dispatch` runs "local only → web password → built-in routes → plugin routes → 404".
+Plugin routes come after every built-in route has declined:
 
 ```
-1. Built-in routes (/mcp, /sse, /api/*, /web, /upload, /download, /console)
-2. Plugin routes (declared prefixes, longest match wins)
+1. Built-in routes (/mcp, /sse, /api/*, /web, /upload, /download, /console, /health)
+2. Plugin routes (declared paths, longest match wins)
 3. 404
 ```
 
-Plugin routes **do not** go through MCPBox's token check (`checkAuth`); they use the plugin key.
-Clients fill in an `sk-...` API key, not a MCPBox access token — the two credential types stay
-separate.
+- Requests that land on a plugin path **skip** `checkAuth` (the MCPBox token) and the web login
+  redirect; they authenticate with the plugin's own key. Clients hold `sk-...`, not an access
+  token, so the two credential types never mix.
+- The global "local only" switch still applies — plugin routes do not bypass it.
+- Path matching is either exact or a **trailing `*` prefix wildcard** (`/v1/*` covers everything
+  under `/v1/`, but not `/v1` itself). Among several hits the longest `path` wins.
 
 ### 8.2 Plugin key
 
-- Each service plugin gets its own key, generated on first enable; copy, rotate and disable from
-  the plugin page.
-- Stored as `__key` in `config.json`, not rendered as a setting, masked in the list.
-- Accepted as `Authorization: Bearer <key>` or `X-API-Key`.
-- A bad key returns 401 with a short JSON error that leaks nothing about the plugin.
-- Rotation invalidates the old key immediately; the page states that connected clients must refill it.
+- Each service plugin gets its own key, created at install time, with the `http.key.prefix`
+  (usually `sk-`).
+- Stored as `__key` in `config.json`. The plugin page masks it until you tap "show"; "copy"
+  always copies the plaintext.
+- Accepted as `Authorization: Bearer <key>` or `X-API-Key: <key>`.
+- Comparison is constant-time; a mismatch returns 401 with a one-line JSON error.
+- Rotating the key invalidates the old one immediately and closes every stream that plugin had open.
 
-### 8.3 Streaming
+### 8.3 Two switches for serving
 
-`HttpServer` already has `Exchange.openSse()`: chunked, `text/event-stream`, `data:` per frame and
-`comment()` for keepalives. That is exactly the shape of OpenAI streaming, so the HTTP layer needs
-no change; only the writer is exposed to scripts:
+| Field | Meaning |
+|---|---|
+| `__httpEnabled` | The "serve" toggle on the plugin page |
+| `__httpGranted` | The user has **confirmed** this plugin may serve to others |
 
-```js
-for await (const chunk of upstream.sse()) {
-  ctx.sse.write(chunk)     // forward "data: {...}" frames as-is
-}
-ctx.sse.comment("ping")    // keepalive while the upstream is silent
-ctx.sse.close()
-```
+`InstalledPlugin.serving` is true only when the plugin is active, the toggle is on and the grant
+exists. If any of the three is missing, `routes()` returns nothing and the path falls back to 404 —
+a freshly installed plugin never opens a port by surprise.
 
-- `ctx.sse.write` returns false when the client is gone; the script should stop and release upstream.
-- Requests without `stream: true` use a one-shot `respond`.
-- Scripts without `for await` can split lines and call `write` per frame.
-
-### 8.4 Long connections and events
-
-- No WebSocket upgrade; push is always SSE (server to client) plus plain POST (client to server).
-- Connection counting and cleanup live in `PluginRouter`; disabling the plugin or stopping the
-  service closes everything.
-- 16 concurrent SSE connections per plugin; more returns 429.
-
-### 8.5 Bind scope
+`bind` decides whether non-local requests are accepted:
 
 | Value | Binds | Notes |
 |---|---|---|
-| `loopback` | `127.0.0.1` | Default; only clients on the phone |
-| `lan` | `0.0.0.0` | Reachable on the LAN; both install and enable warn that anyone on the network with the key can use it |
+| `loopback` | Only 127.0.0.1 | Default; only programs on the phone |
+| `lan` | 0.0.0.0 | Reachable on the LAN; enabling warns that anyone on the network with the key can use it |
 
-The global listen address stays a MCPBox setting; plugins cannot change it. This field only decides
-whether plugin routes accept non-local requests — with `loopback` even a globally bound server
-rejects anything not from 127.0.0.1.
+The check looks at the source address only, independent of the global listen address: with the
+server bound to `0.0.0.0`, a `loopback` plugin still rejects anything that is not local.
+
+### 8.4 Route script contract
+
+Scripts under `api/` export `handle(ctx)` and write the result through `ctx.res` or `ctx.sse`:
+
+```js
+// api/models.js
+export default {
+  async handle(ctx) {
+    // ctx.req: { method, path, query, headers, body, remote, json() }
+    ctx.res.json({ object: "list", data: [{ id: "demo-model" }] })
+    // also: ctx.res.text("hi", 200) / ctx.res.respond(body, { status, headers, contentType })
+  }
+}
+```
+
+- `ctx.res.respond(body, opts)`: a string goes out as-is, anything else is `JSON.stringify`d.
+  Status defaults to 200; use `ctx.res.status = 404` or `opts.status`.
+- A script that never responds yields 500 `plugin returned no response` instead of hanging the socket.
+- Response bodies are capped at 4 MB. Script errors → 500, denied approval → 403, timeout → 504.
+- A method outside `methods` returns 405 with an `Allow` header.
+
+### 8.5 Streaming (SSE)
+
+When the route declares `"stream": true`, `ctx.sse` exists (it is `null` otherwise, and using it
+raises an error):
+
+```js
+export default {
+  async handle(ctx) {
+    const up = ctx.http.stream("https://upstream/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: "Bearer ..." },
+      body: JSON.stringify(payload)
+    })
+    if (up.status !== 200) {
+      ctx.res.text(up.text(), up.status)
+      return
+    }
+    ctx.sse.open()
+    let line
+    while ((line = up.next()) !== null) {
+      if (line.startsWith("data: ")) {
+        if (!ctx.sse.write(line.slice(6))) break   // false = client is gone
+      }
+    }
+    up.close()
+    ctx.sse.close()
+  }
+}
+```
+
+- `ctx.http.stream(...)` returns `{ status, headers, next(), text(), close() }`; `next()` blocks
+  until a line arrives, strips the newline, and returns `null` at the end.
+- The first `ctx.sse.write` opens the stream implicitly; `false` means the client disconnected.
+- `ctx.sse.comment("ping")` writes a keepalive comment frame.
+- At most 16 concurrent streams per plugin; further requests get 429 before the script runs.
+- Disabling the plugin, uninstalling it, turning serving off or rotating the key closes all streams.
+- **No WebSocket**: two-way work uses SSE (server to client) plus plain POST (client to server).
+
+### 8.6 Timeout
+
+A route script gets 30 seconds to prepare, enforced by the JS engine's interrupt handler. Time spent
+blocked in `up.next()` during streaming is Kotlin time and does **not** count; a stuck upstream is
+caught by the HTTP read timeout instead.
 
 ---
 
@@ -879,7 +933,7 @@ and live sync.
 | Phase | Content | Acceptance |
 |---|---|---|
 | P1 | Manifest + JS runtime + tool registration + packs + settings | **Done**: a JS plugin installed on a real device; its tools are callable, arguments validate, approvals fire |
-| P2 | HTTP routes + plugin key + streaming + domain permission rules | curl reaches a fake `/v1/models` and a streaming `/v1/chat/completions` |
+| P2 | HTTP routes + plugin key + streaming + host rules | **Done**: curl reaches `/v1/models`, `/v1/echo` and the streaming `/v1/stream`; plugin networking goes through approval |
 | P3 | Plugin pages + custom-tool migration + import/export + version requirements | Full management on the phone; plugins needing a newer app cannot install |
 | P4 | Scenario one: free model gateway (anonymous channels) | RikkaHub points at the local address, lists models, chats, streams |
 | P5 | Scenario two: file bridge API + desktop dsh plugin | dsh browses, quotes, edits and uploads phone files |
@@ -903,11 +957,36 @@ Notes on how the implementation differs from the plan above, so later phases kno
 - **Return values**: strings pass through; `null` / `undefined` become empty; anything else is JSON text.
   It is also lenient: a plain `export default async function (ctx) {...}` is accepted rather than rejected.
 - **`ctx.http.*` reports "this build does not support network access yet"** in P1 instead of shipping an
-  implementation without permission checks. It lands in P2 together with the `network` permission and
-  domain rules.
+  implementation without permission checks. P2 filled it in: `network` permission, host rules and
+  approval, shared by tool scripts and route scripts.
 - **Relative paths resolve inside the plugin's own `data/`** (no approval); absolute paths go through
   `PathSandbox` and the permission matrix.
 - **Service plugins get their key at install time**, but route dispatch only arrives in P2.
+
+### 17.2 Where P2 landed
+
+- **The HTTP client is `HttpURLConnection`**, not OkHttp: mcpcore is plain JVM and must run on both
+  Android and the harness. The cost is that `PATCH` needs a reflective field write, which JDK 17's
+  module system blocks — that case reports "this system does not support PATCH, use POST" instead
+  of quietly switching methods.
+- **4 MB response cap**, truncating with a `truncated` flag; at most 3 redirects, each re-checked
+  against host rules.
+- **Nothing but `window` builtins plus `ctx`**: route scripts get `ctx.req.body` as a string and call
+  `ctx.req.json()` themselves; object bodies passed to `ctx.res.respond` are stringified in JS.
+- **No `checkAuth`**: plugin paths skip the web login and token checks in `dispatch` and use their own
+  key, while the global "local only" switch still guards the front door.
+- **`http.serve` is not a three-state `PermKey`**: it is a per-plugin grant (`__httpGranted`), because
+  "allow this plugin to open a port" cannot be a global switch. The permissions page only gains
+  `network`.
+- **Host rules only grow from the approval dialog**: the rules page can flip allow/deny, disable or
+  delete them, but offers no manual "add".
+- **Streaming uses a synchronous `next()` instead of `for await`**: `while ((line = up.next()) !== null)`
+  is far steadier than wiring an async iterator into the JS engine, and easier to debug.
+- **The route timeout does not cover streaming**: `runRoute` adds no coroutine timeout and relies on the
+  engine's interrupt handler for script compute time; a stuck upstream is caught by the HTTP read
+  timeout. Tool calls keep their outer timeout (`evaluationTimeout + 5s`).
+- **The plugin page is a minimal version**: installed list, serving toggle, view/copy/rotate key.
+  Import, uninstall, settings and logs arrive in P3.
 
 ---
 

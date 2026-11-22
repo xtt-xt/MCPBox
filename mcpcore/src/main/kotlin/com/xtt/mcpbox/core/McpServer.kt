@@ -93,10 +93,25 @@ class McpServer(
             ?: ShellBackends.available().firstOrNull { it.id != "app" }
     }
 
+    /** 插件联网：域名规则 + 审批 + 真正的请求（工具和路由共用）。 */
+    private val pluginNetwork = PluginNetwork(permissions, approval, config)
+
     private val gateway = FileGateway(config, sandbox, approval, log, bridge)
 
     /** 静态站点托管：/web/<相对主根目录的路径>（只读 + 要令牌，见 WebSites 的说明）。 */
     private val sites = WebSites(config, sandbox, permissions, log, bridge, ::checkAuth)
+
+    /** 服务类插件的 HTTP 路由（内置路由都不认的路径才轮到它）。 */
+    val pluginRouter = PluginRouter(
+        store = plugins,
+        runtime = pluginRuntime,
+        network = pluginNetwork,
+        sandbox = sandbox,
+        bridge = bridge,
+        config = config,
+        approval = approval,
+        log = log
+    )
     /** 内置工具。 */
     val builtinTools: List<ToolSpec> =
         ToolsRead.specs() + ToolsWrite.specs() + ToolsShell.specs(customTools) +
@@ -105,7 +120,7 @@ class McpServer(
 
     /** 插件工具：启停 / 装删之后下一次取就变。 */
     val pluginTools: List<ToolSpec>
-        get() = ToolsPlugin.specs(plugins, pluginRuntime)
+        get() = ToolsPlugin.specs(plugins, pluginRuntime, network = pluginNetwork)
 
     /** 内置 + 自定义 + 插件（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
     val tools: List<ToolSpec>
@@ -221,10 +236,13 @@ class McpServer(
             )
         }
 
+        // 插件自己那些路径：用插件 Key 鉴权，不参与网页登录与令牌那一套
+        val pluginPath = pluginRouter.owns(path)
+
         // ② 网页密码保护：没登录就跳登录页（带 token 的程序调用不受影响）
         //    /web 例外：它自己那层更严（要令牌 + 会话 cookie），而且是给浏览器直接打开的，
         //    再叠一层登录跳转只会把「带着 ?token= 打开」这条路也堵掉。
-        if (config.consoleAuthEnabled && path != "/login" && path != "/logout" &&
+        if (config.consoleAuthEnabled && !pluginPath && path != "/login" && path != "/logout" &&
             !WebSites.owns(path) && !webAuthorized(req)
         ) {
             return ex.respond(302, null, ByteArray(0), cors + mapOf("Location" to "/login"))
@@ -323,10 +341,14 @@ class McpServer(
                 }
             }
             "/api/call" -> withAuth(req, ex, cors) { handleRestCall(req, ex, cors) }
-            else -> ex.respondText(
-                404, "application/json; charset=utf-8",
-                jo("error" to L("未知路径: %s").format(path)).toString(), cors
-            )
+            else -> if (pluginRouter.handle(req, ex)) {
+                true
+            } else {
+                ex.respondText(
+                    404, "application/json; charset=utf-8",
+                    jo("error" to L("未知路径: %s").format(path)).toString(), cors
+                )
+            }
         }
     }
 
@@ -334,7 +356,8 @@ class McpServer(
         "Access-Control-Allow-Origin" to "*",
         "Access-Control-Allow-Methods" to "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers" to
-            "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, X-MCP-Token, Accept, Last-Event-ID",
+            "Content-Type, Authorization, X-API-Key, Mcp-Session-Id, MCP-Protocol-Version, " +
+            "X-MCP-Token, Accept, Last-Event-ID",
         "Access-Control-Expose-Headers" to "Mcp-Session-Id",
         "Access-Control-Max-Age" to "600"
     )
@@ -347,17 +370,7 @@ class McpServer(
     /** 给测试和界面提示用：这个来源地址算不算「本机」。 */
     fun isLoopbackAddress(remote: String): Boolean = isLoopback(remote)
 
-    private fun isLoopback(remote: String): Boolean {
-        val ip = remote.trim().removeSurrounding("[", "]")
-        if (isLoopbackHost(ip)) return true
-        // 兼容 "127.0.0.1:1234" / "[::1]:1234" 这种带端口的写法
-        if (ip.count { it == ':' } == 1) return isLoopbackHost(ip.substringBeforeLast(':'))
-        return false
-    }
-
-    private fun isLoopbackHost(host: String): Boolean =
-        host == "127.0.0.1" || host == "::1" || host == "0:0:0:0:0:0:0:1" ||
-            host.equals("localhost", ignoreCase = true) || host.startsWith("127.")
+    private fun isLoopback(remote: String): Boolean = PluginRouter.isLoopback(remote)
 
     private fun loginPassword(): String = config.consolePassword.ifBlank { config.token }
 

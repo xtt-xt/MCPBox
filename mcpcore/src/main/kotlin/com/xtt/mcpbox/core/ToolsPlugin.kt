@@ -37,11 +37,12 @@ object ToolsPlugin {
         store: PluginStore,
         runtime: PluginRuntime?,
         toolsCall: ((String, JsonObject) -> ToolResult?)? = null,
+        network: PluginNetwork? = null,
         engineAvailable: Boolean = runtime?.available() ?: false
     ): List<ToolSpec> {
         if (runtime == null || !engineAvailable) return emptyList()
         return store.active().flatMap { plugin ->
-            plugin.tools().mapNotNull { decl -> specOf(plugin, decl, store, runtime, toolsCall) }
+            plugin.tools().mapNotNull { decl -> specOf(plugin, decl, store, runtime, toolsCall, network) }
         }
     }
 
@@ -50,7 +51,8 @@ object ToolsPlugin {
         decl: PluginToolDecl,
         store: PluginStore,
         runtime: PluginRuntime,
-        toolsCall: ((String, JsonObject) -> ToolResult?)?
+        toolsCall: ((String, JsonObject) -> ToolResult?)?,
+        network: PluginNetwork?
     ): ToolSpec = ToolSpec(
         name = plugin.manifest.externalToolName(decl.name),
         title = decl.title.ifBlank { decl.name },
@@ -64,7 +66,7 @@ object ToolsPlugin {
         schema = PluginSchema.of(decl),
         pluginId = plugin.id
     ) { ctx ->
-        run(plugin, decl, store, runtime, toolsCall, ctx)
+        run(plugin, decl, store, runtime, toolsCall, network, ctx)
     }
 
     // ------------------------------------------------------------------ 执行
@@ -75,6 +77,7 @@ object ToolsPlugin {
         store: PluginStore,
         runtime: PluginRuntime,
         toolsCall: ((String, JsonObject) -> ToolResult?)?,
+        network: PluginNetwork?,
         ctx: CallContext
     ): ToolResult {
         val display = L("插件「%s」的工具 %s").format(plugin.manifest.name, decl.name)
@@ -88,7 +91,30 @@ object ToolsPlugin {
             throw ToolFailure(L("读不出 %s：%s").format(decl.file, it.message ?: ""))
         }
         val args = fillDefaults(decl, ctx.args)
-        val host = HostImpl(ctx, plugin, store, args, toolsCall)
+        val toolName = plugin.manifest.externalToolName(decl.name)
+        val host = PluginHostImpl(
+            plugin = plugin,
+            store = store,
+            args = args,
+            toolName = toolName,
+            sandbox = ctx.sandbox,
+            bridge = ctx.bridge,
+            config = ctx.config,
+            gate = object : PluginGate {
+                override fun guard(
+                    perm: PermKey,
+                    path: File?,
+                    summary: String,
+                    detail: String?,
+                    bytes: Long?,
+                    mediaType: String?,
+                    command: String?,
+                    backend: String?
+                ) = ctx.guard(perm, path, summary, detail, bytes, mediaType, command, backend)
+            },
+            network = network,
+            toolsCall = toolsCall
+        )
 
         val lock = locks.getOrPut(plugin.id) { ReentrantLock() }
         if (!lock.tryLock()) {
@@ -149,196 +175,6 @@ object ToolsPlugin {
         "number" -> JsonPrimitive(p.default.toDoubleOrNull() ?: 0.0)
         "boolean" -> JsonPrimitive(p.default.equals("true", ignoreCase = true))
         else -> JsonPrimitive(p.default)
-    }
-
-    // ------------------------------------------------------------------ host 实现
-
-    /**
-     * 把 host API 接到现有能力上：
-     *  - 相对路径 → 插件自己的 data/，不审批，且出不去
-     *  - 绝对路径 → [PathSandbox] + 权限矩阵
-     *  - 命令 → 现有三种后端
-     *  - 设置 → 插件的 config.json
-     */
-    private class HostImpl(
-        private val ctx: CallContext,
-        private val plugin: InstalledPlugin,
-        private val store: PluginStore,
-        override val args: JsonObject,
-        private val toolsCall: ((String, JsonObject) -> ToolResult?)?
-    ) : PluginHost {
-
-        override val pluginId: String = plugin.id
-        override val pluginVersion: String = plugin.manifest.version
-        override val dataDirPath: String = store.dataDir(plugin.id).absolutePath
-
-        private val dataRoot: File = File(dataDirPath)
-        private val label: String get() = L("插件「%s」").format(plugin.manifest.name)
-
-        // ------------------------------------------------------------ 设置
-
-        override fun settingsGet(key: String): JsonElement? =
-            store.settingValues(plugin.id)[key]
-
-        override fun settingsSet(key: String, value: JsonElement) {
-            store.setSetting(plugin.id, key, value)
-        }
-
-        // ------------------------------------------------------------ 文件
-
-        override fun fsRead(path: String): String {
-            if (!File(path).isAbsolute) {
-                val f = insideData(path)
-                if (!f.isFile) throw PluginRuntimeException(L("文件不存在：%s").format(path))
-                return runCatching { f.readText() }.getOrElse {
-                    throw PluginRuntimeException(L("读不出文件：%s").format(path))
-                }
-            }
-            val f = ctx.sandbox.resolve(path, mustExist = true)
-            ctx.guard(PermKey.READ, f, L("%s 读取文件").format(label) + "：" + f.path)
-            return ctx.bridge.readText(f)
-                ?: throw PluginRuntimeException(L("读不到文件：%s").format(path))
-        }
-
-        override fun fsWrite(path: String, text: String) {
-            if (!File(path).isAbsolute) {
-                val f = insideData(path)
-                f.parentFile?.mkdirs()
-                if (!runCatching { f.writeText(text) }.isSuccess) {
-                    throw PluginRuntimeException(L("写不进文件：%s").format(path))
-                }
-                return
-            }
-            val f = ctx.sandbox.resolve(path)
-            ctx.guard(
-                PermKey.WRITE, f, L("%s 写入文件").format(label) + "：" + f.path,
-                bytes = text.toByteArray().size.toLong(), mediaType = "text/plain"
-            )
-            if (!ctx.bridge.writeBytes(f, text.toByteArray())) {
-                throw PluginRuntimeException(L("写不进文件：%s").format(path))
-            }
-        }
-
-        override fun fsList(path: String): JsonElement {
-            val dir = if (!File(path).isAbsolute) {
-                insideData(path)
-            } else {
-                val f = ctx.sandbox.resolve(path, mustExist = true)
-                ctx.guard(PermKey.READ, f, L("%s 列目录").format(label) + "：" + f.path)
-                f
-            }
-            val entries = ctx.bridge.listDir(dir)
-                ?: throw PluginRuntimeException(L("列不出目录：%s").format(path))
-            return jarr(entries.map { e ->
-                jo(
-                    "name" to e.name, "path" to e.path, "dir" to e.dir,
-                    "size" to e.size, "modified" to e.modified
-                )
-            })
-        }
-
-        override fun fsRemove(path: String) {
-            if (!File(path).isAbsolute) {
-                val f = insideData(path)
-                if (!f.exists()) return
-                if (!f.deleteRecursively()) {
-                    throw PluginRuntimeException(L("删不掉：%s").format(path))
-                }
-                return
-            }
-            val f = ctx.sandbox.resolve(path, mustExist = true)
-            ctx.guard(PermKey.DELETE, f, L("%s 删除").format(label) + "：" + f.path)
-            if (!ctx.bridge.delete(f, recursive = true)) {
-                throw PluginRuntimeException(L("删不掉：%s").format(path))
-            }
-        }
-
-        // ------------------------------------------------------------ 命令
-
-        override fun shellRun(command: String, cwd: String?, timeoutMs: Long): ShellResult {
-            if (command.isBlank()) throw PluginRuntimeException(L("命令不能为空"))
-            val launcher = ShellBackends.pick("auto", ctx.config)
-                ?: throw PluginRuntimeException(L("没有可用的 Shell 后端"))
-            val workdir = cwd?.takeIf { it.isNotBlank() }?.let {
-                if (!File(it).isAbsolute) insideData(it)
-                else ctx.sandbox.resolve(it)
-            }
-            ctx.guard(
-                PermKey.SHELL,
-                workdir,
-                L("%s 执行命令").format(label) + "：" + command,
-                detail = buildString {
-                    append(L("后端：%s").format(launcher.label))
-                    if (workdir != null) append("\n").append(L("工作目录：%s").format(workdir.path))
-                    append("\n").append(L("超时：%s 秒").format(timeoutMs / 1000))
-                },
-                command = command,
-                backend = launcher.id
-            )
-            ShellMirror.emit("\n[插件 ${plugin.id}] \$ $command\n")
-            val result = runner.run(
-                launcher, command, workdir?.path, timeoutMs.coerceIn(1_000L, 300_000L)
-            )
-            ShellMirror.emit(buildString {
-                append(result.stdout)
-                if (result.stderr.isNotBlank()) append(result.stderr)
-            })
-            return result
-        }
-
-        // ------------------------------------------------------------ 网络
-
-        override fun httpRequest(
-            method: String,
-            url: String,
-            headers: Map<String, String>,
-            body: String?
-        ): PluginHttpResponse {
-            throw PluginRuntimeException(
-                L("这个版本的插件还不支持网络访问，等插件功能更新后再用")
-            )
-        }
-
-        // ------------------------------------------------------------ 其它工具
-
-        override fun callTool(name: String, args: JsonObject): ToolResult? =
-            toolsCall?.invoke(name, args)
-
-        // ------------------------------------------------------------ 日志
-
-        private val logLock = Any()
-
-        override fun log(level: String, message: String) {
-            val file = store.logFile(plugin.id)
-            val line = buildString {
-                append(System.currentTimeMillis())
-                append(" [")
-                append(level.uppercase().take(8))
-                append("] ")
-                append(message.take(4000))
-            }
-            synchronized(logLock) {
-                runCatching {
-                    val lines = if (file.isFile) file.readLines() else emptyList()
-                    val next = (lines + line).takeLast(MAX_LOG_LINES)
-                    file.writeText(next.joinToString("\n"))
-                }
-            }
-        }
-
-        // ------------------------------------------------------------ 路径
-
-        /** 相对路径只能落在插件自己的 data/ 里。 */
-        private fun insideData(path: String): File {
-            val base = dataRoot.canonicalFile
-            val f = File(base, path).canonicalFile
-            if (f != base && !f.path.startsWith(base.path + File.separator)) {
-                throw PluginRuntimeException(
-                    L("只能访问插件自己的数据目录（data/），不能访问 %s").format(path)
-                )
-            }
-            return f
-        }
     }
 
     const val MAX_LOG_LINES = 500

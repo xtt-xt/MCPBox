@@ -9,6 +9,8 @@ import com.dokar.quickjs.QuickJsInterruptedException
 import com.dokar.quickjs.binding.JsObject
 import com.dokar.quickjs.binding.function
 import com.xtt.mcpbox.core.PluginHost
+import com.xtt.mcpbox.core.PluginHttpStream
+import com.xtt.mcpbox.core.PluginRouteHost
 import com.xtt.mcpbox.core.PluginRuntime
 import com.xtt.mcpbox.core.PluginRuntimeException
 import com.xtt.mcpbox.core.PluginTimeoutException
@@ -37,6 +39,9 @@ class JsPluginRuntime : PluginRuntime {
 
     override val name: String = "quickjs"
 
+    /** `ctx.http.stream` 打开的流：脚本拿 id 回来逐行读。 */
+    private val streams = java.util.concurrent.ConcurrentHashMap<String, PluginHttpStream>()
+
     /** 首次探测后缓存：QuickJS 的 .so 加载失败是环境问题，不会自己变好。 */
     private val engineAvailable: Boolean by lazy {
         runCatching {
@@ -64,7 +69,7 @@ class JsPluginRuntime : PluginRuntime {
                 qjs.evaluationTimeoutMillis = timeoutMs
                 qjs.memoryLimit = MEMORY_LIMIT_BYTES
                 qjs.function("__mcpbox_call") { args ->
-                    handleHostCall(host, args.firstOrNull())
+                    dispatchCall(host, null, args.firstOrNull())
                 }
                 // 外层再兜一层：evaluationTimeoutMillis 只算 JS 执行时间，
                 // 不算 await 里跑着的 host 调用（比如一条慢命令）。
@@ -79,9 +84,54 @@ class JsPluginRuntime : PluginRuntime {
             } catch (e: QuickJsException) {
                 throw PluginRuntimeException(describe(e))
             } finally {
+                closeStreams()
                 runCatching { qjs.close() }
             }
         }
+    }
+
+    /**
+     * 跑一条 HTTP 路由脚本。
+     *
+     * 和工具不同：**不加**外层 coroutine 超时 —— 流式转发会长时间阻塞在
+     * `up.next()` 上，那是 Kotlin 的时间，不该被当成脚本跑太久。
+     * 脚本自己死循环时由 `evaluationTimeoutMillis` 中断。
+     */
+    override fun runRoute(
+        script: String,
+        scriptName: String,
+        host: PluginRouteHost,
+        timeoutMs: Long
+    ) {
+        runBlocking {
+            val qjs = try {
+                QuickJs.create(Dispatchers.Default)
+            } catch (e: Exception) {
+                throw PluginRuntimeException(
+                    "JS 引擎初始化失败：${e.message ?: e.javaClass.simpleName}"
+                )
+            }
+            try {
+                qjs.evaluationTimeoutMillis = timeoutMs
+                qjs.memoryLimit = MEMORY_LIMIT_BYTES
+                qjs.function("__mcpbox_call") { args ->
+                    dispatchCall(host, host, args.firstOrNull())
+                }
+                qjs.evaluate<Any?>(wrapRoute(script, scriptName, host), filename = scriptName)
+            } catch (e: QuickJsInterruptedException) {
+                throw PluginTimeoutException("脚本执行超过 ${timeoutMs / 1000} 秒，已中断")
+            } catch (e: QuickJsException) {
+                throw PluginRuntimeException(describe(e))
+            } finally {
+                closeStreams()
+                runCatching { qjs.close() }
+            }
+        }
+    }
+
+    private fun closeStreams() {
+        streams.values.forEach { runCatching { it.close() } }
+        streams.clear()
     }
 
     /** 把 QuickJS 的异常变成「脚本哪一行出了什么」。 */
@@ -102,7 +152,7 @@ class JsPluginRuntime : PluginRuntime {
      * 返回值统一转成 JS 认识的基本类型（Map / List / String / Number / Boolean / null）；
      * 抛异常会自然变成 JS 异常，脚本里可以 catch。
      */
-    private fun handleHostCall(host: PluginHost, raw: Any?): Any? {
+    private fun dispatchCall(host: PluginHost, route: PluginRouteHost?, raw: Any?): Any? {
         val req = raw as? JsObject
             ?: throw IllegalArgumentException("host 调用的参数必须是一个对象")
         val method = req["method"] as? String
@@ -115,6 +165,58 @@ class JsPluginRuntime : PluginRuntime {
         fun optStr(key: String): String? = p[key] as? String
 
         fun num(key: String): Long? = (p[key] as? Number)?.toLong()
+
+        fun headers(key: String): Map<String, String> =
+            (p[key] as? JsObject)?.entries?.associate { it.key to (it.value?.toString() ?: "") }.orEmpty()
+
+        if (route != null) {
+            when (method) {
+                "res.respond" -> {
+                    route.respond(
+                        status = (num("status") ?: 200L).toInt(),
+                        body = optStr("body") ?: "",
+                        headers = headers("headers"),
+                        contentType = optStr("contentType") ?: "application/json; charset=utf-8"
+                    )
+                    return null
+                }
+                "sse.open" -> {
+                    val sse = route.sse
+                        ?: throw IllegalArgumentException("这条路由没有声明 stream: true，不能用 ctx.sse")
+                    return sse.open(headers("headers"))
+                }
+                "sse.write" -> return route.sse?.write(optStr("data") ?: "") ?: false
+                "sse.comment" -> return route.sse?.comment(optStr("text") ?: "") ?: false
+                "sse.close" -> {
+                    route.sse?.close()
+                    return null
+                }
+                "http.stream" -> {
+                    val stream = host.httpStream(
+                        method = optStr("method") ?: "GET",
+                        url = str("url"),
+                        headers = headers("headers"),
+                        body = optStr("body"),
+                        timeoutMs = num("timeoutMs") ?: 60_000L
+                    )
+                    val id = java.util.UUID.randomUUID().toString().take(8)
+                    streams[id] = stream
+                    return JsObject(
+                        mapOf(
+                            "id" to id,
+                            "status" to stream.status,
+                            "headers" to JsObject(stream.headers)
+                        )
+                    )
+                }
+                "http.stream.next" -> return streams[str("id")]?.readLine()
+                "http.stream.text" -> return streams[str("id")]?.readAll()
+                "http.stream.close" -> {
+                    streams.remove(str("id"))?.let { runCatching { it.close() } }
+                    return null
+                }
+            }
+        }
 
         return when (method) {
             "settings.get" -> host.settingsGet(str("key"))?.plain()
@@ -220,8 +322,73 @@ class JsPluginRuntime : PluginRuntime {
         }
     }
 
-    private fun prelude(host: PluginHost): String = """
-var __call = function (method, params) {
+    /** 路由脚本的包装：导出的是 `handle(ctx)`，返回值忽略。 */
+    private fun wrapRoute(script: String, scriptName: String, host: PluginRouteHost): String {
+        val body = script.replace(Regex("""export\s+default\b"""), "module.exports =")
+        return buildString {
+            append("\"use strict\";\n")
+            append("var module = { exports: {} };\nvar exports = module.exports;\n")
+            append(prelude(host))
+            append('\n')
+            append(routePrelude(host))
+            append('\n')
+            append(body)
+            append('\n')
+            append(EPILOGUE_ROUTE)
+        }
+    }
+
+    /** 路由专属的 `ctx.req` / `ctx.res` / `ctx.sse`。 */
+    private fun routePrelude(host: PluginRouteHost): String {
+        val req = host.req
+        // 注意：不能用 JsObject.toString()，它是 Kotlin data class 的打印格式，
+        // 塞进 JS 源码里会变成 `JsObject(data=...)` 这种语法错误。
+        val query = JsonObject(req.query.mapValues { JsonPrimitive(it.value) }).toString()
+        val headers = JsonObject(req.headers.mapValues { JsonPrimitive(it.value) }).toString()
+        val base = """
+ctx.req = {
+  method: ${JsonPrimitive(req.method)},
+  path: ${JsonPrimitive(req.path)},
+  query: $query,
+  headers: $headers,
+  body: ${JsonPrimitive(req.body)},
+  remote: ${JsonPrimitive(req.remote)},
+  json: function () { return JSON.parse(ctx.req.body); }
+};
+ctx.res = {
+  status: 200,
+  headers: {},
+  respond: function (body, opts) {
+    opts = opts || {};
+    var text = (typeof body === "string") ? body
+      : (body === undefined || body === null) ? "" : JSON.stringify(body);
+    __call("res.respond", {
+      status: Number(opts.status || ctx.res.status || 200),
+      body: text,
+      headers: opts.headers || ctx.res.headers || null,
+      contentType: opts.contentType ? String(opts.contentType) : "application/json; charset=utf-8"
+    });
+  },
+  json: function (obj, status) {
+    ctx.res.respond(obj, { status: status || 200, contentType: "application/json; charset=utf-8" });
+  },
+  text: function (text, status) {
+    ctx.res.respond(String(text), { status: status || 200, contentType: "text/plain; charset=utf-8" });
+  }
+};
+""".trimIndent()
+        val sse = if (host.sse != null) """
+ctx.sse = {
+  open: function (headers) { return __call("sse.open", { headers: headers || null }); },
+  write: function (data) { return __call("sse.write", { data: String(data) }); },
+  comment: function (text) { return __call("sse.comment", { text: String(text) }); },
+  close: function () { __call("sse.close", {}); }
+};
+""".trimIndent() else "ctx.sse = null;"
+        return base + "\n" + sse
+    }
+
+    private fun prelude(host: PluginHost): String = """var __call = function (method, params) {
   return __mcpbox_call({ method: method, params: params === undefined ? null : params });
 };
 var ctx = {
@@ -265,6 +432,23 @@ var ctx = {
     },
     post: function (url, opts) {
       return ctx.http.fetch(url, Object.assign({}, opts || {}, { method: "POST" }));
+    },
+    stream: function (url, opts) {
+      opts = opts || {};
+      var h = __call("http.stream", {
+        method: opts.method ? String(opts.method) : "GET",
+        url: String(url),
+        headers: opts.headers || null,
+        body: opts.body === undefined || opts.body === null ? null : String(opts.body),
+        timeoutMs: opts.timeoutMs ? Number(opts.timeoutMs) : null
+      });
+      return {
+        status: h.status,
+        headers: h.headers,
+        next: function () { return __call("http.stream.next", { id: h.id }); },
+        text: function () { return __call("http.stream.text", { id: h.id }); },
+        close: function () { __call("http.stream.close", { id: h.id }); }
+      };
     }
   },
   tools: {
@@ -295,6 +479,20 @@ var __ret = await __entry.run(ctx);
 (typeof __ret === "string") ? __ret
   : (__ret === undefined || __ret === null) ? ""
   : JSON.stringify(__ret)
+""".trimIndent()
+
+        val EPILOGUE_ROUTE = """
+var __entry = module.exports;
+if (__entry && typeof __entry === "object" && Object.prototype.hasOwnProperty.call(__entry, "default")) {
+  __entry = __entry.default;
+}
+if (typeof __entry === "function") __entry = { handle: __entry };
+var __fn = (__entry && typeof __entry.handle === "function") ? __entry.handle
+  : (__entry && typeof __entry.run === "function") ? __entry.run : null;
+if (!__fn) {
+  throw new Error("路由脚本要导出 handle(ctx)：export default { async handle(ctx) { ... } }");
+}
+await __fn(ctx);
 """.trimIndent()
     }
 }

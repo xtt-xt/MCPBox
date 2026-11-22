@@ -134,7 +134,9 @@ class ApprovalCenter(
         mediaType: String? = null,
         byteSize: Long? = null,
         command: String? = null,
-        backend: String? = null
+        backend: String? = null,
+        /** 插件联网时的主机名：选「始终允许」会记住这个网站。 */
+        domain: String? = null
     ) {
         // 工具级权限（在「工具管理」里单独设过就优先）
         val toolOverride = ToolPolicy.effectiveOverride(config, tool)
@@ -154,13 +156,13 @@ class ApprovalCenter(
                 ask(
                     perm, tool, path, summary, detail, client,
                     L("工具「%s」被单独设为「询问」").format(tool), mediaType, byteSize, command, backend,
-                    toolScoped = true
+                    toolScoped = true, domain = domain
                 )
                 return
             }
             else -> Unit
         }
-        val decision = permissions.decide(perm, path, command)
+        val decision = permissions.decide(perm, path, command, domain)
         when (decision.action) {
             PermAction.ALLOW -> return
             PermAction.DENY -> {
@@ -171,7 +173,8 @@ class ApprovalCenter(
                 throw PermissionDeniedException(L("权限「%s」被拒绝（%s）").format(L(perm.title), decision.source))
             }
             PermAction.ASK -> ask(
-                perm, tool, path, summary, detail, client, decision.source, mediaType, byteSize, command, backend
+                perm, tool, path, summary, detail, client, decision.source, mediaType, byteSize, command, backend,
+                domain = domain
             )
         }
     }
@@ -189,7 +192,9 @@ class ApprovalCenter(
         command: String?,
         backend: String?,
         /** true = 这次弹窗来自「工具单独设为询问」，记住的应该是这个工具本身。 */
-        toolScoped: Boolean = false
+        toolScoped: Boolean = false,
+        /** 插件联网的主机名：选「始终允许 / 始终拒绝」记成域名规则。 */
+        domain: String? = null
     ) {
         val prefix = if (toolScoped) null else command?.let { commandPrefix(it) }
         val fullDetail = buildString {
@@ -199,6 +204,8 @@ class ApprovalCenter(
                 append(L("\n选「始终允许 / 始终拒绝」会把「%s」这个工具本身设为允许 / 拒绝。").format(tool))
             } else if (prefix != null) {
                 append(L("\n选「始终允许 / 始终拒绝」会记住这条规则：以 `%s` 开头的命令").format(prefix))
+            } else if (domain != null) {
+                append(L("\n选「始终允许 / 始终拒绝」会记住这个网站：%s").format(domain))
             }
         }.trim().ifBlank { null }
 
@@ -276,6 +283,15 @@ class ApprovalCenter(
                         LogKind.APPROVAL, tool, path, client, ok = true,
                         message = L("用户选择「始终允许」→ 已添加命令规则：%s 开头的命令").format(prefix)
                     )
+                } else if (domain != null) {
+                    permissions.addRule(
+                        PermKey.NETWORK.id, domain, PermAction.ALLOW,
+                        type = Rule.TYPE_DOMAIN, note = L("来自审批弹窗")
+                    )
+                    log.add(
+                        LogKind.APPROVAL, tool, path, client, ok = true,
+                        message = L("用户选择「始终允许」→ 已添加域名规则：%s").format(domain)
+                    )
                 } else {
                     permissions.setSwitch(perm, PermAction.ALLOW)
                     log.add(
@@ -297,6 +313,15 @@ class ApprovalCenter(
                     log.add(
                         LogKind.APPROVAL, tool, path, client, ok = false,
                         message = L("用户选择「始终拒绝」→ 已添加命令规则：%s 开头的命令被拒绝").format(prefix)
+                    )
+                } else if (domain != null) {
+                    permissions.addRule(
+                        PermKey.NETWORK.id, domain, PermAction.DENY,
+                        type = Rule.TYPE_DOMAIN, note = L("来自审批弹窗")
+                    )
+                    log.add(
+                        LogKind.APPROVAL, tool, path, client, ok = false,
+                        message = L("用户选择「始终拒绝」→ 已添加域名规则：%s 被拒绝").format(domain)
                     )
                 } else {
                     permissions.setSwitch(perm, PermAction.DENY)

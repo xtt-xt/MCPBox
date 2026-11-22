@@ -129,13 +129,28 @@ data class InstalledPlugin(
 
     fun tools(): List<PluginToolDecl> = if (usable) manifest.tools else emptyList()
 
+    /**
+     * 对外服务的路由。
+     *
+     * 三个条件缺一不可：插件本身生效、用户打开了「对外服务」、并且**授权过**。
+     * 授权位（`__httpGranted`）是每个插件独立的，不能在审批弹窗里逐次点 ——
+     * 装完默认不授权，用户第一次打开开关时才记下来。
+     */
     fun routes(): List<PluginRouteDecl> =
-        if (usable && httpEnabled) manifest.http?.routes.orEmpty() else emptyList()
+        if (active && httpEnabled && httpGranted) manifest.http?.routes.orEmpty() else emptyList()
 
     /** 服务类开关：默认值来自 manifest，用户可以在插件页改。 */
     val httpEnabled: Boolean
         get() = manifest.http != null &&
             config.getBoolean(PluginStore.HTTP_ENABLED_KEY, manifest.http.enabledByDefault)
+
+    /** 用户是否确认过「这个插件可以对外提供服务」。 */
+    val httpGranted: Boolean
+        get() = manifest.http != null &&
+            config.getBoolean(PluginStore.HTTP_GRANTED_KEY, false)
+
+    /** 现在真的在对外服务。 */
+    val serving: Boolean get() = active && httpEnabled && httpGranted
 }
 
 /**
@@ -165,6 +180,9 @@ class PluginStore(
         /** 用户在插件页改「对外服务」开关时用的键。 */
         const val HTTP_ENABLED_KEY = "__httpEnabled"
 
+        /** 用户确认过「可以对外提供服务」。装完默认没有，第一次开开关才写。 */
+        const val HTTP_GRANTED_KEY = "__httpGranted"
+
         /** 一个插件最多几个工具 / 几条路由（防止 manifest 写飞）。 */
         const val MAX_TOOLS = 40
         const val MAX_ROUTES = 40
@@ -173,6 +191,15 @@ class PluginStore(
     @Volatile
     var plugins: List<InstalledPlugin> = emptyList()
         private set
+
+    /**
+     * 每次重新扫描完目录后回调。
+     *
+     * 路由层用它来断开「已经不再对外服务」的插件的流式连接 ——
+     * 停用、卸载、关掉对外服务都走这里，不需要 PluginStore 认识路由。
+     */
+    @Volatile
+    var onReload: (() -> Unit)? = null
 
     init {
         root.mkdirs()
@@ -188,6 +215,7 @@ class PluginStore(
             .orEmpty()
 
         plugins = dirs.map { dir -> readPlugin(dir) }
+        onReload?.invoke()
     }
 
     /** 读一个插件目录；读不出来也返回对象（带 error），不抛。 */
@@ -340,10 +368,24 @@ class PluginStore(
         return true
     }
 
-    /** 插件的对外服务开关（P2 才真正生效，先存着）。 */
+    /**
+     * 插件的对外服务开关。
+     *
+     * 打开时同时记下授权位 —— 也就是「用户点过这个开关」本身就是同意，
+     * 不需要再单独弹一次确认。
+     */
     fun setHttpEnabled(id: String, on: Boolean): Boolean {
         val plugin = byId(id) ?: return false
         plugin.config.set(HTTP_ENABLED_KEY, JsonPrimitive(on))
+        if (on) plugin.config.set(HTTP_GRANTED_KEY, JsonPrimitive(true))
+        load()
+        return true
+    }
+
+    /** 只改授权位，不动开关（导入 / 备份恢复时用）。 */
+    fun setHttpGranted(id: String, granted: Boolean): Boolean {
+        val plugin = byId(id) ?: return false
+        plugin.config.set(HTTP_GRANTED_KEY, JsonPrimitive(granted))
         load()
         return true
     }

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -153,6 +154,7 @@ fun SettingsScreen(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
+                    pluginCount = AppCore.plugins.plugins.size,
                     entityCount = AppCore.memory.notes.size,
                     relationCount = AppCore.memory.notes.sumOf { it.links.size },
                     onPage = onPage
@@ -212,6 +214,12 @@ fun SettingsScreen(
                 // ---- 原来挂在 subScreen（另起全屏 Scaffold）上的四页，现在都并进设置栈：
                 // 页面挂在 tab 内容里，底栏是同一个、会滑动收起；返回由本页统一接。
                 "tools" -> ToolsScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = onChanged,
+                    onBack = back
+                )
+                "plugins" -> PluginsScreen(
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
@@ -282,9 +290,10 @@ fun SettingsScreen(
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
                 else -> SettingsHomePage(
-                        scroll = homeScroll,
-                        scrollTopTick = scrollTopTick,
+                    scroll = homeScroll,
+                    scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,
+                    pluginCount = AppCore.plugins.plugins.size,
                     entityCount = AppCore.memory.notes.size,
                     relationCount = AppCore.memory.notes.sumOf { it.links.size },
                     onPage = onPage,
@@ -524,6 +533,7 @@ private fun SettingsHomePage(
     scroll: ScrollState,
     scrollTopTick: Int = 0,
     toolCount: Int,
+    pluginCount: Int,
     entityCount: Int,
     relationCount: Int,
     onPage: (String) -> Unit
@@ -569,7 +579,13 @@ private fun SettingsHomePage(
                     L("记忆库"),
                     L("给 AI 的长期记忆：%s 条记忆 · %s 条关联").format(entityCount, relationCount),
                     Icons.Filled.Star
-                ) { onPage("memory") }
+                ) { onPage("memory") },
+                entrySpec(
+                    L("插件"),
+                    if (pluginCount == 0) L("用 JS 写的工具与服务，可以把接口开给别的程序")
+                    else L("%s 个已安装 · 工具与服务插件").format(pluginCount),
+                    Icons.Filled.List
+                ) { onPage("plugins") }
             )
         )
 

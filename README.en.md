@@ -125,7 +125,7 @@ Full docs live in [`docs/en/`](docs/en/) (English) and [`docs/`](docs/) (Chinese
 | [09 Terms of Use](docs/en/09-terms.md) | Acceptance, authorization, acceptable use, risk and liability |
 | [10 Privacy Policy](docs/en/10-privacy.md) | Where data lives, permission purposes, network access, token and logs, backups |
 | [11 SSH service](docs/en/11-ssh.md) | Built-in SSH / SFTP, auth and keys, command switch and identity, sandbox and read-only, real-device notes |
-| [12 Plugin system](docs/en/12-plugins.md) | Package format, tool and service plugins, HTTP routes with a plugin key, streaming, settings, pages, background tasks, permissions and installation; includes the free-model gateway and desktop file bridge scenarios. P1 (tool plugins with a JS runtime) is implemented; routes and UI follow in later phases |
+| [12 Plugin system](docs/en/12-plugins.md) | Package format, tool and service plugins, HTTP routes with a plugin key, streaming, settings, pages, background tasks, permissions and installation; includes the free-model gateway and desktop file bridge scenarios. P1 (tool plugins with a JS runtime) and P2 (HTTP routes, per-plugin keys, streaming, host rules) are implemented; full management pages follow later |
 
 ## Terms and license
 
