@@ -3576,6 +3576,8 @@ fun main() {
         }
 
         srv57.stop()
+
+        pluginPackageSection(root)
     }
 
     println("\n====================================")
@@ -3857,4 +3859,133 @@ private class FakeLocationHost : HostInfo {
             mock = mock
         )
     }
+}
+
+/** 插件包导入：条目名安全、解包、覆盖升级、各种坏包。 */
+private fun pluginPackageSection(root: File) {
+    // ================================================================ [58] 插件包导入
+    println("\n[58] 插件包导入：路径安全 / 解包 / 覆盖升级")
+
+    // ---------------------------------------------------------- 条目名
+    check("包：正常条目名", PluginPackage.safeName("tools/main.js") == "tools/main.js")
+    check("包：点斜杠和空段归一", PluginPackage.safeName("./a//b.js") == "a/b.js")
+    check("包：反斜杠当分隔符", PluginPackage.safeName("tools\\main.js") == "tools/main.js")
+    check("包：拒绝 ..", PluginPackage.safeName("../evil.js") == null)
+    check("包：拒绝中间 ..", PluginPackage.safeName("a/../../evil.js") == null)
+    check("包：拒绝 windows 穿越", PluginPackage.safeName("..\\..\\evil.js") == null)
+    check("包：拒绝绝对路径", PluginPackage.safeName("/etc/passwd") == null)
+    check("包：拒绝盘符", PluginPackage.safeName("C:/Windows/x.js") == null)
+    check("包：拒绝空名", PluginPackage.safeName("") == null)
+    check("包：拒绝只有 ..", PluginPackage.safeName("..") == null)
+    check("包：拒绝 NUL", PluginPackage.safeName("a\u0000b.js") == null)
+
+    val root58 = File(root, "plugins-58")
+    val store58 = PluginStore(root58)
+
+    fun packFile(name: String, bytes: ByteArray): File {
+        val f = File(root, "zips/$name")
+        f.parentFile?.mkdirs()
+        f.writeBytes(bytes)
+        return f
+    }
+
+    fun mini(id: String, name: String, version: String = "1.0.0") =
+        """{"id":"$id","name":"$name","version":"$version","description":"测试插件"}"""
+
+    // ---------------------------------------------------------- 正常导入
+    val demoJson = """{"id":"demo58","name":"示例插件","version":"1.0.0","description":"导入测试",
+        "settings":[{"key":"api_base","type":"string","title":"接口地址","default":"https://a.example"}],
+        "tools":[{"name":"ping","description":"ping 一下","file":"tools/ping.js"}],
+        "http":{"bind":"loopback","key":{"prefix":"sk-"},"routes":[
+          {"path":"/demo/ping","handler":"api/ping.js","methods":["GET"]}]}}"""
+    val zip58 = packFile("demo-1.0.0.zip", zipBytes(linkedMapOf(
+        // 多套一层父目录：zip -r 打包目录时最常见的样子
+        "demo/plugin.json" to demoJson,
+        "demo/tools/ping.js" to "ctx.log('hi')",
+        "demo/api/ping.js" to "ctx.res.text('pong')",
+        // 别人的 config.json：里面可能是别人的 Key，必须丢掉
+        "demo/config.json" to """{"api_base":"https://别人的.example","__key":"sk-别人的"}""",
+        // mac 打包留下的垃圾
+        "__MACOSX/demo/._plugin.json" to "junk"
+    )))
+
+    val installed58 = store58.installZip(zip58)
+    val demo58 = store58.byId("demo58")
+    check("包：能装上", demo58 != null && !demo58.broken, demo58?.error.orEmpty())
+    check("包：剥掉外层目录", installed58.dir.name == "demo58", installed58.dir.name)
+    check("包：导入后保持停用", demo58?.enabled == false)
+    check("包：包里别人的 config.json 被丢掉",
+        demo58?.config?.getString("api_base") == null,
+        demo58?.config?.all().toString())
+    check("包：导入后的 config.json 只有宿主字段",
+        demo58?.config?.userValues()?.isEmpty() == true,
+        demo58?.config?.all().toString())
+    check("包：导入后不对外服务", demo58?.serving == false)
+    check("包：临时目录清干净了",
+        root58.listFiles().orEmpty().none { it.name.startsWith(".") },
+        root58.listFiles().orEmpty().joinToString { it.name })
+
+    // ---------------------------------------------------------- 升级：设置和 Key 都要留着
+    store58.setEnabled("demo58", true)
+    store58.setSetting("demo58", "api_base", JsonPrimitive("https://mine.example"))
+    val key58 = store58.ensureKey("demo58")
+    check("包：启用后有 Key", key58.startsWith("sk-"), key58)
+
+    val zip58b = packFile("demo-1.1.0.zip", zipBytes(linkedMapOf(
+        "demo/plugin.json" to demoJson.replace("\"version\":\"1.0.0\"", "\"version\":\"1.1.0\""),
+        "demo/tools/ping.js" to "ctx.log('hi v2')",
+        "demo/api/ping.js" to "ctx.res.text('pong v2')"
+    )))
+    store58.installZip(zip58b)
+    val up58 = store58.byId("demo58")
+    check("包：升级后版本变成 1.1.0", up58?.manifest?.version == "1.1.0", up58?.manifest?.version.orEmpty())
+    check("包：升级保留设置", up58?.config?.getString("api_base") == "https://mine.example")
+    check("包：升级保留 Key", up58?.config?.key == key58)
+    check("包：升级保留启用状态", up58?.enabled == true)
+
+    // ---------------------------------------------------------- 各种坏包
+    val bad58 = packFile("bad.zip", zipBytes(mapOf("readme.txt" to "没有 plugin.json")))
+    val badErr = runCatching { store58.installZip(bad58) }.exceptionOrNull()
+    check("包：没有 plugin.json 会被拒", badErr is PluginException, badErr?.message.orEmpty())
+
+    val escaped58 = File(root, "escaped.txt")
+    escaped58.delete()
+    val evil58 = packFile("evil.zip", zipBytes(mapOf(
+        "../escaped.txt" to "x",
+        "plugin.json" to mini("evil58", "坏包")
+    )))
+    val evilErr = runCatching { store58.installZip(evil58) }.exceptionOrNull()
+    check("包：穿越路径会被拒", evilErr is PluginException, evilErr?.message.orEmpty())
+    check("包：穿越路径没落到外面", !escaped58.exists())
+    check("包：坏包不留临时目录",
+        root58.listFiles().orEmpty().none { it.name.startsWith(".") },
+        root58.listFiles().orEmpty().joinToString { it.name })
+
+    val two58 = packFile("two.zip", zipBytes(linkedMapOf(
+        "a/plugin.json" to mini("aaa58", "甲"),
+        "b/plugin.json" to mini("bbb58", "乙")
+    )))
+    val twoErr = runCatching { store58.installZip(two58) }.exceptionOrNull()
+    check("包：一个包里多个插件会被拒", twoErr is PluginException, twoErr?.message.orEmpty())
+
+    val many58 = LinkedHashMap<String, String>()
+    many58["plugin.json"] = mini("many58", "很多文件")
+    repeat(PluginPackage.MAX_ENTRIES) { many58["tools/f$it.js"] = "x" }
+    val manyErr = runCatching {
+        store58.installZip(packFile("many.zip", zipBytes(many58)))
+    }.exceptionOrNull()
+    check("包：条目数超限会被拒", manyErr is PluginException, manyErr?.message.orEmpty())
+
+    // 目录直接放着 plugin.json（没有外层目录）也要能装
+    val flat58 = packFile("flat.zip", zipBytes(linkedMapOf(
+        "plugin.json" to mini("flat58", "平铺"),
+        "tools/a.js" to "x"
+    )))
+    store58.installZip(flat58)
+    check("包：plugin.json 在根上也能装", store58.byId("flat58") != null,
+        store58.plugins.joinToString { it.id })
+
+    check("包：装完仍然只有这两个插件",
+        store58.plugins.map { it.id }.toSet() == setOf("demo58", "flat58"),
+        store58.plugins.joinToString { it.id })
 }

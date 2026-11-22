@@ -150,6 +150,14 @@ fun SettingsScreen(
                     onBack = {},
                     scroll = appearanceScroll
                 )
+                // 插件详情拖出来时露出的必须是插件列表，不是设置首页
+                "plugins" -> PluginsScreen(
+                    ctx = ctx,
+                    revision = revision,
+                    onChanged = {},
+                    onOpen = {},
+                    onBack = {}
+                )
                 else -> SettingsHomePage(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
@@ -223,8 +231,11 @@ fun SettingsScreen(
                     ctx = ctx,
                     revision = revision,
                     onChanged = onChanged,
+                    onOpen = { onPage(it) },
                     onBack = back
                 )
+                // 插件详情：页面 key 是 `plugins/<id>`，返回回插件列表。
+                // when 的 subject 是字符串，写不了 Boolean 条件，所以放在 else 里判前缀。
                 "memory" -> MemoryScreen(
                     ctx = ctx,
                     onChanged = onChanged,
@@ -289,7 +300,15 @@ fun SettingsScreen(
                     onBack = back
                 )
                 "stats" -> StatsSettingsPage(onBack = back)
-                else -> SettingsHomePage(
+                else -> if (current.startsWith("plugins/")) {
+                    PluginDetailScreen(
+                        ctx = ctx,
+                        revision = revision,
+                        pluginId = current.removePrefix("plugins/"),
+                        onChanged = onChanged,
+                        onBack = back
+                    )
+                } else SettingsHomePage(
                     scroll = homeScroll,
                     scrollTopTick = scrollTopTick,
                     toolCount = status.toolCount,

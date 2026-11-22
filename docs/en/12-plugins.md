@@ -774,13 +774,21 @@ A prompt per request would make the gateway unusable, so "always allow" on `netw
 
 ### 13.1 Install
 
-- Entry: Import in the plugin list, choosing a `.zip` (or `.mcpbox-plugin`, same format).
-- Validation order: zip layout → manifest syntax → fields → reserved path conflicts → tool name
-  collisions → path traversal → size. Nothing is written unless everything passes.
-- Limits: 20MB extracted, 500 files.
-- Preview: name, version, author, description, declared permissions, tool count, and the **routes
-  it will take** (e.g. `/v1/models`, `/v1/chat/completions`). Root-level paths are called out.
-- Newly installed plugins are disabled until the user enables them.
+- Entry: the `+` in the plugin list, picking a `.zip`. After extraction the archive must contain
+  `plugin.json` directly; archives that wrap everything in one folder (`zip -r x.zip myplugin/`)
+  are accepted and the extra level is stripped.
+- **Extraction is the security boundary**: every entry name is normalised and rejected if it is an
+  absolute path, contains `..`, or carries a drive letter — one bad entry rejects the whole package
+  and nothing is written. 16MB per file, 64MB extracted in total, 2000 entries.
+- Then `plugin.json` is found and validated: manifest → version requirement → reserved path
+  conflicts → route conflicts → referenced scripts exist.
+- Any `config.json` shipped in the package is discarded (it holds someone else's settings and key).
+  On upgrade the local `config.json` is kept, so settings and key survive.
+- Extraction goes to a temporary directory and the old directory is replaced only after everything
+  passes; a failure never leaves half a plugin behind.
+- **New plugins start disabled**; enabling them registers tools and routes. Upgrading an installed
+  plugin keeps its previous on/off state.
+- Limits: 40 tools and 40 routes per plugin.
 
 ### 13.2 Upgrade
 
@@ -826,23 +834,25 @@ Follows the existing rules: top-level entry plus dedicated subpages, no card pil
 ```
 Settings
  └─ Plugins
-     ├─ plugin list (name / version / status dot / tool count / route count)
-     ├─ Import (top right)
-     └─ plugin detail
-         ├─ overview: name, version, author, description, permissions, tools, routes
-         ├─ settings: form generated from the manifest
-         ├─ service: key, bind scope, route switches and request counts
-         ├─ pages: declarative blocks or "Open page"
-         ├─ logs: tail
-         └─ danger zone: disable / uninstall
+     ├─ plugin list (name; version · tools · routes · author; enable switch on the right)
+     ├─ Import (the `+` top right, pick a .zip)
+     └─ plugin detail (page key: plugins/<id>)
+         ├─ status: enabled, external service, API key
+         ├─ overview: description, author, homepage, install source and time
+         ├─ tools: name + description
+         ├─ routes: method + path + script
+         ├─ settings: generated from the manifest
+         ├─ logs: tap to see the last 60 lines
+         └─ uninstall (with confirmation)
 ```
 
-- Rows are fully clickable, ripples clipped to the shape.
-- Status dot: enabled (primary) / disabled (grey) / error (error colour) / incompatible (warning colour).
-- Incompatible plugins state the requirement in the subtitle ("requires MCPBox 1.7.0 or newer"); opening
-  one shows only the overview and uninstall.
-- The Service section appears only when the plugin has `http.routes`.
-- Long operations show progress and elapsed time.
+- Tapping a row opens the detail page; the switch only toggles "enabled" (broken plugins have none).
+- Incompatible plugins state the requirement in the subtitle and their switch is locked
+  (`LockedSwitch`); the detail page still shows the overview and uninstall.
+- "External service" and "API key" appear only when the plugin declares `http`.
+- Settings render in three shapes: boolean = switch, enum = pill menu, text / secret / number =
+  a pill showing the current value that opens a native dialog (input plus buttons only, no prose).
+- Long operations (install) show a progress dialog with the file name.
 - Rows injected into settings pages form their own group labelled with the plugin name; see 10.3.
 
 ---
@@ -934,7 +944,7 @@ and live sync.
 |---|---|---|
 | P1 | Manifest + JS runtime + tool registration + packs + settings | **Done**: a JS plugin installed on a real device; its tools are callable, arguments validate, approvals fire |
 | P2 | HTTP routes + plugin key + streaming + host rules | **Done**: curl reaches `/v1/models`, `/v1/echo` and the streaming `/v1/stream`; plugin networking goes through approval |
-| P3 | Plugin pages + custom-tool migration + import/export + version requirements | Full management on the phone; plugins needing a newer app cannot install |
+| P3 | Plugin page + import + version requirements | **Done**: install from a zip, enable / disable / uninstall, edit settings, rotate the key; plugins needing a newer app refuse to install |
 | P4 | Scenario one: free model gateway (anonymous channels) | RikkaHub points at the local address, lists models, chats, streams |
 | P5 | Scenario two: file bridge API + desktop dsh plugin | dsh browses, quotes, edits and uploads phone files |
 | P6 | Declarative pages + HTML pages + timers and events | Plugin has UI and runs on a schedule |
@@ -985,8 +995,23 @@ Notes on how the implementation differs from the plan above, so later phases kno
 - **The route timeout does not cover streaming**: `runRoute` adds no coroutine timeout and relies on the
   engine's interrupt handler for script compute time; a stuck upstream is caught by the HTTP read
   timeout. Tool calls keep their outer timeout (`evaluationTimeout + 5s`).
-- **The plugin page is a minimal version**: installed list, serving toggle, view/copy/rotate key.
-  Import, uninstall, settings and logs arrive in P3.
+- **The plugin page was a minimal version in P2**: installed list, serving toggle, view/copy/rotate key.
+  P3 added import, the detail page, settings and logs.
+
+### 17.3 Where P3 landed
+
+- **Import accepts `.zip` only** (the `.mcpbox-plugin` name from earlier drafts was dropped; the
+  extension is not checked, the content is).
+- **No install preview dialog**: extraction and validation happen in a staging directory and the
+  package is thrown away on failure; the new plugin lands in the list disabled, and its tools,
+  routes and permissions are visible by opening it.
+- **Limits differ from the earlier draft's 20MB / 500 files**: 16MB per file, 64MB total, 2000 entries.
+- **Upgrade does not compare versions**: the same id is simply replaced, keeping `config.json`
+  (settings and key) and the on/off state. Roll back by importing the old package again.
+- **Custom tools were not migrated into a built-in `my.tools` plugin**: they still live in
+  Settings → AI → Tools as their own store; the plugin page lists real plugins only.
+- **Logs show the last 60 lines**, with no clear / export / live tail.
+- **The detail page has no "pages" section**: declarative pages are P6.
 
 ---
 

@@ -350,6 +350,37 @@ class PluginStore(
         return plugin
     }
 
+    /**
+     * 从 `.zip` 包安装。
+     *
+     * 解包到插件根目录下的临时目录（和最终目录同一个文件系统，`renameTo` 才快），
+     * 装完就删 —— 失败不会留下半个插件，也不会把临时文件留在用户能看到的地方。
+     *
+     * 新装的插件**先保持停用**：用户该先看一眼它要什么权限、有几个工具，再自己打开。
+     * 升级已经装过的插件则保留原来的开关状态。
+     */
+    fun installZip(zipFile: File, sourceLabel: String = ""): InstalledPlugin {
+        if (!zipFile.isFile) throw PluginException(L("找不到插件包"))
+        val staging = File(root, ".import-${System.currentTimeMillis()}")
+        try {
+            val src = zipFile.inputStream().use { PluginPackage.extract(it, staging) }
+            val id = PluginManifestParser.parse(File(src, MANIFEST_NAME).readText()).id
+            val existed = byId(id) != null
+            val plugin = install(
+                source = src,
+                replace = true,
+                sourceLabel = sourceLabel.ifBlank { zipFile.name }
+            )
+            if (!existed) {
+                plugin.config.setEnabled(false)
+                load()
+            }
+            return byId(plugin.id) ?: plugin
+        } finally {
+            if (staging.exists()) staging.deleteRecursively()
+        }
+    }
+
     /** 卸掉一个插件：整目录删除（含它自己的 data/）。 */
     fun uninstall(id: String): Boolean {
         val plugin = byId(id) ?: return false
