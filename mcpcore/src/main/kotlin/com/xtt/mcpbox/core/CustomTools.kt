@@ -47,6 +47,17 @@ data class CustomTool(
 
 object ToolTemplate {
 
+    /**
+     * 占位符正则。
+     *
+     * 结尾的 `}` 必须转义：安卓的 java.util.regex 走 ICU，裸的 `}` 会让 Pattern 直接编译失败
+     * （JVM 上却能过，所以只看 harness 是发现不了的）。
+     */
+    val PLACEHOLDER = Regex("""\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*(:\s*raw\s*)?\}\}""")
+
+    /** 只认 `{{name` 部分，用来校验模板里用到的参数都在参数表里。 */
+    val PLACEHOLDER_NAME = Regex("""\{\{\s*([A-Za-z_][A-Za-z0-9_]*)""")
+
     /** 把 {{name}} 换成 shell 安全的字面量；{{name:raw}} 原样插入。 */
     fun render(template: String, args: JsonObject, params: List<CustomToolParam>): String {
         val provided = HashMap<String, String>()
@@ -63,7 +74,7 @@ object ToolTemplate {
         if (missing.isNotEmpty()) {
             throw ToolFailure(L("缺少必填参数：") + missing.joinToString(L("、")) { it.name })
         }
-        val regex = Regex("\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(:\\s*raw\\s*)?}}")
+        val regex = PLACEHOLDER
         return regex.replace(template) { m ->
             val key = m.groupValues[1]
             val raw = m.groupValues[2].isNotEmpty()
@@ -85,7 +96,7 @@ object ToolTemplate {
         }
         if (tool.command.isBlank()) return L("命令模板不能为空")
         val declared = tool.params.map { it.name }.toSet()
-        val used = Regex("\\{\\{\\s*([A-Za-z_][A-Za-z0-9_]*)").findAll(tool.command)
+        val used = PLACEHOLDER_NAME.findAll(tool.command)
             .map { it.groupValues[1] }.toSet()
         val undefined = used - declared
         if (undefined.isNotEmpty()) {

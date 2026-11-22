@@ -614,6 +614,19 @@ fun main() {
         }.exceptionOrNull()
         check("缺必填参数会抛错", err is ToolFailure, err?.toString() ?: "没有抛错")
 
+        // 安卓的 java.util.regex 是 ICU 的实现，裸的 } 会让 Pattern 直接编译失败，JVM 却放行 ——
+        // 所以「只在 JVM 上跑」的 harness 抓不到这类问题，只能在这儿钉一条守卫。
+        val pat = ToolTemplate.PLACEHOLDER.pattern
+        val bareClose = pat.indices.firstOrNull { i -> pat[i] == '}' && (i == 0 || pat[i - 1] != '\\') }
+        check("占位符正则里的 } 都转义了", bareClose == null, "第 $bareClose 位是裸 }：$pat")
+
+        val spaced = ToolTemplate.render(
+            "echo {{ a }} {{b : raw}}",
+            J.parseToJsonElement("""{"a":"v 1","b":"x y"}""").jsonObject,
+            listOf(CustomToolParam(name = "a"), CustomToolParam(name = "b"))
+        )
+        check("花括号里带空格也能替换", spaced == "echo 'v 1' x y", spaced)
+
         println("\n[21] 旧数据兼容（v1.0 的路径规则）")
         val legacySettings = MemorySettings().apply {
             putString(
