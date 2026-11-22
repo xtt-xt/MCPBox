@@ -174,6 +174,22 @@ object BuiltinPacks {
         defaultActive = false
     )
 
+    /** 插件包前缀：一个插件一个包，`plugin.<插件id>`。 */
+    const val PLUGIN_PACK_PREFIX = "plugin."
+
+    /**
+     * 一个插件对应的工具包。**默认不激活** —— 装插件不等于让 AI 每轮都背着它的
+     * 工具定义（那是实打实的 token），要用时在权限页勾上，和别的包一样。
+     */
+    fun pluginPack(manifest: PluginManifest, toolNames: List<String>): ToolPack = ToolPack(
+        id = PLUGIN_PACK_PREFIX + manifest.id,
+        title = L("插件 · %s").format(manifest.name),
+        description = manifest.description.ifBlank { L("（没有说明）") } + L("（由插件提供）"),
+        tools = toolNames,
+        builtin = true,
+        defaultActive = false
+    )
+
     /** 出厂默认激活的包 id。 */
     fun defaults(): Set<String> = ALL.filter { it.defaultActive }.map { it.id }.toSet()
 }
@@ -187,6 +203,13 @@ class PackStore(private val src: SettingsSource) {
     /** 用户自建的包（内置包不存这里）。 */
     @Volatile var custom: List<ToolPack> = emptyList()
         private set
+
+    /**
+     * 插件包来源：由 [PluginStore] 动态生成（装的插件变了、启停变了，包跟着变）。
+     * McpServer 构造时接上；harness 不接也没关系，插件包就是空的。
+     */
+    @Volatile
+    var pluginSource: () -> List<ToolPack> = { emptyList() }
 
     init { load() }
 
@@ -208,15 +231,25 @@ class PackStore(private val src: SettingsSource) {
         src.putString(Config.Keys.TOOL_PACKS, el.toString())
     }
 
-    /** 全部包：内置 + 「我的工具」+ 自建。customToolNames 用于动态生成「我的工具」。 */
-    fun all(customToolNames: List<String> = emptyList()): List<ToolPack> =
-        BuiltinPacks.ALL + listOf(BuiltinPacks.myTools(customToolNames)) + custom
+    /**
+     * 全部包：内置 + 「我的工具」+ 插件包 + 自建。
+     * customToolNames 用于动态生成「我的工具」，插件包由 [pluginSource] 现取。
+     */
+    fun all(customToolNames: List<String> = emptyList()): List<ToolPack> {
+        val plugins = pluginSource()
+        // 自建包不可能用 plugin. 前缀（add/update 挡住了），这里只是兜底去重
+        val taken = HashSet<String>()
+        return (BuiltinPacks.ALL +
+            listOf(BuiltinPacks.myTools(customToolNames)) +
+            plugins + custom).filter { taken.add(it.id) }
+    }
 
     fun byId(id: String, customToolNames: List<String> = emptyList()): ToolPack? =
         all(customToolNames).firstOrNull { it.id == id }
 
     fun isBuiltin(id: String): Boolean =
-        id in BuiltinPacks.ALL.map { it.id } || id == ToolPack.MY_TOOLS_ID
+        id in BuiltinPacks.ALL.map { it.id } || id == ToolPack.MY_TOOLS_ID ||
+            id.startsWith(BuiltinPacks.PLUGIN_PACK_PREFIX)
 
     fun add(pack: ToolPack): ToolPack {
         validate(pack)
@@ -240,8 +273,13 @@ class PackStore(private val src: SettingsSource) {
         validate(pack)
         val existing = custom.firstOrNull { it.id == pack.id }
             ?: throw ToolFailure(
-                if (isBuiltin(pack.id)) L("内置包不能改，但可以用 manage_pack 新建一个自己的包")
-                else L("找不到包：%s").format(pack.id)
+                if (pack.id.startsWith(BuiltinPacks.PLUGIN_PACK_PREFIX)) {
+                    L("插件包由插件自己维护，不能改")
+                } else if (isBuiltin(pack.id)) {
+                    L("内置包不能改，但可以用 manage_pack 新建一个自己的包")
+                } else {
+                    L("找不到包：%s").format(pack.id)
+                }
             )
         val merged = pack.copy(id = existing.id, builtin = false, core = false)
         custom = custom.map { if (it.id == existing.id) merged else it }
@@ -266,6 +304,10 @@ class PackStore(private val src: SettingsSource) {
         if (pack.id.length > 48) throw ToolFailure(L("包 id 太长（最多 48 字）"))
         if (!pack.id.matches(Regex("^[a-zA-Z0-9._\\-]*$"))) {
             throw ToolFailure(L("包 id 只能用字母、数字、点、横线和下划线"))
+        }
+        // plugin. 是插件包专用前缀，用户自建包占了会和插件撞
+        if (pack.id.startsWith(BuiltinPacks.PLUGIN_PACK_PREFIX)) {
+            throw ToolFailure(L("「plugin.」开头是插件专用前缀，换一个吧"))
         }
     }
 }

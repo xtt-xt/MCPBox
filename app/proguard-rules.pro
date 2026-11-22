@@ -46,3 +46,9 @@
 -dontwarn org.bouncycastle.**
 -dontwarn org.slf4j.**
 -dontwarn javax.naming.**
+
+# ---------------------------------------------------------------- 插件脚本引擎
+# quickjs-kt 通过 JNI 调 native 方法，方法名必须和 .so 里的符号对上，不能被混淆。
+-keep class com.dokar.quickjs.** { *; }
+-keepclasseswithmembernames class * { native <methods>; }
+-dontwarn com.dokar.quickjs.**

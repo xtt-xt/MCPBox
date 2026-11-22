@@ -181,6 +181,10 @@ fun main() {
     // 浏览器：JVM 上没有 WebView，用假的引擎替上（真机上由 BrowserController 实现）
     val fakeBrowser = FakeBrowser()
 
+    // 插件：目录在临时根目录下，引擎用假的（不跑 JS，只记录调用）
+    val pluginStore = PluginStore(File(root, "plugins"))
+    val fakeRuntime = FakePluginRuntime()
+
     val server = McpServer(
         config = config, customTools = customTools, permissions = permissions,
         approval = approval, log = log, host = null,
@@ -189,7 +193,9 @@ fun main() {
         packs = PackStore(settings),
         profiles = ProfileStore(File(root, "profiles"), config),
         stats = statsStore,
-        browserBridge = fakeBrowser
+        browserBridge = fakeBrowser,
+        plugins = pluginStore,
+        pluginRuntime = fakeRuntime
     )
     // 默认会话把所有包都打开：下面大量老测试都假设「tools/list 返回全部工具」。
     // 工具包的过滤行为在 [37] 段用独立的会话单独验证。
@@ -2902,7 +2908,8 @@ fun main() {
             log = EventLog(),
             host = fake,
             packs = PackStore(settings2),
-            profiles = ProfileStore(null, cfg2)
+            profiles = ProfileStore(null, cfg2),
+            plugins = PluginStore(File(root, "plugins-loc"))
         )
         srv2.profiles.setActive(ProfileStore.DEFAULT_ID, BuiltinPacks.ALL.map { it.id })
         check("位置：服务器起得来", srv2.start(), srv2.lastError ?: "")
@@ -3024,6 +3031,339 @@ fun main() {
         check("取位置：报错里给排查建议", noneText.contains("timeout_ms") || noneText.contains("GPS"), noneText.take(300))
 
         srv2.stop()
+    }
+
+    // ================================================================ 插件
+    run {
+        println("\n[54] 插件：manifest 校验 / 安装 / 工具注册 / host API / 审批 / 卸载")
+
+        // ---------------------------------------------------------- 版本比较（纯函数）
+        check("版本：1.5.0 满足 >=1.5.0", PluginVersion.satisfies(">=1.5.0", "1.5.0"))
+        check("版本：1.5.0 不满足 >=1.7.0", !PluginVersion.satisfies(">=1.7.0", "1.5.0"))
+        check("版本：1.9.0 满足 ^1.5.0", PluginVersion.satisfies("^1.5.0", "1.9.0"))
+        check("版本：2.0.0 不满足 ^1.5.0", !PluginVersion.satisfies("^1.5.0", "2.0.0"))
+        check("版本：1.5.9 满足 ~1.5.0", PluginVersion.satisfies("~1.5.0", "1.5.9"))
+        check("版本：1.6.0 不满足 ~1.5.0", !PluginVersion.satisfies("~1.5.0", "1.6.0"))
+        check("版本：精确匹配", PluginVersion.satisfies("1.5.0", "1.5.0"))
+        check("版本：精确不匹配", !PluginVersion.satisfies("1.5.0", "1.5.1"))
+        check("版本：v1.5.0-172 按 1.5.0 比", PluginVersion.satisfies(">=1.5.0", "v1.5.0-172"))
+        check("版本：看不懂的要求返回 false", !PluginVersion.satisfies("很久以前", "1.5.0"))
+
+        // ---------------------------------------------------------- manifest 校验
+        fun rejects(name: String, json: String, want: String): Boolean {
+            val err = runCatching { PluginManifestParser.parse(json) }.exceptionOrNull()
+            val msg = err?.message ?: ""
+            val ok = err is PluginException && msg.contains(want)
+            check(name, ok, msg.ifBlank { "没有报错" })
+            return ok
+        }
+
+        fun manifest(
+            id: String = "demo_plug",
+            tools: String = """[{"name":"echo","title":"回声","description":"原样返回","file":"tools/echo.js"}]""",
+            http: String? = null,
+            requires: String? = null
+        ): String = buildString {
+            append("""{"id":"$id","name":"示例插件","version":"1.0.0","description":"测试用",""")
+            append(""""settings":[{"key":"greeting","type":"string","title":"问候语","default":"hi"}],""")
+            append(""""tools":$tools""")
+            if (http != null) append(""","http":$http""")
+            if (requires != null) append(""","requires":$requires""")
+            append("}")
+        }
+
+        rejects("manifest：id 大写被拒", manifest(id = "Demo"), "不合法")
+        rejects("manifest：工具名带横线被拒",
+            manifest(tools = """[{"name":"bad-name","description":"x","file":"tools/echo.js"}]"""), "不合法")
+        rejects("manifest：脚本不在 tools/ 被拒",
+            manifest(tools = """[{"name":"echo","description":"x","file":"api/echo.js"}]"""), "tools/")
+        rejects("manifest：脚本路径带 .. 被拒",
+            manifest(tools = """[{"name":"echo","description":"x","file":"tools/../x.js"}]"""), "..")
+        rejects("manifest：工具缺说明被拒",
+            manifest(tools = """[{"name":"echo","title":"t","file":"tools/echo.js"}]"""), "description")
+        rejects("manifest：占用 /mcp 被拒",
+            manifest(http = """{"routes":[{"path":"/mcp/x","handler":"api/x.js"}]}"""), "/mcp")
+        rejects("manifest：占用 /api 被拒",
+            manifest(http = """{"routes":[{"path":"/api/extra","handler":"api/x.js"}]}"""), "/api")
+        rejects("manifest：路由 handler 不在 api/ 被拒",
+            manifest(http = """{"routes":[{"path":"/v1/models","handler":"tools/x.js"}]}"""), "api/")
+        rejects("manifest：lan + auth none 被拒",
+            manifest(http = """{"bind":"lan","routes":[{"path":"/v1/x","handler":"api/x.js","auth":"none"}]}"""),
+            "谁都能调")
+        rejects("manifest：版本要求写法不认识被拒",
+            manifest(requires = """{"mcpbox":"最新版"}"""), "看不懂")
+
+        // ---------------------------------------------------------- 安装
+        val stage = File(root, "plugin-src")
+        File(stage, "tools").mkdirs()
+        File(stage, "api").mkdirs()
+        File(stage, "tools/echo.js").writeText("export default { async run(ctx) { return 'ok' } }")
+        File(stage, "api/models.js").writeText("export default async function (ctx, req) { return 1 }")
+        File(stage, "plugin.json").writeText(
+            manifest(http = """{"routes":[{"path":"/v1/models","handler":"api/models.js","methods":["GET"]}]}""")
+        )
+
+        val pluginDir = File(root, "plugins-54")
+        val store = PluginStore(pluginDir)
+        check("插件：一开始是空的", store.plugins.isEmpty())
+
+        val installed = store.install(stage)
+        check("插件：安装成功", installed.id == "demo_plug" && installed.usable, installed.error ?: "")
+        check("插件：装完出现在列表里", store.plugins.size == 1)
+        check("插件：默认是启用的", installed.enabled)
+        check("插件：设置默认值能读出来",
+            store.settingValues("demo_plug")["greeting"]?.toString() == "\"hi\"",
+            store.settingValues("demo_plug").toString())
+        check("插件：data/ 和 logs/ 建好了",
+            File(installed.dir, "data").isDirectory && File(installed.dir, "logs").isDirectory)
+
+        check("插件：装的时候会生成 Key",
+            store.keyOf("demo_plug").orEmpty().isNotBlank(), store.keyOf("demo_plug") ?: "")
+        val firstKey = store.keyOf("demo_plug").orEmpty()
+        val rotated = store.rotateKey("demo_plug")
+        check("插件：换 Key 后变了", rotated != firstKey && store.keyOf("demo_plug") == rotated)
+
+        // 重复安装不带 replace 要拒绝
+        val dup = runCatching { store.install(stage, replace = false) }.exceptionOrNull()
+        check("插件：同 id 再装会被拒", dup is PluginException && dup.message!!.contains("已经装了"),
+            dup?.message ?: "没报错")
+
+        // 版本要求不满足：装的时候直接拒绝
+        val vStore = PluginStore(File(root, "plugins-ver"), appVersion = "1.5.0")
+        val verStage = File(root, "plugin-ver-src")
+        File(verStage, "tools").mkdirs()
+        File(verStage, "tools/echo.js").writeText("x")
+        File(verStage, "plugin.json").writeText(manifest(requires = """{"mcpbox":">=9.0.0"}"""))
+        val verErr = runCatching { vStore.install(verStage) }.exceptionOrNull()
+        check("插件：版本不满足时拒绝安装",
+            verErr is PluginException && verErr.message!!.contains(">=9.0.0"),
+            verErr?.message ?: "没报错")
+
+        // 手工塞进目录、版本不满足 → load 之后是「不兼容」，不产生工具
+        val manual = File(root, "plugins-manual")
+        val manualDir = File(manual, "demo_plug")
+        File(manualDir, "tools").mkdirs()
+        File(manualDir, "tools/echo.js").writeText("x")
+        File(manualDir, "plugin.json").writeText(manifest(requires = """{"mcpbox":">=9.0.0"}"""))
+        val incompat = PluginStore(manual, appVersion = "1.5.0")
+        val ip = incompat.plugins.firstOrNull()
+        check("插件：版本不兼容的留在列表里", ip != null && ip.incompatible, ip?.requirementError ?: "null")
+        check("插件：不兼容的不算生效", ip != null && !ip.active && ip.tools().isEmpty())
+
+        // 坏目录（没有 plugin.json）
+        val brokenRoot = File(root, "plugins-broken")
+        File(brokenRoot, "oops").mkdirs()
+        val broken = PluginStore(brokenRoot)
+        check("插件：坏目录带错误但还在列表里",
+            broken.plugins.size == 1 && broken.plugins[0].error != null,
+            broken.plugins.firstOrNull()?.error ?: "null")
+
+        // 目录名和 id 不一致
+        val mismatchRoot = File(root, "plugins-mismatch")
+        val mmDir = File(mismatchRoot, "wrong_name")
+        File(mmDir, "tools").mkdirs()
+        File(mmDir, "tools/echo.js").writeText("x")
+        File(mmDir, "plugin.json").writeText(manifest())
+        val mm = PluginStore(mismatchRoot)
+        check("插件：目录名和 id 不一致会报错",
+            mm.plugins.firstOrNull()?.error?.contains("不一致") == true,
+            mm.plugins.firstOrNull()?.error ?: "null")
+
+        // ---------------------------------------------------------- 注册成 MCP 工具
+        val settings54 = MemorySettings()
+        settings54.putInt(Config.Keys.PORT, 18740)
+        settings54.putString(Config.Keys.TOKEN, "plugintoken")
+        settings54.putBoolean(Config.Keys.TOKEN_ENABLED, true)
+        settings54.putString(Config.Keys.ROOTS, root.absolutePath)
+        settings54.putLong(Config.Keys.APPROVAL_TIMEOUT, 5000)
+
+        val cfg54 = Config(settings54)
+        val perms54 = PermissionStore(cfg54, settings54)
+        val appr54 = ApprovalCenter(cfg54, perms54, EventLog())
+        val scripted54 = java.util.concurrent.ConcurrentHashMap<String, ApprovalDecision>()
+        appr54.headlessResolver = { req ->
+            val hay = listOfNotNull(req.command, req.summary, req.path).joinToString(" | ")
+            val hit = scripted54.entries.firstOrNull { hay.contains(it.key) }
+            if (hit != null) hit.value else ApprovalDecision.DENY_ONCE
+        }
+        val fake54 = FakePluginRuntime()
+
+        val srv54 = McpServer(
+            config = cfg54,
+            customTools = CustomToolStore(cfg54, settings54),
+            permissions = perms54,
+            approval = appr54,
+            log = EventLog(),
+            host = null,
+            packs = PackStore(settings54),
+            profiles = ProfileStore(null, cfg54),
+            plugins = store,
+            pluginRuntime = fake54
+        )
+        // 默认包集：内置全开 + 我的工具，但**不含插件包**
+        srv54.profiles.setActive(
+            ProfileStore.DEFAULT_ID, BuiltinPacks.ALL.map { it.id } + ToolPack.MY_TOOLS_ID
+        )
+        check("插件：服务器起得来", srv54.start(), srv54.lastError ?: "")
+
+        val b54 = "http://127.0.0.1:18740"
+        val a54 = mapOf("Authorization" to "Bearer plugintoken")
+
+        fun rpc54(method: String, params: String = "{}"): String = http(
+            "POST", "$b54/mcp",
+            """{"jsonrpc":"2.0","id":1,"method":"$method","params":$params}""", a54
+        ).body
+
+        fun toolText54(name: String, args: String): Pair<Boolean, String> {
+            val body = rpc54("tools/call", """{"name":"$name","arguments":$args}""")
+            val o = J.parseToJsonElement(body).jsonObject
+            o["error"]?.let { return false to "rpc error: $it" }
+            val res = o["result"]!!.jsonObject
+            val txt = res["content"]!!.jsonArray
+                .mapNotNull { it.jsonObject["text"]?.jsonPrimitive?.content }
+                .joinToString("\n")
+            return (res["isError"]?.jsonPrimitive?.content != "true") to txt
+        }
+
+        // 插件包存在、默认不激活、里面有工具
+        val pack54 = srv54.packs.all().firstOrNull { it.id == "plugin.demo_plug" }
+        check("插件：生成了工具包 plugin.demo_plug", pack54 != null, pack54?.id ?: "null")
+        check("插件：插件包默认不激活", pack54 != null && !pack54.defaultActive)
+        check("插件：插件包里有工具",
+            pack54?.tools == listOf("demo_plug__echo"), pack54?.tools?.toString() ?: "")
+        check("插件：工具名是 <id>__<name>",
+            srv54.tools.any { it.name == "demo_plug__echo" })
+
+        // 没激活包 → tools/list 看不到，但直接调还是能过（包只管可见性）
+        check("插件：没激活时 tools/list 看不到",
+            !toolNamesIn(rpc54("tools/list")).contains("demo_plug__echo"))
+
+        fake54.results["tools/echo.js"] = "hello-from-plugin"
+        val (okCall, callText) = toolText54("demo_plug__echo", """{"text":"x"}""")
+        check("插件：直接调用能跑（不受包可见性限制）", okCall, callText)
+        check("插件：返回值原样交给 AI", callText == "hello-from-plugin", callText)
+        check("插件：引擎收到脚本名", fake54.calls.lastOrNull()?.scriptName == "tools/echo.js")
+        check("插件：参数里补上了默认值（没有默认值就不补）",
+            fake54.calls.lastOrNull()?.args == """{"text":"x"}""", fake54.calls.lastOrNull()?.args ?: "")
+
+        // 激活包 → tools/list 看得到
+        srv54.profiles.setActive(
+            ProfileStore.DEFAULT_ID,
+            BuiltinPacks.ALL.map { it.id } + ToolPack.MY_TOOLS_ID + "plugin.demo_plug"
+        )
+        check("插件：激活包后 tools/list 看得到",
+            toolNamesIn(rpc54("tools/list")).contains("demo_plug__echo"))
+
+        // ---------------------------------------------------------- host API
+        // 相对路径写 data/：不审批
+        fake54.onRun = { _, host ->
+            host.fsWrite("note.txt", "hello-data")
+            host.fsRead("note.txt") ?: ""
+        }
+        val (okData, dataText) = toolText54("demo_plug__echo", "{}")
+        check("插件：相对路径写进 data/", okData && dataText == "hello-data", dataText)
+        check("插件：文件真的落在 data/ 里",
+            File(store.dataDir("demo_plug"), "note.txt").readText() == "hello-data")
+
+        // 相对路径逃不出 data/
+        fake54.onRun = { _, host -> host.fsRead("../../etc/passwd") }
+        val (okEscape, escapeText) = toolText54("demo_plug__echo", "{}")
+        check("插件：相对路径逃不出 data/", !okEscape && escapeText.contains("只能访问插件自己的数据目录"),
+            escapeText)
+
+        // settings：读默认值、写进去
+        fake54.onRun = { _, host ->
+            val before = host.settingsGet("greeting")?.toString()
+            host.settingsSet("greeting", JsonPrimitive("你好"))
+            val after = host.settingsGet("greeting")?.toString()
+            "$before -> $after"
+        }
+        val (okSet, setText) = toolText54("demo_plug__echo", "{}")
+        check("插件：ctx.settings 读默认值、写进去", okSet && setText == "\"hi\" -> \"你好\"", setText)
+        check("插件：设置落进 config.json",
+            store.byId("demo_plug")?.config?.getString("greeting") == "你好")
+
+        // 写没声明的设置项 → 报错
+        fake54.onRun = { _, host ->
+            host.settingsSet("nope", JsonPrimitive(1))
+            "写进去了（不应该发生）"
+        }
+        val (okBadSet, badSetText) = toolText54("demo_plug__echo", "{}")
+        check("插件：写没声明的设置项被拒", !okBadSet && badSetText.contains("没有叫"), badSetText)
+
+        // 日志
+        fake54.onRun = { _, host -> host.log("info", "来自脚本的日志"); "done" }
+        toolText54("demo_plug__echo", "{}")
+        check("插件：ctx.log 写进 logs/plugin.log",
+            store.logFile("demo_plug").let { it.isFile && it.readText().contains("来自脚本的日志") })
+
+        // 网络：P1 明确报「还不支持」
+        fake54.onRun = { _, host -> host.httpRequest("GET", "https://example.com", emptyMap(), null).body }
+        val (okNet, netText) = toolText54("demo_plug__echo", "{}")
+        check("插件：网络访问在 P1 明确报不支持", !okNet && netText.contains("还不支持网络访问"), netText)
+
+        // ---------------------------------------------------------- 审批（脚本调 shell）
+        fake54.onRun = { _, host ->
+            host.shellRun("echo plugin-hello-54", null, 10_000).stdout.trim()
+        }
+        scripted54["echo plugin-hello-54"] = ApprovalDecision.ALLOW_ONCE
+        val (okSh, shText) = toolText54("demo_plug__echo", "{}")
+        check("插件：脚本调 shell 会过审批并执行", okSh && shText == "plugin-hello-54", shText)
+
+        scripted54["echo plugin-hello-54"] = ApprovalDecision.DENY_ONCE
+        val (okDeny, denyText) = toolText54("demo_plug__echo", "{}")
+        check("插件：审批拒绝后工具报错", !okDeny && denyText.contains("拒绝"), denyText)
+
+        // ---------------------------------------------------------- 错误路径
+        fake54.onRun = null
+        fake54.fail("tools/echo.js", "脚本里抛了异常")
+        val (okFail, failText) = toolText54("demo_plug__echo", "{}")
+        check("插件：脚本抛异常转成工具错误", !okFail && failText.contains("脚本里抛了异常"), failText)
+
+        fake54.failures.clear()
+        fake54.timeout("tools/echo.js")
+        val (okTimeout, timeoutText) = toolText54("demo_plug__echo", "{}")
+        check("插件：超时给出可读提示", !okTimeout && timeoutText.contains("执行超时"), timeoutText)
+
+        fake54.failures.clear()
+        fake54.results["tools/echo.js"] = """{"error":"接口返回 500"}"""
+        val (okErrObj, errObjText) = toolText54("demo_plug__echo", "{}")
+        check("插件：返回 {error} 算失败", !okErrObj && errObjText.contains("接口返回 500"), errObjText)
+
+        // 必填参数
+        fake54.results.clear()
+        fake54.onRun = null
+
+        // ---------------------------------------------------------- 停用 / 卸载
+        store.setEnabled("demo_plug", false)
+        check("插件：停用后包消失", srv54.packs.all().none { it.id == "plugin.demo_plug" })
+        check("插件：停用后工具消失", srv54.tools.none { it.name == "demo_plug__echo" })
+        val (okOff, offText) = toolText54("demo_plug__echo", "{}")
+        check("插件：停用后调用报未知工具", !okOff && offText.contains("未知工具"), offText)
+
+        store.setEnabled("demo_plug", true)
+        check("插件：重新启用后工具回来", srv54.tools.any { it.name == "demo_plug__echo" })
+
+        check("插件：卸载成功", store.uninstall("demo_plug"))
+        check("插件：卸载后列表为空", store.plugins.isEmpty())
+        check("插件：卸载后目录没了", !File(pluginDir, "demo_plug").exists())
+        check("插件：卸载后工具消失", srv54.tools.none { it.name == "demo_plug__echo" })
+
+        // ---------------------------------------------------------- 引擎不可用
+        fake54.available = false
+        check("插件：引擎不可用时一个插件工具都不注册", ToolsPlugin.specs(store, fake54).isEmpty())
+        fake54.available = true
+
+        // 重装一次，验证「升级保留设置」
+        val again = store.install(stage)
+        store.setSetting("demo_plug", "greeting", JsonPrimitive("保留我"))
+        val upgraded = store.install(stage)
+        check("插件：升级保留设置",
+            store.settingValues("demo_plug")["greeting"]?.toString() == "\"保留我\"",
+            store.settingValues("demo_plug").toString())
+        check("插件：升级后还是同一个 id", again.id == upgraded.id)
+
+        srv54.stop()
     }
 
     println("\n====================================")

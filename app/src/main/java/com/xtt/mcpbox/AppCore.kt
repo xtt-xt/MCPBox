@@ -16,6 +16,7 @@ import com.xtt.mcpbox.core.McpServer
 import com.xtt.mcpbox.core.MemoryStore
 import com.xtt.mcpbox.core.PackStore
 import com.xtt.mcpbox.core.PermissionStore
+import com.xtt.mcpbox.core.PluginStore
 import com.xtt.mcpbox.core.ProfileStore
 import com.xtt.mcpbox.core.ToolMetaStore
 import com.xtt.mcpbox.core.PathSandbox
@@ -27,6 +28,7 @@ import com.xtt.mcpbox.core.ShellEnv
 import com.xtt.mcpbox.core.StatsStore
 import com.xtt.mcpbox.core.SuLauncher
 import com.xtt.mcpbox.browser.BrowserController
+import com.xtt.mcpbox.plugin.JsPluginRuntime
 import android.content.ComponentCallbacks
 import com.xtt.mcpbox.ui.OverlayApproval
 import com.xtt.mcpbox.ui.OverlayBall
@@ -89,6 +91,9 @@ object AppCore {
         private set
     lateinit var app: Application
         private set
+    /** 插件目录（扫描 / 安装 / 设置 / Key）。 */
+    lateinit var plugins: PluginStore
+        private set
 
     @Volatile private var initialized = false
 
@@ -144,6 +149,11 @@ object AppCore {
             memory = MemoryStore(java.io.File(application.filesDir, "memory")).also { it.ensureLegacyBackup() }
             // 统计也是独立文件：不进 SharedPreferences，所以「重置全部设置」不会把它清掉
             stats = StatsStore(java.io.File(application.filesDir, "stats/stats.json")).also { it.load() }
+            // 插件：一个插件一个目录，manifest / 设置 / Key 都在里面
+            plugins = PluginStore(
+                root = java.io.File(application.filesDir, "plugins"),
+                appVersion = ServerMeta.version
+            )
 
             // 语言：跟随系统时，系统语言不是中文就按英文走
             // 彩蛋语言（猫娘语）是否出现在语言列表里，由开发者模式里的「语言菜单」开关决定
@@ -206,7 +216,9 @@ object AppCore {
                 packs = packs,
                 profiles = profiles,
                 stats = stats,
-                browserBridge = browser
+                browserBridge = browser,
+                plugins = plugins,
+                pluginRuntime = JsPluginRuntime()
             )
             initialized = true
         }

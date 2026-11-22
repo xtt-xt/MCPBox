@@ -1,0 +1,923 @@
+# 12 · Plugin system (design draft)
+
+> Status: **draft, not implemented**. This page defines the plugin package format, runtime,
+> permissions and UI. If the implementation has to deviate, update this page.
+
+A plugin is a directory with a manifest and some scripts. Once installed it can do two things:
+
+- **Tool plugins** give the model MCP tools; every call goes through approval.
+- **Service plugins** expose HTTP routes on the MCPBox port so other programs can connect directly.
+
+---
+
+## 1 Goals and non-goals
+
+### 1.1 Two scenarios that must work first
+
+**A free-model gateway on the phone.** Port the anonymous free channels of the dsh plugin
+`dsh-our-free-model` (OpenCode Zen, the Kilo public gateway) to the phone and expose them as an
+OpenAI-compatible endpoint from a MCPBox plugin. Once enabled, RikkaHub or plain curl can point at
+the local address with a plugin-generated key. Phase one covers anonymous channels only; channels
+that need credentials or GitHub verification come later.
+
+**A file bridge between the desktop and the phone.** The phone-side plugin exposes a file API; a
+separate dsh plugin on the desktop (Node, its own repository) connects to it and renders a sidebar
+panel: browse phone folders, quote files into the conversation, edit and save back, and upload files
+from the desktop to the phone. Traffic goes over the LAN or Tailscale, authenticated with the
+plugin's own key.
+
+These two decide that plugins cannot stay "tools for the model" only; they must be able to serve
+outside programs (section 3).
+
+### 1.2 Capabilities
+
+- One plugin can ship several tools, each with its own parameters
+- Plugins own their settings; tools read them at run time
+- Plugins can register HTTP routes with their own key and streaming responses
+- Plugins can have pages (declarative or HTML)
+- Plugins can inject rows and switches into designated settings pages
+- Plugins can declare the MCPBox version and plugin API version they require
+- Plugins can run in the background: timers, startup hooks, file-change watchers
+- One tool pack per plugin, off by default, so it costs no tokens until activated
+- Compatible with the existing custom tools; `custom_tools.json` migrates cleanly
+
+### 1.3 Non-goals
+
+- Plugins cannot change the app's own UI or navigation
+- No remote code execution without installation
+- Tool calls never bypass approval; no plugin bypasses `PathSandbox`
+- P1 keeps plugins in the app process; isolation is exception capture plus timeouts
+- No WebSocket upgrade; push goes over SSE
+
+---
+
+## 2 Why not just extend custom tools
+
+Custom tools already look like single-tool plugins: name, title, description, parameter list,
+permission key, command template, import/export, `my.tools` pack. What is missing:
+
+| Gap | How plugins fill it |
+|---|---|
+| One command per tool | `plugin.json` declares many tools, one script file each |
+| No own configuration | `settings` declaration + `config.json` + `ctx.settings` |
+| No lifecycle | A directory is the unit: install, disable, upgrade, uninstall |
+| Shell only | `kind` becomes `shell` / `js` / `python` |
+| No UI | Declarative blocks + optional HTML page |
+| Cannot run in background | Scheduler hosted by the foreground service |
+| Cannot serve outside programs | `http.routes` plugged into the existing `HttpServer` |
+
+So custom tools are not replaced. They become `kind: "shell"` tools inside a built-in plugin
+`my.tools`; `create_custom_tool` and friends keep working.
+
+---
+
+## 3 Two kinds of plugins
+
+| | Tool plugin | Service plugin |
+|---|---|---|
+| Consumer | An MCP client calling tools | An outside program over HTTP |
+| Granularity | One tool call | One endpoint |
+| Authorization | `ApprovalCenter` every time | **Install-time grant + plugin key** |
+| Frequency | Low, prompts are fine | High (once per token), prompts infeasible |
+| Examples | Weather lookup, file cleanup | Model gateway, file bridge |
+
+Service plugins skip per-request approval because the requirement makes it impossible to do
+otherwise: a gateway sees one request per token, and a prompt per request means it does not work.
+This is not a relaxation of security; the gate moves — capabilities are shown at install time, and
+a separate key guards the routes afterwards. The built-in SSH service already works this way: the
+only gate is the "allow command execution" switch, not a prompt per command.
+
+A plugin can be both: a file bridge offers AI-callable tools and an HTTP API for the desktop.
+
+---
+
+## 4 Layout
+
+Installed under the app-private `files/plugins/<id>/`:
+
+```
+files/plugins/<id>/
+  plugin.json          required, manifest
+  tools/               optional, tool scripts
+    <tool>.js
+  api/                 optional, HTTP route handlers
+    <handler>.js
+  web/                 optional, plugin pages and assets
+    index.html
+  data/                writable at run time
+  logs/                ring buffer, 500 entries max
+```
+
+- A plugin id never changes; changing it means a different plugin.
+- Anything outside the plugin directory is reachable only through `ctx.fs`, still bound by
+  `PathSandbox` and the permission matrix.
+- `data/` is the only directory a plugin may write by default.
+
+---
+
+## 5 plugin.json
+
+### 5.1 Top-level fields
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `id` | string | yes | `[a-z][a-z0-9_]{1,31}`, globally unique |
+| `name` | string | yes | Display name, up to 40 chars |
+| `version` | string | yes | `1.0.0`-style, used for upgrades |
+| `author` | string | no | |
+| `description` | string | yes | One line for the list, up to 200 chars |
+| `homepage` | string | no | |
+| `permissions` | string[] | no | Declared capabilities, see section 12 |
+| `settings` | object[] | no | See 5.2 |
+| `tools` | object[] | no | See 5.3 |
+| `http` | object | no | Routes and key, see 5.4 |
+| `ui` | object | no | See section 10 |
+| `background` | object | no | See section 11 |
+| `requires` | object | no | Version requirements, see 5.5 |
+
+### 5.2 settings
+
+```json
+{ "key": "api_base", "type": "string", "title": "API base",
+  "description": "No trailing slash", "default": "https://api.example.com" }
+```
+
+| type | Control | Stored as |
+|---|---|---|
+| `string` | text field | string |
+| `secret` | masked field with reveal | string, excluded from export |
+| `integer` | number field | integer |
+| `number` | number field | decimal |
+| `boolean` | switch | boolean |
+| `enum` | dropdown | string, must be one of `options` |
+
+`key` matches `[a-z][a-z0-9_]*`. The app renders these as native controls; plugin authors write no
+UI. Values live in `config.json` and are writable from the plugin page or `ctx.settings.set`.
+
+### 5.3 tools
+
+```json
+{
+  "name": "forecast",
+  "title": "Weather forecast",
+  "description": "Look up the forecast for a city. Tell the model when to use it.",
+  "file": "tools/forecast.js",
+  "timeoutMs": 20000,
+  "params": [
+    { "name": "city", "type": "string", "required": true, "description": "City name" },
+    { "name": "days", "type": "integer", "default": "3", "description": "1-7" }
+  ]
+}
+```
+
+- `name` is unique within the plugin, `[a-z][a-z0-9_]{0,40}`.
+- The registered name is `<pluginId>__<name>`, max 64 chars; a collision fails the install.
+- Param types: `string` / `integer` / `number` / `boolean` / `enum` (with `options`).
+- `timeoutMs` defaults to 30000, capped at 300000.
+- Permissions are not fixed per tool; they follow the host API the script calls. The per-tool
+  ALLOW / ASK / DENY override still applies.
+
+### 5.4 http
+
+```json
+"http": {
+  "enabledByDefault": false,
+  "bind": "loopback",
+  "routes": [
+    { "path": "/v1/models",           "handler": "api.models", "methods": ["GET"],  "auth": "key" },
+    { "path": "/v1/chat/completions", "handler": "api.chat",   "methods": ["POST"], "auth": "key", "stream": true }
+  ],
+  "key": { "label": "API Key", "prefix": "sk-" }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `bind` | `loopback` (127.0.0.1 only, default) / `lan` (0.0.0.0, warned about at install) |
+| `routes[].path` | Must start with `/`; prefix matched, longest wins |
+| `routes[].auth` | `key` (plugin key) / `none` (only allowed on loopback) |
+| `routes[].stream` | Whether the route may upgrade to a chunked stream |
+| `key.prefix` | Prefix for generated keys, so users can recognise them (`sk-`) |
+
+**Reserved prefixes.** Plugins may not occupy these; the install fails on a conflict:
+
+```
+/mcp  /sse  /messages  /api/*  /web  /upload  /download  /console
+```
+
+Any other root-level prefix is fine, including `/v1/*` — MCPBox does not use it, so clients get the
+standard base URL `http://127.0.0.1:8720/v1`.
+
+### 5.5 requires
+
+```json
+"requires": { "mcpbox": ">=1.7.0", "api": 1 }
+```
+
+| Field | Meaning |
+|---|---|
+| `mcpbox` | Required MCPBox version, compared semantically against versionName |
+| `api` | Plugin API version the plugin is written against (integer) |
+
+`mcpbox` accepts `>=1.7.0`, `^1.7.0` (same major), `~1.7.0` (same minor) and an exact `1.7.0`.
+Omitting `requires` means no constraint, for compatibility with early plugins.
+
+| When | If not satisfied |
+|---|---|
+| Install | Refused, stating "requires MCPBox 1.7.0 or newer, current 1.5.0" |
+| After an app upgrade | The plugin becomes **incompatible**: disabled, routes closed, marked amber in the list with the requirement in the subtitle; **data is kept** |
+| After an app downgrade | Same |
+| Plugin `api` outside what the app supports | Same, subtitle says the plugin API version is incompatible |
+
+Compare versionName (`1.5.0`), never versionCode — the latter is a monotonic build counter that is
+not comparable across branches. The app side parses the release part out of `ServerMeta.fullVersion`.
+
+### 5.6 Full example (tool plugin)
+
+```json
+{
+  "id": "hello_weather",
+  "name": "Weather helper",
+  "version": "1.0.0",
+  "author": "example",
+  "description": "Look up weather by city and keep recent lookups in its data directory.",
+  "permissions": ["network", "fs.read", "fs.write"],
+  "settings": [
+    { "key": "api_base", "type": "string", "title": "API base", "default": "https://api.example.com" },
+    { "key": "api_key", "type": "secret", "title": "API key" },
+    { "key": "units", "type": "enum", "title": "Units", "options": ["metric", "imperial"], "default": "metric" }
+  ],
+  "tools": [
+    {
+      "name": "forecast",
+      "title": "Weather forecast",
+      "description": "Look up the forecast for a city.",
+      "file": "tools/forecast.js",
+      "params": [
+        { "name": "city", "type": "string", "required": true, "description": "City name" },
+        { "name": "days", "type": "integer", "default": "3" }
+      ]
+    }
+  ],
+  "ui": {
+    "pages": [
+      { "id": "main", "title": "Weather", "blocks": [
+        { "type": "section", "title": "Setup", "text": "Fill in the API base and key above." }
+      ] }
+    ]
+  },
+  "background": { "interval": "30m", "events": ["startup"] }
+}
+```
+
+### 5.7 Full example (service plugin)
+
+```json
+{
+  "id": "free_gateway",
+  "name": "Free model gateway",
+  "version": "0.1.0",
+  "description": "Turns the anonymous free model channels into a local OpenAI-compatible endpoint.",
+  "permissions": ["network", "http.serve"],
+  "settings": [
+    { "key": "default_model", "type": "string", "title": "Default model", "default": "deepseek-v4-flash" },
+    { "key": "probe_minutes", "type": "integer", "title": "Channel probe interval (minutes)", "default": "30" }
+  ],
+  "http": {
+    "enabledByDefault": false,
+    "bind": "loopback",
+    "routes": [
+      { "path": "/v1/models",           "handler": "api.models", "methods": ["GET"],  "auth": "key" },
+      { "path": "/v1/chat/completions", "handler": "api.chat",   "methods": ["POST"], "auth": "key", "stream": true }
+    ],
+    "key": { "label": "API Key", "prefix": "sk-" }
+  }
+}
+```
+
+---
+
+## 6 Runtime
+
+### 6.1 Layers
+
+```
+mcpcore
+  PluginManifest.kt   parse and validate plugin.json
+  PluginStore.kt      scan / install / disable / uninstall / migrate
+  PluginRuntime.kt    interface: eval(code, ctx) -> JSON
+  PluginHost.kt       ctx implementation over tools / files / shell
+  PluginRouter.kt     route table and dispatch, ahead of McpServer.dispatch
+app
+  JsPluginRuntime     quickjs-kt
+  PyPluginRuntime     Chaquopy (later)
+harness
+  FakePluginRuntime   records calls, returns canned results
+```
+
+`mcpcore` keeps no Android dependency; engines are injected by the app. The harness drives
+install → register → call → approve → uninstall with the fake runtime and tests manifest validation
+and migration separately.
+
+### 6.2 Script contract
+
+Tool scripts default-export an object:
+
+```js
+export default {
+  async run(ctx) {
+    const base = ctx.settings.get("api_base")
+    const res = await ctx.http.get(`${base}/v1/forecast?city=${encodeURIComponent(ctx.args.city)}`)
+    if (res.status !== 200) return { error: `HTTP ${res.status}` }
+    return (await res.json()).days.map(d => `${d.date}  ${d.low}~${d.high}`).join("\n")
+  }
+}
+```
+
+Route scripts export a handler:
+
+```js
+// api/chat.js
+export default async function (ctx, req) {
+  const body = await req.json()
+  const upstream = await ctx.http.post("https://upstream.example/v1/chat/completions", {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  })
+  if (body.stream) {
+    for await (const chunk of upstream.sse()) ctx.sse.write(chunk)
+    return ctx.sse.close()
+  }
+  return req.respond(200, "application/json", await upstream.text())
+}
+```
+
+- Return a string for the tool result, `{ error }` for failure; routes use `req.respond` or `ctx.sse`.
+- Thrown exceptions become error responses; the server survives.
+- No cross-file `import` at first; `lib/` relative imports come later.
+
+### 6.3 host API
+
+| API | Notes | Permission |
+|---|---|---|
+| `ctx.args` | Parameters with defaults applied | — |
+| `ctx.settings.get/set` | Plugin settings; writes are not approved | — |
+| `ctx.fs.read/write/list/remove` | Paths go through `PathSandbox` | `fs.read` / `fs.write` / `fs.delete` |
+| `ctx.shell.run(command, { cwd, timeoutMs })` | Reuses the three backends | `shell.exec` |
+| `ctx.http.get/post/fetch` | http/https; returns `{ status, headers, text(), json(), sse() }` | `network` |
+| `ctx.sse.write/comment/close` | Route scripts only; wraps `Exchange.openSse` | `http.serve` |
+| `ctx.tools.call(name, args)` | Calls any existing tool through its own permissions | Target tool decides |
+| `ctx.log(level, message)` | Plugin log | — |
+| `ctx.plugin` | `{ id, version, dataDir }` | — |
+
+`req` in route scripts:
+
+| Member | Notes |
+|---|---|
+| `req.method` / `req.path` / `req.query` / `req.headers` | Request info |
+| `req.bodyText()` / `req.json()` | Body, read fully via Content-Length or chunked |
+| `req.remote` | Remote address, used for the loopback check |
+| `req.respond(status, contentType, body)` | One-shot response |
+| `ctx.sse` | Streaming, see 8.3 |
+
+### 6.4 Limits
+
+| Item | Value |
+|---|---|
+| Tool call timeout | Tool-declared, 30s default, 5min cap |
+| Route request timeout | 120s (streams measured by idle time) |
+| Concurrency | One tool task per plugin; route requests on a thread pool, queue of 8 |
+| Memory | Engine default; quickjs-kt memory cap to be verified |
+| Logs | 500-entry ring buffer per plugin |
+| Outbound | http/https only; LAN addresses blocked by default |
+
+---
+
+## 7 Tool registration and packs
+
+- Plugin tools are appended after `McpServer.builtinTools`, in the same place as custom tools
+  (regenerated per request, so changes take effect immediately).
+- Each plugin gets a pack:
+
+```kotlin
+ToolPack(
+    id = "plugin.<id>",
+    title = "Plugin · <name>",
+    description = "<plugin description>",
+    tools = allToolNamesOfPlugin,
+    builtin = true,
+    defaultActive = false
+)
+```
+
+- Off by default, so it adds nothing to the default token budget.
+- Disabling a plugin removes its tools from the registry, its pack from the list, and closes its routes.
+- `tools/call` matches built-in behaviour: no pack filtering, the permission matrix is the gate.
+- Plugins with routes but no tools get no pack; they only appear in the plugin list.
+
+---
+
+## 8 Service plugins: routes, keys and streaming
+
+### 8.1 Dispatch order
+
+`McpServer.dispatch` currently runs "local only → web password → routes". Plugin routes slot in
+after the last step:
+
+```
+1. Built-in routes (/mcp, /sse, /api/*, /web, /upload, /download, /console)
+2. Plugin routes (declared prefixes, longest match wins)
+3. 404
+```
+
+Plugin routes **do not** go through MCPBox's token check (`checkAuth`); they use the plugin key.
+Clients fill in an `sk-...` API key, not a MCPBox access token — the two credential types stay
+separate.
+
+### 8.2 Plugin key
+
+- Each service plugin gets its own key, generated on first enable; copy, rotate and disable from
+  the plugin page.
+- Stored as `__key` in `config.json`, not rendered as a setting, masked in the list.
+- Accepted as `Authorization: Bearer <key>` or `X-API-Key`.
+- A bad key returns 401 with a short JSON error that leaks nothing about the plugin.
+- Rotation invalidates the old key immediately; the page states that connected clients must refill it.
+
+### 8.3 Streaming
+
+`HttpServer` already has `Exchange.openSse()`: chunked, `text/event-stream`, `data:` per frame and
+`comment()` for keepalives. That is exactly the shape of OpenAI streaming, so the HTTP layer needs
+no change; only the writer is exposed to scripts:
+
+```js
+for await (const chunk of upstream.sse()) {
+  ctx.sse.write(chunk)     // forward "data: {...}" frames as-is
+}
+ctx.sse.comment("ping")    // keepalive while the upstream is silent
+ctx.sse.close()
+```
+
+- `ctx.sse.write` returns false when the client is gone; the script should stop and release upstream.
+- Requests without `stream: true` use a one-shot `respond`.
+- Scripts without `for await` can split lines and call `write` per frame.
+
+### 8.4 Long connections and events
+
+- No WebSocket upgrade; push is always SSE (server to client) plus plain POST (client to server).
+- Connection counting and cleanup live in `PluginRouter`; disabling the plugin or stopping the
+  service closes everything.
+- 16 concurrent SSE connections per plugin; more returns 429.
+
+### 8.5 Bind scope
+
+| Value | Binds | Notes |
+|---|---|---|
+| `loopback` | `127.0.0.1` | Default; only clients on the phone |
+| `lan` | `0.0.0.0` | Reachable on the LAN; both install and enable warn that anyone on the network with the key can use it |
+
+The global listen address stays a MCPBox setting; plugins cannot change it. This field only decides
+whether plugin routes accept non-local requests — with `loopback` even a globally bound server
+rejects anything not from 127.0.0.1.
+
+---
+
+## 9 Settings and storage
+
+```
+files/plugins/<id>/config.json   settings + __key
+files/plugins/<id>/data/         plugin data, relative root for ctx.fs
+files/plugins/<id>/logs/plugin.log
+```
+
+- `config.json` is written atomically (temp file + rename).
+- Setting changes apply immediately; the next `ctx.settings.get` sees them, no reload.
+- Exporting a plugin can include `config.json`; `secret` fields and `__key` are stripped by default.
+- Backups gain a Plugins part: manifest + config + `data/`, no scripts or logs.
+
+---
+
+## 10 Plugin pages
+
+### 10.1 Declarative (first)
+
+`ui.pages[].blocks` is rendered with native Compose, so it follows theme and font size:
+
+| block | Purpose |
+|---|---|
+| `section` | Title plus text |
+| `text` | A rounded text box, multi-line, optionally monospace |
+| `fields` | Form that calls an action on submit |
+| `button` | Button, with confirmation for destructive actions |
+| `list` | List fed by an action |
+| `key` | Show the plugin key: copy, rotate, reveal |
+| `status` | Rows of status, e.g. per-channel availability |
+| `progress` | Progress for long operations |
+| `log` | Tail of the plugin log |
+
+Actions are exported by the script:
+
+```js
+export const actions = {
+  async refresh(ctx) {
+    return { blocks: [{ type: "status", items: [{ label: "OpenCode Zen", value: "available" }] }] }
+  }
+}
+```
+
+The returned blocks replace the page in place. No WebView involved.
+
+### 10.2 HTML (later)
+
+With `ui.web = "web/index.html"`, the Page button opens a dedicated WebView:
+
+- Only assets inside the plugin directory load; external links go to the system browser.
+- A narrow bridge is injected:
+
+```js
+const r = await window.mcpbox.invoke("refresh")
+await window.mcpbox.tool("free_gateway__status", {})
+```
+
+- The bridge exposes only `invoke` (plugin actions) and `tool` (tool calls, still approved).
+- This is separate from the built-in AI browser: no shared cookies or pages.
+
+### 10.3 Slots (injecting into settings pages)
+
+A plugin can inject a group of rows into a designated place in the settings tree. Content is
+declarative and rendered with the existing `CardGroup` / `RowSpec`, so theme, dynamic colour, font
+size, ripples and backdrop transparency all come out right automatically.
+
+```json
+"ui": {
+  "slots": [
+    {
+      "anchor": "settings/network#console",
+      "place": "after",
+      "rows": [
+        { "type": "row", "title": "Gateway status", "subtitle": "8 models available", "action": "status", "page": "dashboard" },
+        { "type": "switch", "setting": "enabled", "title": "Serve to other apps" },
+        { "type": "text", "text": "Copy the key on the Plugins page before first use." }
+      ]
+    }
+  ]
+}
+```
+
+**Anchors.** Page level is `settings/<page>`, section level is `settings/<page>#<section>`:
+
+| Anchor | Location |
+|---|---|
+| `settings/appearance` | Appearance & language |
+| `settings/appearance#theme` / `#language` / `#interaction` | Theme / language / interaction |
+| `settings/appearance/wallpaper` | Backdrop |
+| `settings/appearance/bars` | Top and bottom bars |
+| `settings/appearance/ball` / `#icon` / `#langpack` | Floating ball / icon / language packs |
+| `settings/network` | Network & access |
+| `settings/network#network` / `#console` | Network / web console |
+| `settings/browser` | Browser |
+| `settings/browser#security` / `#page` / `#search` / `#identity` | Security / pages / search / identity |
+| `settings/background` / `backup` / `stats` / `about` | Same-named pages |
+
+Section ids are registered in code as a constant table; adding a settings page or section means
+registering one there, otherwise plugins cannot reach it.
+
+**Anchors plugins may not use.**
+
+- `settings/tools` (tools) and `settings/memory` (memory store) — the whole page is excluded
+- The onboarding flow (not part of the settings tree)
+- The easter-egg / developer-mode section of About is technically open, but injecting there breaks
+  the point of hiding it; the install preview warns about that
+
+**Slot-only blocks.**
+
+| block | Meaning |
+|---|---|
+| `row` | One row: title, subtitle, action |
+| `switch` | A switch bound to one of the plugin's own boolean settings via `setting` |
+| `text` | A block of text |
+
+`row` actions:
+
+| Action | Effect |
+|---|---|
+| `page` | Open one of the plugin's own pages |
+| `action` | Run one of the plugin's actions, with progress |
+| `copy` | Copy a piece of text (gateway URL, key, ...) |
+
+**Grouping.**
+
+- At most one group per plugin per anchor.
+- **Own group by default**: a new `CardGroup` right after the section, labelled "Plugin · <name>",
+  so disabling the plugin removes the group cleanly.
+- An `OutlineTag` marking "Plugin" in the group label is allowed, so the source is obvious.
+
+**Switches must show their origin.** A plugin cannot inject a switch that changes app behaviour —
+every switch on a settings page currently maps to a real config key, and mixing in plugin switches
+makes it impossible to tell which one is real. `switch` may only bind the plugin's own boolean
+setting; the subtitle is prefixed with "Plugin setting · " and the group label carries the name.
+
+**Refresh.** Slot content is dynamic (action results change), so `revision` alone is not enough:
+`PluginHost` keeps a `pluginRev` per plugin, incremented after each action, and plugin rows use it
+as their `remember` key.
+
+**Three engineering traps every settings page with slots must handle.**
+
+1. **Predictive-back preview layer**: `behind` renders a second instance of the previous page. If that
+   page has plugin rows they must be rendered there too, otherwise the drag shows a page without them
+   and they pop in on release. Scroll state has the same problem and must be hoisted to the host
+   (there is already precedent in `SettingsScreen`).
+2. **Scroll position**: row height varies with content; sharing one `ScrollState` between the real
+   page and the preview needs care.
+3. **Backdrop**: rows must use `cardColor(...)`, otherwise they are opaque patches over a custom
+   backdrop.
+
+**Ordering.** Rows are collected per anchor at composition time: first by `place` (before / after),
+then by plugin id, so the order is stable across recompositions.
+
+---
+
+## 11 Background tasks
+
+`McpService` hosts a `PluginScheduler`:
+
+| Source | Declaration | Trigger |
+|---|---|---|
+| Timer | `"interval": "30m"` (`s`/`m`/`h`, min 1m, max 24h) | While the service runs |
+| Startup | `"events": ["startup"]` | Once when the app starts with the plugin enabled |
+| File change | `"events": ["file.changed"]` + `"watch": ["/sdcard/Download"]` | FileObserver; paths must be allowed |
+| After a tool call | `"events": ["tool.called"]` + `"filter": ["write_file"]` | After the named tool succeeds |
+
+```js
+export function onEvent(ctx) {
+  ctx.log("info", `event: ${ctx.event.type}`)
+}
+```
+
+- Same timeout as tools; a timeout counts as a failure.
+- Backoff 1m / 5m / 15m; three consecutive failures disable the plugin and mark it red until the
+  user re-enables it.
+- Timers do not resurrect a killed app process. "Background" means the foreground service runs.
+- File observers exist only while the service runs and are managed by the scheduler.
+
+---
+
+## 12 Permissions
+
+### 12.1 Keys
+
+| Key | New | Default | Covers |
+|---|---|---|---|
+| `fs.read` | no | allow | `ctx.fs.read/list` |
+| `fs.write` | no | ask | `ctx.fs.write`, writes to `data/` |
+| `fs.delete` | no | ask | `ctx.fs.remove` |
+| `shell.exec` | no | ask | `ctx.shell.run` |
+| `network` | **yes** | ask | `ctx.http.*` |
+| `http.serve` | **yes** | granted at install | `http.routes` |
+| `system.info` | no | allow | Read-only device info |
+| `browser.control` | no | ask | Reserved |
+| `ui.control` | no | ask | Reserved |
+
+### 12.2 Tool plugins: per-call approval
+
+Declared `permissions` are an install-time disclosure, not a grant. Every host API call goes through
+`PermissionStore.decide` + `ApprovalCenter`. The prompt names the plugin:
+
+```
+Tool    hello_weather_forecast
+Plugin  Weather helper 1.0.0
+Action  Network access to api.example.com
+```
+
+### 12.3 `network` remembered per host
+
+A prompt per request would make the gateway unusable, so "always allow" on `network` becomes a
+**domain rule** — the same mechanism as command prefix rules (`Rule(type = DOMAIN, match = "host")`):
+
+- Matches the hostname, not the full URL; subdomains are not implied.
+- Wildcards only in prefix form: `*.example.com`.
+- Rules live next to command rules in the permissions page and can be disabled or deleted.
+- Shared by tool calls and route requests, so the gateway asks once and stops.
+
+### 12.4 Service plugins: install grant + key
+
+- `http.serve` has two states, not three: granted when the user enables the plugin, otherwise no routes.
+- Switching to `lan` needs one more confirmation, stating that devices on the same network can use
+  the key.
+- Disabling, rotating the key, or stopping the service closes every open SSE connection.
+
+### 12.5 What plugins cannot do
+
+- No `Context`, `SharedPreferences` or Java classes; only `ctx`.
+- No reflection; Python disables the `java` module.
+- The plugin directory cannot be modified at run time, only through installation.
+- Routes can only answer their declared paths; they cannot forward into built-in routes.
+- A plugin cannot inject a switch that changes app behaviour; `switch` binds only plugin settings.
+- `settings/tools` and `settings/memory` are closed to plugins.
+
+---
+
+## 13 Install, upgrade, uninstall
+
+### 13.1 Install
+
+- Entry: Import in the plugin list, choosing a `.zip` (or `.mcpbox-plugin`, same format).
+- Validation order: zip layout → manifest syntax → fields → reserved path conflicts → tool name
+  collisions → path traversal → size. Nothing is written unless everything passes.
+- Limits: 20MB extracted, 500 files.
+- Preview: name, version, author, description, declared permissions, tool count, and the **routes
+  it will take** (e.g. `/v1/models`, `/v1/chat/completions`). Root-level paths are called out.
+- Newly installed plugins are disabled until the user enables them.
+
+### 13.2 Upgrade
+
+- Version must be higher; "force replace" needs a second confirmation.
+- `config.json` and `data/` survive; scripts are replaced. The key is kept so existing clients keep
+  working.
+- The plugin is disabled after upgrade, so a new version does not silently inherit old grants.
+
+### 13.3 Uninstall
+
+- Confirm, listing the directory to be removed.
+- Optional "keep data": `data/` moves to `files/plugin-data/<id>/` and reattaches on reinstall.
+- Routes and SSE connections close before the directory is deleted.
+- The built-in `my.tools` plugin cannot be uninstalled.
+
+---
+
+## 14 Relationship with custom tools
+
+- On first start, a non-empty `custom_tools.json` becomes the built-in `my.tools` plugin:
+
+```json
+{
+  "id": "my.tools",
+  "name": "My tools",
+  "version": "1.0.0",
+  "builtin": true,
+  "tools": [ { "name": "...", "kind": "shell", "command": "...", "params": [] } ]
+}
+```
+
+- After migration, `create_custom_tool` / `update_custom_tool` keep working by editing that array.
+- `custom_tools.json` stays as a read-only snapshot; the manifest is the source of truth.
+- The custom tools page merges into the plugin page: `my.tools` is a built-in entry whose detail
+  page is the old tool list.
+
+---
+
+## 15 UI
+
+Follows the existing rules: top-level entry plus dedicated subpages, no card piles, no emoji.
+
+```
+Settings
+ └─ Plugins
+     ├─ plugin list (name / version / status dot / tool count / route count)
+     ├─ Import (top right)
+     └─ plugin detail
+         ├─ overview: name, version, author, description, permissions, tools, routes
+         ├─ settings: form generated from the manifest
+         ├─ service: key, bind scope, route switches and request counts
+         ├─ pages: declarative blocks or "Open page"
+         ├─ logs: tail
+         └─ danger zone: disable / uninstall
+```
+
+- Rows are fully clickable, ripples clipped to the shape.
+- Status dot: enabled (primary) / disabled (grey) / error (error colour) / incompatible (warning colour).
+- Incompatible plugins state the requirement in the subtitle ("requires MCPBox 1.7.0 or newer"); opening
+  one shows only the overview and uninstall.
+- The Service section appears only when the plugin has `http.routes`.
+- Long operations show progress and elapsed time.
+- Rows injected into settings pages form their own group labelled with the plugin name; see 10.3.
+
+---
+
+## 16 Design of the two target scenarios
+
+### 16.1 Free model gateway on the phone
+
+**Scope.** Phase one covers anonymous free channels only: the OpenCode Zen gateway and the Kilo AI
+public gateway. Neither needs an account or key. EAC channels (GitHub verification) and account
+channels (provider logins) come later.
+
+**Surface.**
+
+| Route | Method | Notes |
+|---|---|---|
+| `/v1/models` | GET | Currently available models, OpenAI format |
+| `/v1/chat/completions` | POST | Streaming and non-streaming |
+
+Anthropic's `/v1/messages` waits until a client actually needs it.
+
+**Client setup.**
+
+```
+Base URL   http://127.0.0.1:8720/v1
+API Key    sk-<generated by the plugin>
+Model      pick from /v1/models
+```
+
+With `lan` binding, replace `127.0.0.1` with the phone's LAN address.
+
+**Channel probing.** Once at startup, then every `probe_minutes`; results show in `/v1/models` and
+in the plugin page status block. A failed probe does not drop cached models, it only marks that
+channel unavailable.
+
+**Known risks, stated in the plugin description.**
+
+- Anonymous channel availability is controlled upstream and can be rate-limited or withdrawn.
+- Requests pass through a third-party gateway; not suitable for sensitive data.
+- The model set per channel changes; clients must be able to refresh a cached list.
+
+**Porting notes.** The upstream channel adapters are plain JS (build a request, parse SSE) and can
+be moved; what is missing is Node's `fetch` / `http`, which `ctx.http` provides. Account channels
+need credential storage and login flows, hence the separate phase.
+
+### 16.2 File bridge between desktop and phone
+
+Split: the phone side is a MCPBox plugin (provides the API), the desktop side is a separate dsh
+plugin (Node / TypeScript, its own repository) that renders a sidebar panel in dsh. The two talk
+plain HTTP + SSE rather than MCP, so any other tool can use the same API.
+
+**Phone-side routes.**
+
+| Route | Method | Notes |
+|---|---|---|
+| `/x/files/api/list?path=` | GET | Directory listing: name, size, mtime, isDir |
+| `/x/files/api/stat?path=` | GET | Info for one path |
+| `/x/files/api/raw?path=` | GET | Read a file, `Range` supported, images returned as-is |
+| `/x/files/api/raw?path=` | PUT | Write a file (desktop to phone upload) |
+| `/x/files/api/events` | GET | SSE, file change events (create / modify / delete) |
+
+- Path semantics match the MCP tools and still go through `PathSandbox`: only allowed directories.
+- Auth uses the plugin key. With `loopback` the desktop cannot connect, so this plugin defaults to
+  `lan` and requires the "devices on the same network can use the key" confirmation first.
+- SSE events are throttled (the same path merges within 500ms) so large writes do not flood.
+
+**What the desktop panel does.**
+
+- File tree plus preview (text and images).
+- Quote: attach file content to the current conversation.
+- Edit: save back via PUT; on conflict, warn using the phone file's mtime.
+- Upload: drag files from the desktop and PUT them to the phone.
+- Live updates: subscribe to SSE and refresh affected directories.
+
+**Transport.** Direct on the LAN; Tailscale when not on the same network. Public exposure requires
+HTTPS or at least a one-off key — stated in the plugin description, not enabled by default.
+
+**Boundaries against existing features.** A desktop dsh can already connect to
+`http://phone-ip:8720/mcp` as an MCP client and read/write phone files, but that is the model calling
+tools on demand; this panel is about files appearing in the UI. The built-in SSH/SFTP also lets a
+desktop mount the phone directory with no plugin at all; the plugin's extra value is the in-dsh panel
+and live sync.
+
+---
+
+## 17 Phases
+
+| Phase | Content | Acceptance |
+|---|---|---|
+| P1 | Manifest + JS runtime + tool registration + packs + settings | **Done**: a JS plugin installed on a real device; its tools are callable, arguments validate, approvals fire |
+| P2 | HTTP routes + plugin key + streaming + domain permission rules | curl reaches a fake `/v1/models` and a streaming `/v1/chat/completions` |
+| P3 | Plugin pages + custom-tool migration + import/export + version requirements | Full management on the phone; plugins needing a newer app cannot install |
+| P4 | Scenario one: free model gateway (anonymous channels) | RikkaHub points at the local address, lists models, chats, streams |
+| P5 | Scenario two: file bridge API + desktop dsh plugin | dsh browses, quotes, edits and uploads phone files |
+| P6 | Declarative pages + HTML pages + timers and events | Plugin has UI and runs on a schedule |
+| P7 | Slots: settings injection + anchor table + preview-layer support | Plugins place rows and switches in settings pages |
+| P8 | Python runtime + install from URL | Two languages, shareable |
+
+P2 is the critical infrastructure and comes before the management page: once routes and streaming
+work, scenario one is mostly channel adaptation.
+
+### 17.1 Where P1 landed
+
+Notes on how the implementation differs from the plan above, so later phases know the current state:
+
+- **Engine**: `quickjs-kt` 1.0.15 (`io.github.dokar3:quickjs-kt`). Not the latest: from 1.0.16 the AAR
+  requires `compileSdk 37`, and the project is on 36; 1.0.15 requires 36, which fits.
+  It ships built with Kotlin 2.4 while the project compiler is 2.1, so the app module enables
+  `-Xskip-metadata-version-check`.
+- **A fresh QuickJs instance per tool call**, closed right after: no global state leaks between plugins,
+  and one plugin wrecking its runtime cannot affect the next. Tool calls are infrequent enough.
+- **Return values**: strings pass through; `null` / `undefined` become empty; anything else is JSON text.
+  It is also lenient: a plain `export default async function (ctx) {...}` is accepted rather than rejected.
+- **`ctx.http.*` reports "this build does not support network access yet"** in P1 instead of shipping an
+  implementation without permission checks. It lands in P2 together with the `network` permission and
+  domain rules.
+- **Relative paths resolve inside the plugin's own `data/`** (no approval); absolute paths go through
+  `PathSandbox` and the permission matrix.
+- **Service plugins get their key at install time**, but route dispatch only arrives in P2.
+
+---
+
+## 18 Open questions
+
+1. **Can the AI install plugins itself?** Custom tools can be created by the model; a plugin is a
+   whole package of code that can also take HTTP routes, an order of magnitude riskier.
+2. **Is Python worth it?** Chaquopy adds a Gradle plugin and roughly 10+ MB. If both target
+   scenarios fit in JS, P7 can be dropped.
+3. **Distribution**: local import only at first. A GitHub index for install-by-URL and updates later?
+4. **Anthropic format in the gateway**: is `/v1/messages` needed, depending on the client actually used?
+5. **File bridge conflicts**: on mtime conflict, overwrite, save-as, or refuse — decided in the
+   desktop plugin.

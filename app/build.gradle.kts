@@ -9,7 +9,8 @@ plugins {
 
 android {
     namespace = "com.xtt.mcpbox"
-    compileSdk = 35
+    // quickjs-kt 要求 36；容器里装了 android-36 平台
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.xtt.mcpbox"
@@ -67,6 +68,9 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        // quickjs-kt 用 Kotlin 2.4 发布，而本项目编译器是 2.1：
+        // 库的元数据版本号更高，跳过检查（格式仍是向后兼容的）。
+        freeCompilerArgs += "-Xskip-metadata-version-check"
     }
 
     buildFeatures {
@@ -120,6 +124,12 @@ dependencies {
     // Markdown 渲染：JetBrains 官方解析器 + 现成的 Compose M3 组件。
     // 0.27.0 是配 Compose 1.7.x / Kotlin 2.0 的版本，和这里的 BOM 对得上。
     implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.27.0")
+
+    // 插件脚本引擎：QuickJS（Android / JVM 双端，支持 ES Module 与超时中断）。
+    // mcpcore 只定义 PluginRuntime 接口，引擎实现放在这里 —— 核心层不能 import Android。
+    implementation("io.github.dokar3:quickjs-kt:1.0.15")
+    // 插件 host 调用要读写 JsonObject（mcpcore 的 implementation 不会传给 app）
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // 从种子色派生整套 M3 配色（HCT 色彩空间）。
     // 注意：material-color-utilities 没有独立坐标，它打包在 MDC 里，

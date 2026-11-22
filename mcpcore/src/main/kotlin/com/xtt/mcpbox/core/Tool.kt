@@ -122,11 +122,16 @@ class ToolSpec(
     val description: String,
     val perm: PermKey,
     val schema: JsonObject,
+    /** 插件工具：来自哪个插件；内置工具 / 自定义工具为 null。 */
+    val pluginId: String? = null,
     val handler: (CallContext) -> ToolResult
 ) {
     /** 复制一份并替换文案（内置工具的说明可以被用户改写）。 */
     fun withMeta(title: String, description: String): ToolSpec =
-        ToolSpec(name = name, title = title, description = description, perm = perm, schema = schema, handler = handler)
+        ToolSpec(
+            name = name, title = title, description = description, perm = perm,
+            schema = schema, pluginId = pluginId, handler = handler
+        )
 
     /**
      * 给 AI / 网页控制台看的 JSON。

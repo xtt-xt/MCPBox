@@ -53,11 +53,29 @@ class McpServer(
     /** 使用统计（请求次数 / 运行时长 / 启动次数）。 */
     val stats: StatsStore = StatsStore(),
     /** 内置浏览器引擎（App 层实现 WebView；不给 = 浏览器工具一律报「没接上」）。 */
-    val browserBridge: BrowserBridge? = null
+    val browserBridge: BrowserBridge? = null,
+    /** 插件目录（`files/plugins`）：扫描 / 安装 / 设置 / Key。 */
+    val plugins: PluginStore,
+    /** 插件脚本引擎（App 注入 QuickJS，harness 注入假的；不给 = 插件工具不注册）。 */
+    val pluginRuntime: PluginRuntime? = null
 ) {
 
     val sandbox = PathSandbox(config)
     val trash = TrashManager(sandbox)
+
+    init {
+        // 插件包：一个插件一个 `plugin.<id>`，内容跟着启停和装删现变
+        packs.pluginSource = {
+            plugins.active()
+                .filter { it.tools().isNotEmpty() }
+                .map { p ->
+                    BuiltinPacks.pluginPack(
+                        p.manifest,
+                        p.tools().map { p.manifest.externalToolName(it.name) }
+                    )
+                }
+        }
+    }
 
     /** 浏览器门面（URL 规整 / 内网拦截 / 搜索引擎 / 页面模型）。 */
     val browserHub = BrowserHub(config, browserBridge)
@@ -85,9 +103,13 @@ class McpServer(
             ToolsToken.specs() + ToolsMemory.specs(memory) + ToolsPacks.specs(packs, profiles) +
             ToolsUi.specs() + ToolsBrowser.specs() + ToolsLocation.specs()
 
-    /** 内置 + 用户自定义（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
+    /** 插件工具：启停 / 装删之后下一次取就变。 */
+    val pluginTools: List<ToolSpec>
+        get() = ToolsPlugin.specs(plugins, pluginRuntime)
+
+    /** 内置 + 自定义 + 插件（每次调用都重新取，改完立刻生效）。**不按工具包过滤**，UI 要看全部。 */
     val tools: List<ToolSpec>
-        get() = (builtinTools + ToolsShell.customSpecs(customTools))
+        get() = (builtinTools + ToolsShell.customSpecs(customTools) + pluginTools)
             .filter { config.memoryEnabled || it.perm != PermKey.MEMORY }
             .map { toolMeta.apply(it) }
 
@@ -113,7 +135,7 @@ class McpServer(
 
     /** 全部工具名（不管包激活状态），给 manage_pack 校验用。 */
     private fun allToolNames(): Set<String> =
-        (builtinTools + ToolsShell.customSpecs(customTools)).map { it.name }.toSet()
+        (builtinTools + ToolsShell.customSpecs(customTools) + pluginTools).map { it.name }.toSet()
 
     private val http = HttpServer(handler = ::dispatch, serverName = ServerMeta.NAME)
     val sessions = ConcurrentHashMap<String, Session>()
